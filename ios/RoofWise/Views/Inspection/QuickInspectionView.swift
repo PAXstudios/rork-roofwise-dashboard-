@@ -15,6 +15,15 @@ struct QuickInspectionView: View {
     @State private var detectedHits: [DetectedHit] = []
     @State private var lidarOn: Bool = true
     @State private var flashOn: Bool = false
+    @State private var currentPass: Int = 0
+
+    private let scanPasses: [(label: String, icon: String)] = [
+        ("Detecting hail", "circle.hexagongrid.fill"),
+        ("Analyzing granules", "circle.dotted"),
+        ("Checking wind damage", "wind"),
+        ("Inspecting flashing", "square.stack.3d.up.slash.fill"),
+        ("Generating report", "doc.text.magnifyingglass")
+    ]
 
     var body: some View {
         ZStack {
@@ -181,25 +190,40 @@ struct QuickInspectionView: View {
     private func runScan() {
         scanProgress = 0
         detectedHits = []
+        currentPass = 0
         Task { @MainActor in
-            // Stage 1: LiDAR mesh sweep (~1s)
-            withAnimation(.easeOut(duration: 1.0)) { scanProgress = 0.35 }
-            try? await Task.sleep(for: .milliseconds(1000))
+            let passes: [(CGFloat, Int)] = [
+                (0.20, 700),  // Detecting hail
+                (0.42, 700),  // Analyzing granules
+                (0.62, 700),  // Checking wind damage
+                (0.82, 700),  // Inspecting flashing
+                (1.00, 700)   // Generating report
+            ]
+            for (i, pass) in passes.enumerated() {
+                withAnimation(.easeInOut(duration: 0.4)) { currentPass = i }
+                withAnimation(.easeOut(duration: 0.65)) { scanProgress = pass.0 }
 
-            // Reveal detected hits one by one for delight
-            for hit in InspectionMock.hits {
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.65)) {
-                    detectedHits.append(hit)
+                // During hail-detection pass, drop hit markers progressively
+                if i == 0 {
+                    for hit in InspectionMock.hits.prefix(6) {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.65)) {
+                            detectedHits.append(hit)
+                        }
+                        let gen = UIImpactFeedbackGenerator(style: .light); gen.impactOccurred()
+                        try? await Task.sleep(for: .milliseconds(90))
+                    }
+                } else if i == 2 {
+                    for hit in InspectionMock.hits.suffix(6) {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.65)) {
+                            detectedHits.append(hit)
+                        }
+                        let gen = UIImpactFeedbackGenerator(style: .light); gen.impactOccurred()
+                        try? await Task.sleep(for: .milliseconds(80))
+                    }
                 }
-                let gen = UIImpactFeedbackGenerator(style: .light); gen.impactOccurred()
-                try? await Task.sleep(for: .milliseconds(120))
-            }
 
-            // Stage 2: AI inference (~0.8s)
-            withAnimation(.easeInOut(duration: 0.6)) { scanProgress = 0.85 }
-            try? await Task.sleep(for: .milliseconds(700))
-            withAnimation(.easeInOut(duration: 0.4)) { scanProgress = 1 }
-            try? await Task.sleep(for: .milliseconds(400))
+                try? await Task.sleep(for: .milliseconds(pass.1))
+            }
 
             let success = UINotificationFeedbackGenerator()
             success.notificationOccurred(.success)
@@ -255,9 +279,16 @@ struct QuickInspectionView: View {
                 // Bottom HUD
                 VStack(alignment: .leading, spacing: 14) {
                     HStack {
-                        Text(stageLabel)
-                            .font(.system(size: 13, weight: .heavy))
-                            .foregroundStyle(.white)
+                        HStack(spacing: 8) {
+                            Image(systemName: scanPasses[min(currentPass, scanPasses.count - 1)].icon)
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(Theme.ember)
+                            Text(scanPasses[min(currentPass, scanPasses.count - 1)].label)
+                                .font(.system(size: 13, weight: .heavy))
+                                .foregroundStyle(.white)
+                                .contentTransition(.opacity)
+                                .id(currentPass)
+                        }
                         Spacer()
                         Text("\(Int(scanProgress * 100))%")
                             .font(.system(size: 13, weight: .heavy))
@@ -275,6 +306,26 @@ struct QuickInspectionView: View {
                     }
                     .frame(height: 6)
 
+                    // Pass dots
+                    HStack(spacing: 6) {
+                        ForEach(scanPasses.indices, id: \.self) { i in
+                            HStack(spacing: 4) {
+                                ZStack {
+                                    Circle().fill(i <= currentPass ? Theme.ember : Color.white.opacity(0.18))
+                                        .frame(width: 14, height: 14)
+                                    if i < currentPass {
+                                        Image(systemName: "checkmark")
+                                            .font(.system(size: 7, weight: .black))
+                                            .foregroundStyle(.white)
+                                    } else if i == currentPass {
+                                        Circle().fill(.white).frame(width: 5, height: 5)
+                                    }
+                                }
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                    }
+
                     HStack(spacing: 12) {
                         liveStat(icon: "circle.hexagongrid.fill", label: "Hail Hits", value: "\(detectedHits.count)")
                         liveStat(icon: "ruler.fill", label: "Slope Area", value: "\(Int(scanProgress * 1240)) sq ft")
@@ -286,14 +337,6 @@ struct QuickInspectionView: View {
                 .padding(.horizontal, 18)
                 .padding(.bottom, 44)
             }
-        }
-    }
-
-    private var stageLabel: String {
-        switch scanProgress {
-        case 0..<0.4: return "Capturing LiDAR mesh"
-        case 0.4..<0.85: return "Detecting hail impacts"
-        default: return "Generating report"
         }
     }
 
@@ -444,7 +487,8 @@ private struct ResultsView: View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(spacing: 18) {
                 heroCard
-                severityBanner
+                damageScoreCard
+                claimWorthinessBanner
                 hitMapCard
                 findingsCard
                 structuralCard
@@ -457,6 +501,85 @@ private struct ResultsView: View {
         }
         .safeAreaInset(edge: .top) { topNav }
         .background(Theme.canvas)
+    }
+
+    private var damageScoreCard: some View {
+        let score = InspectionMock.damageScore
+        return HStack(spacing: 16) {
+            ZStack {
+                Circle().stroke(Theme.canvas, lineWidth: 8)
+                    .frame(width: 78, height: 78)
+                Circle()
+                    .trim(from: 0, to: CGFloat(score) / 100)
+                    .stroke(
+                        LinearGradient(colors: [Theme.amber, Theme.ember, Theme.crimson],
+                                       startPoint: .topLeading, endPoint: .bottomTrailing),
+                        style: StrokeStyle(lineWidth: 8, lineCap: .round)
+                    )
+                    .rotationEffect(.degrees(-90))
+                    .frame(width: 78, height: 78)
+                VStack(spacing: 0) {
+                    Text("\(score)")
+                        .font(.system(size: 24, weight: .heavy))
+                        .foregroundStyle(Theme.ink)
+                        .monospacedDigit()
+                    Text("of 100")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(Theme.inkFaint)
+                }
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text("DAMAGE SCORE")
+                    .font(.system(size: 10, weight: .heavy))
+                    .tracking(1.0)
+                    .foregroundStyle(Theme.inkSoft)
+                Text("High damage profile")
+                    .font(.system(size: 16, weight: .heavy))
+                    .foregroundStyle(Theme.ink)
+                Text("7 of 10 categories detected. Bruising, granule loss, and missing shingles drove the score.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.inkSoft)
+                    .lineSpacing(2)
+                    .lineLimit(3)
+            }
+        }
+        .padding(16)
+        .background(Theme.card, in: .rect(cornerRadius: 20))
+        .overlay(RoundedRectangle(cornerRadius: 20).stroke(Theme.hairline, lineWidth: 0.6))
+    }
+
+    private var claimWorthinessBanner: some View {
+        let cw = InspectionMock.claimWorthiness
+        return HStack(spacing: 12) {
+            ZStack {
+                Circle().fill(cw.color.opacity(0.15))
+                Image(systemName: cw.icon)
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(cw.color)
+            }
+            .frame(width: 44, height: 44)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(cw.rawValue.uppercased())
+                        .font(.system(size: 10, weight: .heavy))
+                        .tracking(1.2)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(cw.color, in: .capsule)
+                }
+                Text(cw.caption)
+                    .font(.system(size: 13, weight: .heavy))
+                    .foregroundStyle(Theme.ink)
+                Text("Carrier acceptance probability: 92%")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.inkSoft)
+            }
+            Spacer()
+        }
+        .padding(14)
+        .background(cw.color.opacity(0.06), in: .rect(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(cw.color.opacity(0.25), lineWidth: 0.6))
     }
 
     private var topNav: some View {
@@ -553,29 +676,6 @@ private struct ResultsView: View {
                 .lineLimit(2)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var severityBanner: some View {
-        HStack(spacing: 10) {
-            ZStack {
-                Circle().fill(DamageSeverity.functional.bg)
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(DamageSeverity.functional.color)
-            }
-            .frame(width: 38, height: 38)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Severity: Functional Damage")
-                    .font(.system(size: 14, weight: .heavy))
-                    .foregroundStyle(Theme.ink)
-                Text("\(functionalCount) of \(totalHits) impacts breached granule layer")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.inkSoft)
-            }
-            Spacer()
-        }
-        .padding(14)
-        .background(Theme.card, in: .rect(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Theme.hairline, lineWidth: 0.6))
     }
 
     private var hitMapCard: some View {
@@ -683,19 +783,30 @@ private struct ResultsView: View {
             }
             .frame(width: 38, height: 38)
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(finding.display)
                     .font(.system(size: 13, weight: .heavy))
                     .foregroundStyle(Theme.ink)
-                Text(finding.value)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.inkSoft)
+                HStack(spacing: 6) {
+                    Text(finding.severity.rawValue.uppercased())
+                        .font(.system(size: 9, weight: .heavy))
+                        .tracking(0.8)
+                        .foregroundStyle(finding.severity.color)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(finding.severity.bg, in: .capsule)
+                    Text(finding.value)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.inkSoft)
+                        .lineLimit(1)
+                }
             }
-            Spacer()
+            Spacer(minLength: 8)
             VStack(alignment: .trailing, spacing: 2) {
                 Text("\(finding.confidence)%")
                     .font(.system(size: 13, weight: .heavy))
                     .foregroundStyle(finding.tint)
+                    .monospacedDigit()
                 Text("confidence")
                     .font(.system(size: 9))
                     .foregroundStyle(Theme.inkFaint)

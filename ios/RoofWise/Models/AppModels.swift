@@ -138,6 +138,27 @@ struct StormEvent: Identifiable {
     let x: CGFloat             // 0-1 normalized within map view
     let y: CGFloat
     let radius: CGFloat        // 0-1
+    let propertiesAffected: Int
+
+    enum IntensityBand {
+        case light, moderate, severe
+        var label: String {
+            switch self { case .light: "Light"; case .moderate: "Moderate"; case .severe: "Severe" }
+        }
+        var color: Color {
+            switch self {
+            case .light: return Color(red: 0.97, green: 0.78, blue: 0.20)   // yellow
+            case .moderate: return Color(red: 0.98, green: 0.50, blue: 0.15) // orange
+            case .severe: return Color(red: 0.86, green: 0.18, blue: 0.22)  // red
+            }
+        }
+    }
+
+    var band: IntensityBand {
+        if intensity >= 0.75 { return .severe }
+        if intensity >= 0.5 { return .moderate }
+        return .light
+    }
 }
 
 // MARK: - Leads on map

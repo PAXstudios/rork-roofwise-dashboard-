@@ -14,9 +14,13 @@ struct RecentJobsRow: View {
                 }
                 Spacer()
                 Button {} label: {
-                    Text("See All")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Theme.ember)
+                    HStack(spacing: 4) {
+                        Text("View All")
+                            .font(.system(size: 13, weight: .semibold))
+                        Image(systemName: "arrow.right")
+                            .font(.system(size: 11, weight: .bold))
+                    }
+                    .foregroundStyle(Theme.ember)
                 }
             }
             .padding(.horizontal, 20)

@@ -35,26 +35,36 @@ enum MockData {
     ]
 
     static let recentJobs: [RecentJob] = [
-        .init(title: "Westside Library",
-              address: "920 Civic Center Dr",
+        .init(title: "Coleman Residence",
+              address: "1247 Oakridge Ln · Plano, TX",
               status: .done,
-              subtitle: "Completed Yesterday · TPO Membrane",
-              imageURL: "https://images.unsplash.com/photo-1632759145355-8b8f3ab2f1a7?w=900"),
+              subtitle: "Completed Yesterday · GAF Timberline HDZ",
+              imageURL: "https://images.unsplash.com/photo-1568605114967-8130f3a36994?w=900"),
         .init(title: "Smith Residence",
-              address: "734 Cedar Hollow Rd",
+              address: "445 Pine Lane · Frisco, TX",
               status: .active,
-              subtitle: "Crew B · Day 2 of 3",
-              imageURL: "https://images.unsplash.com/photo-1632759145351-1d76a4b2c1f0?w=900"),
-        .init(title: "Hawthorn Apartments",
-              address: "210 Hawthorn Blvd",
+              subtitle: "Crew B · Day 2 of 3 · Tear-off complete",
+              imageURL: "https://images.unsplash.com/photo-1564013799919-ab600027ffc6?w=900"),
+        .init(title: "Hawthorn Estate",
+              address: "88 Maple Cove · McKinney, TX",
               status: .awaiting,
-              subtitle: "Adjuster meet Thu 2pm",
-              imageURL: "https://images.unsplash.com/photo-1604769933916-2bbef5e5ed09?w=900"),
+              subtitle: "State Farm adjuster meet Thu 2pm",
+              imageURL: "https://images.unsplash.com/photo-1605276374104-dee2a0ed3cd6?w=900"),
         .init(title: "Patel Custom Build",
-              address: "5501 Stonebriar Pkwy",
+              address: "5501 Stonebriar Pkwy · Frisco, TX",
               status: .scheduled,
-              subtitle: "Tear-off begins May 8",
-              imageURL: "https://images.unsplash.com/photo-1518780664697-55e3ad937233?w=900")
+              subtitle: "Tear-off begins May 8 · Owens Corning",
+              imageURL: "https://images.unsplash.com/photo-1518780664697-55e3ad937233?w=900"),
+        .init(title: "Riverside Townhomes",
+              address: "2210 Custer Pkwy · Plano, TX",
+              status: .active,
+              subtitle: "Crew A · 3 of 8 units complete",
+              imageURL: "https://images.unsplash.com/photo-1597047084897-51e81819a499?w=900"),
+        .init(title: "Nguyen Residence",
+              address: "312 Eldorado Pkwy · McKinney, TX",
+              status: .scheduled,
+              subtitle: "Inspection scheduled May 6 · 9am",
+              imageURL: "https://images.unsplash.com/photo-1564501049412-61c2a3083791?w=900")
     ]
 
     static let mapPins: [MapPin] = [
@@ -114,18 +124,19 @@ enum MockData {
 
     // 4-year storm history (deterministic mock)
     static let storms: [StormEvent] = [
-        // 2026
-        .init(type: .hail, year: 2026, date: "Apr 18", intensity: 0.95, sizeInches: 1.75, windMPH: nil, x: 0.55, y: 0.35, radius: 0.28),
-        .init(type: .wind, year: 2026, date: "Mar 02", intensity: 0.62, sizeInches: nil, windMPH: 71, x: 0.30, y: 0.62, radius: 0.22),
         // 2025
-        .init(type: .hail, year: 2025, date: "May 21", intensity: 0.80, sizeInches: 1.25, windMPH: nil, x: 0.40, y: 0.50, radius: 0.30),
-        .init(type: .hail, year: 2025, date: "Aug 09", intensity: 0.55, sizeInches: 0.88, windMPH: nil, x: 0.72, y: 0.42, radius: 0.18),
-        .init(type: .wind, year: 2025, date: "Oct 14", intensity: 0.70, sizeInches: nil, windMPH: 78, x: 0.60, y: 0.70, radius: 0.25),
+        .init(type: .hail, year: 2025, date: "Apr 18, 2025", intensity: 0.95, sizeInches: 2.25, windMPH: nil, x: 0.55, y: 0.35, radius: 0.30, propertiesAffected: 142),
+        .init(type: .wind, year: 2025, date: "Mar 02, 2025", intensity: 0.62, sizeInches: nil, windMPH: 71, x: 0.30, y: 0.62, radius: 0.22, propertiesAffected: 78),
+        .init(type: .hail, year: 2025, date: "Aug 09, 2025", intensity: 0.55, sizeInches: 1.00, windMPH: nil, x: 0.72, y: 0.42, radius: 0.18, propertiesAffected: 41),
         // 2024
-        .init(type: .hail, year: 2024, date: "Apr 04", intensity: 0.88, sizeInches: 2.00, windMPH: nil, x: 0.25, y: 0.30, radius: 0.32),
-        .init(type: .wind, year: 2024, date: "Jun 22", intensity: 0.50, sizeInches: nil, windMPH: 64, x: 0.78, y: 0.62, radius: 0.20),
+        .init(type: .hail, year: 2024, date: "May 21, 2024", intensity: 0.80, sizeInches: 1.50, windMPH: nil, x: 0.40, y: 0.50, radius: 0.28, propertiesAffected: 96),
+        .init(type: .wind, year: 2024, date: "Oct 14, 2024", intensity: 0.70, sizeInches: nil, windMPH: 78, x: 0.60, y: 0.70, radius: 0.25, propertiesAffected: 62),
         // 2023
-        .init(type: .hail, year: 2023, date: "May 11", intensity: 0.72, sizeInches: 1.10, windMPH: nil, x: 0.50, y: 0.55, radius: 0.26),
-        .init(type: .wind, year: 2023, date: "Sep 03", intensity: 0.45, sizeInches: nil, windMPH: 58, x: 0.20, y: 0.50, radius: 0.18)
+        .init(type: .hail, year: 2023, date: "Apr 04, 2023", intensity: 0.88, sizeInches: 2.00, windMPH: nil, x: 0.25, y: 0.30, radius: 0.32, propertiesAffected: 188),
+        .init(type: .wind, year: 2023, date: "Jun 22, 2023", intensity: 0.50, sizeInches: nil, windMPH: 64, x: 0.78, y: 0.62, radius: 0.20, propertiesAffected: 34),
+        // 2022
+        .init(type: .hail, year: 2022, date: "May 11, 2022", intensity: 0.72, sizeInches: 1.25, windMPH: nil, x: 0.50, y: 0.55, radius: 0.26, propertiesAffected: 71),
+        .init(type: .wind, year: 2022, date: "Sep 03, 2022", intensity: 0.45, sizeInches: nil, windMPH: 58, x: 0.20, y: 0.50, radius: 0.18, propertiesAffected: 22),
+        .init(type: .hail, year: 2022, date: "Jul 28, 2022", intensity: 0.30, sizeInches: 0.75, windMPH: nil, x: 0.65, y: 0.20, radius: 0.15, propertiesAffected: 14)
     ]
 }
