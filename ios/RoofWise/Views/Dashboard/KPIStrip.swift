@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct KPIStrip: View {
+    var onQuickInspection: () -> Void = {}
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -22,13 +24,15 @@ struct KPIStrip: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 12) {
                     QuickActionCard(title: "Quick Inspection",
-                                    subtitle: "Start on-site capture",
+                                    subtitle: "LiDAR + AI capture",
                                     icon: "camera.viewfinder",
-                                    tint: Theme.ember)
+                                    tint: Theme.ember,
+                                    action: onQuickInspection)
                     QuickActionCard(title: "New Job",
                                     subtitle: "Create a project",
                                     icon: "plus.rectangle.on.folder.fill",
-                                    tint: Theme.sky)
+                                    tint: Theme.sky,
+                                    action: {})
                     ForEach(MockData.kpis) { metric in
                         KPICard(metric: metric)
                     }
@@ -44,9 +48,10 @@ struct QuickActionCard: View {
     let subtitle: String
     let icon: String
     let tint: Color
+    var action: () -> Void = {}
 
     var body: some View {
-        Button {} label: {
+        Button(action: action) {
             VStack(alignment: .leading, spacing: 14) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 12)

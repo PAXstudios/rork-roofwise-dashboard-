@@ -1,11 +1,13 @@
 import SwiftUI
 
 struct DashboardView: View {
+    var onQuickInspection: () -> Void = {}
+
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(spacing: 22) {
                 DashboardHeader()
-                KPIStrip()
+                KPIStrip(onQuickInspection: onQuickInspection)
                 StormAlertCard()
                 StormHistoryMapCard()
                 PipelineCard()

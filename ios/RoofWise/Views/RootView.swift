@@ -23,6 +23,7 @@ enum AppTab: Int, CaseIterable {
 struct RootView: View {
     @State private var tab: AppTab = .home
     @State private var showQuickAction = false
+    @State private var showInspection = false
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -30,7 +31,7 @@ struct RootView: View {
 
             Group {
                 switch tab {
-                case .home: DashboardView()
+                case .home: DashboardView(onQuickInspection: { showInspection = true })
                 case .leads: LeadsView()
                 case .map: MapHubView()
                 case .plan: PlanView()
@@ -41,9 +42,17 @@ struct RootView: View {
             BottomTabBar(tab: $tab) { showQuickAction = true }
         }
         .sheet(isPresented: $showQuickAction) {
-            QuickActionSheet()
+            QuickActionSheet(onStartInspection: {
+                showQuickAction = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                    showInspection = true
+                }
+            })
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
+        }
+        .fullScreenCover(isPresented: $showInspection) {
+            QuickInspectionView()
         }
     }
 }
@@ -116,6 +125,7 @@ struct BottomTabBar: View {
 
 struct QuickActionSheet: View {
     @Environment(\.dismiss) private var dismiss
+    var onStartInspection: () -> Void = {}
     private let actions: [(String, String, Color)] = [
         ("New Lead", "person.crop.circle.badge.plus", Theme.sky),
         ("Start Inspection", "binoculars.fill", Theme.ember),
@@ -139,7 +149,13 @@ struct QuickActionSheet: View {
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: 12),
                                     GridItem(.flexible(), spacing: 12)], spacing: 12) {
                     ForEach(actions, id: \.0) { item in
-                        Button { dismiss() } label: {
+                        Button {
+                            if item.0 == "Start Inspection" || item.0 == "Capture Damage Photo" {
+                                onStartInspection()
+                            } else {
+                                dismiss()
+                            }
+                        } label: {
                             VStack(alignment: .leading, spacing: 12) {
                                 ZStack {
                                     Circle().fill(item.2.opacity(0.14))
