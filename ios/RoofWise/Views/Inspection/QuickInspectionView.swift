@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // MARK: - Flow
 
@@ -8,14 +9,37 @@ enum InspectionStep {
     case results       // structured findings
 }
 
+enum CameraOverlayMode: String, CaseIterable {
+    case off = "Off"
+    case shingleGrid = "Shingle Grid"
+    case lidarMesh = "LiDAR Mesh"
+
+    var icon: String {
+        switch self {
+        case .off: return "circle.slash"
+        case .shingleGrid: return "square.grid.3x3"
+        case .lidarMesh: return "cube.transparent"
+        }
+    }
+}
+
 struct QuickInspectionView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var step: InspectionStep = .capture
     @State private var scanProgress: CGFloat = 0
     @State private var detectedHits: [DetectedHit] = []
-    @State private var lidarOn: Bool = true
     @State private var flashOn: Bool = false
     @State private var currentPass: Int = 0
+    @State private var overlayMode: CameraOverlayMode = .shingleGrid
+    @State private var pingedCells: Set<Int> = []
+    @State private var currentSlope: SlopeType = .frontSlope
+    @State private var showSlopePicker: Bool = false
+    @State private var capturedPhotos: [CapturedPhoto] = []
+    @State private var previewPhoto: CapturedPhoto?
+    @State private var lastFindings: [InspectionFinding] = []
+    @State private var claimPacket: ClaimPacket?
+    @State private var motion = MotionElevationService()
+    @State private var camera = CameraCaptureService()
 
     private let scanPasses: [(label: String, icon: String)] = [
         ("Detecting hail", "circle.hexagongrid.fill"),
@@ -33,13 +57,34 @@ struct QuickInspectionView: View {
             case .scanning:
                 scanningView
             case .results:
-                ResultsView(onClose: { dismiss() },
-                            onRescan: { resetToCapture() })
+                ResultsView(findings: lastFindings.isEmpty ? InspectionMock.findings : lastFindings,
+                            photoCount: capturedPhotos.count,
+                            onClose: { dismiss() },
+                            onRescan: { resetToCapture() },
+                            onCreateClaim: { generateClaimPacket() })
             }
         }
         .ignoresSafeArea()
         .statusBarHidden(step != .results)
         .preferredColorScheme(step == .results ? .light : .dark)
+        .sheet(isPresented: $showSlopePicker) {
+            SlopePickerSheet(selected: $currentSlope)
+                .presentationDetents([.medium, .large])
+        }
+        .sheet(item: $previewPhoto) { photo in
+            PhotoPreviewSheet(photo: photo) { remove in
+                if remove { capturedPhotos.removeAll { $0.id == photo.id } }
+                previewPhoto = nil
+            }
+        }
+        .fullScreenCover(item: $claimPacket) { packet in
+            ClaimPacketView(packet: packet,
+                            photoCount: capturedPhotos.count) {
+                claimPacket = nil
+            }
+        }
+        .onAppear { motion.start() }
+        .onDisappear { motion.stop() }
     }
 
     // MARK: Capture
@@ -53,11 +98,15 @@ struct QuickInspectionView: View {
                            center: .center, startRadius: 180, endRadius: 520)
                 .allowsHitTesting(false)
 
-            // Targeting reticle
-            ReticleOverlay(lidarOn: lidarOn)
+            // Overlay (grid / mesh)
+            overlayLayer
                 .allowsHitTesting(false)
 
-            VStack {
+            // Targeting reticle
+            ReticleOverlay(active: overlayMode != .off)
+                .allowsHitTesting(false)
+
+            VStack(spacing: 0) {
                 topBar
                 Spacer()
                 bottomCaptureBar
@@ -65,64 +114,122 @@ struct QuickInspectionView: View {
         }
     }
 
+    @ViewBuilder
+    private var overlayLayer: some View {
+        switch overlayMode {
+        case .off:
+            EmptyView()
+        case .shingleGrid:
+            ShingleGridOverlay(pinged: pingedCells)
+        case .lidarMesh:
+            LiDARMeshOverlay(progress: 1.0)
+                .opacity(0.55)
+        }
+    }
+
     private var topBar: some View {
-        HStack(spacing: 10) {
-            Button { dismiss() } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 38, height: 38)
-                    .background(.ultraThinMaterial, in: .circle)
+        VStack(spacing: 10) {
+            HStack(spacing: 10) {
+                Button { dismiss() } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 38, height: 38)
+                        .background(.ultraThinMaterial, in: .circle)
+                }
+
+                pitchElevationBadge
+
+                Spacer()
+
+                Button { flashOn.toggle() } label: {
+                    Image(systemName: flashOn ? "bolt.fill" : "bolt.slash.fill")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 38, height: 38)
+                        .background(.ultraThinMaterial, in: .circle)
+                }
             }
 
-            Spacer()
-
-            HStack(spacing: 6) {
-                Circle().fill(Theme.ember).frame(width: 6, height: 6)
-                Text("LiDAR + AI")
-                    .font(.system(size: 11, weight: .heavy))
-                    .foregroundStyle(.white)
-                    .tracking(1.1)
-            }
-            .padding(.horizontal, 12).padding(.vertical, 7)
-            .background(.ultraThinMaterial, in: .capsule)
-
-            Spacer()
-
-            Button { flashOn.toggle() } label: {
-                Image(systemName: flashOn ? "bolt.fill" : "bolt.slash.fill")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 38, height: 38)
-                    .background(.ultraThinMaterial, in: .circle)
-            }
+            slopeDropdown
         }
         .padding(.horizontal, 16)
         .padding(.top, 56)
     }
 
+    private var pitchElevationBadge: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
+                Image(systemName: "angle")
+                    .font(.system(size: 9, weight: .heavy))
+                    .foregroundStyle(Theme.ember)
+                Text("Pitch \(motion.pitchRatioString) (\(String(format: "%.1f", motion.pitchDegrees))°)")
+                    .font(.system(size: 10, weight: .heavy))
+                    .foregroundStyle(.white)
+                    .monospacedDigit()
+            }
+            HStack(spacing: 6) {
+                Image(systemName: "mountain.2.fill")
+                    .font(.system(size: 9, weight: .heavy))
+                    .foregroundStyle(Theme.amber)
+                Text("Elev \(Int(motion.elevationFeet)) ft")
+                    .font(.system(size: 10, weight: .heavy))
+                    .foregroundStyle(.white)
+                    .monospacedDigit()
+            }
+        }
+        .padding(.horizontal, 10).padding(.vertical, 6)
+        .background(.ultraThinMaterial, in: .rect(cornerRadius: 10))
+    }
+
+    private var slopeDropdown: some View {
+        Button { showSlopePicker = true } label: {
+            HStack(spacing: 10) {
+                ZStack {
+                    Circle().fill(Theme.ember.opacity(0.2))
+                    Image(systemName: currentSlope.icon)
+                        .font(.system(size: 12, weight: .heavy))
+                        .foregroundStyle(Theme.ember)
+                }
+                .frame(width: 28, height: 28)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("CAPTURING")
+                        .font(.system(size: 8, weight: .heavy))
+                        .tracking(1.2)
+                        .foregroundStyle(.white.opacity(0.55))
+                    Text(currentSlope.rawValue)
+                        .font(.system(size: 13, weight: .heavy))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                }
+                Spacer()
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(.white.opacity(0.7))
+            }
+            .padding(.horizontal, 12).padding(.vertical, 9)
+            .background(.ultraThinMaterial, in: .rect(cornerRadius: 14))
+        }
+        .buttonStyle(.plain)
+    }
+
     private var bottomCaptureBar: some View {
-        VStack(spacing: 18) {
-            // mode segmented
+        VStack(spacing: 14) {
+            // overlay mode segmented
             HStack(spacing: 8) {
-                modeChip(icon: "viewfinder", title: "Slope", active: true)
-                modeChip(icon: "cube.transparent", title: "3D Scan", active: false)
-                modeChip(icon: "camera.macro", title: "Macro", active: false)
+                ForEach(CameraOverlayMode.allCases, id: \.self) { mode in
+                    Button {
+                        let gen = UISelectionFeedbackGenerator(); gen.selectionChanged()
+                        withAnimation(.easeInOut) { overlayMode = mode }
+                    } label: {
+                        modeChip(icon: mode.icon, title: mode.rawValue, active: overlayMode == mode)
+                    }
+                    .buttonStyle(.plain)
+                }
             }
 
             HStack(alignment: .center) {
-                // LiDAR toggle
-                Button { lidarOn.toggle() } label: {
-                    VStack(spacing: 4) {
-                        Image(systemName: "dot.radiowaves.left.and.right")
-                            .font(.system(size: 16, weight: .bold))
-                        Text("LiDAR")
-                            .font(.system(size: 10, weight: .heavy))
-                    }
-                    .foregroundStyle(lidarOn ? Theme.ember : .white.opacity(0.7))
-                    .frame(width: 60, height: 60)
-                    .background(.ultraThinMaterial, in: .circle)
-                }
+                photoStripThumb
 
                 Spacer()
 
@@ -141,47 +248,152 @@ struct QuickInspectionView: View {
                                     .foregroundStyle(.white)
                             )
                             .shadow(color: Theme.ember.opacity(0.55), radius: 18, x: 0, y: 6)
+                        if !capturedPhotos.isEmpty {
+                            Text("\(capturedPhotos.count)")
+                                .font(.system(size: 10, weight: .heavy))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 6).padding(.vertical, 2)
+                                .background(Theme.crimson, in: .capsule)
+                                .overlay(Capsule().stroke(.white, lineWidth: 1.5))
+                                .offset(x: 30, y: -30)
+                        }
                     }
                 }
                 .buttonStyle(.plain)
 
                 Spacer()
 
-                // Gallery
-                Button {} label: {
+                // Done / finalize
+                Button {
+                    if !capturedPhotos.isEmpty {
+                        finishSession()
+                    }
+                } label: {
                     VStack(spacing: 4) {
-                        Image(systemName: "photo.on.rectangle.angled")
-                            .font(.system(size: 16, weight: .bold))
-                        Text("Library")
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 18, weight: .bold))
+                        Text("Done")
                             .font(.system(size: 10, weight: .heavy))
                     }
-                    .foregroundStyle(.white.opacity(0.85))
+                    .foregroundStyle(capturedPhotos.isEmpty ? .white.opacity(0.35) : Theme.mint)
                     .frame(width: 60, height: 60)
                     .background(.ultraThinMaterial, in: .circle)
                 }
+                .buttonStyle(.plain)
+                .disabled(capturedPhotos.isEmpty)
             }
 
-            Text("Aim at the slope. AI will detect hail hits, creases, granule loss.")
+            photoStrip
+
+            Text(capturedPhotos.isEmpty
+                 ? "Aim at the \(currentSlope.shortName.lowercased()). Capture multiple angles for HAAG-grade documentation."
+                 : "\(capturedPhotos.count) photo\(capturedPhotos.count == 1 ? "" : "s") · tap Done to analyze with AI.")
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(.white.opacity(0.7))
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 36)
         }
-        .padding(.horizontal, 22)
-        .padding(.bottom, 44)
+        .padding(.horizontal, 18)
+        .padding(.bottom, 38)
+    }
+
+    @ViewBuilder
+    private var photoStripThumb: some View {
+        if let last = capturedPhotos.last {
+            Button {
+                previewPhoto = last
+            } label: {
+                Image(uiImage: last.image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 60, height: 60)
+                    .clipShape(.rect(cornerRadius: 12))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(.white.opacity(0.7), lineWidth: 1.5)
+                    )
+            }
+            .buttonStyle(.plain)
+        } else {
+            VStack(spacing: 4) {
+                Image(systemName: "photo.on.rectangle.angled")
+                    .font(.system(size: 16, weight: .bold))
+                Text("Library")
+                    .font(.system(size: 10, weight: .heavy))
+            }
+            .foregroundStyle(.white.opacity(0.5))
+            .frame(width: 60, height: 60)
+            .background(.ultraThinMaterial, in: .circle)
+        }
+    }
+
+    @ViewBuilder
+    private var photoStrip: some View {
+        if !capturedPhotos.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(capturedPhotos) { photo in
+                        Button {
+                            previewPhoto = photo
+                        } label: {
+                            ZStack(alignment: .bottomLeading) {
+                                Image(uiImage: photo.image)
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: 86, height: 86)
+                                    .clipShape(.rect(cornerRadius: 10))
+                                LinearGradient(colors: [.clear, .black.opacity(0.7)],
+                                               startPoint: .center, endPoint: .bottom)
+                                    .frame(height: 44)
+                                    .clipShape(.rect(cornerRadius: 10))
+                                Text(photo.slope.shortName)
+                                    .font(.system(size: 8, weight: .heavy))
+                                    .foregroundStyle(.white)
+                                    .lineLimit(1)
+                                    .padding(.horizontal, 6)
+                                    .padding(.bottom, 5)
+                            }
+                            .frame(width: 86, height: 86)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 10)
+                                    .stroke(.white.opacity(0.25), lineWidth: 0.8)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 4)
+            }
+            .frame(height: 92)
+        }
     }
 
     private func modeChip(icon: String, title: String, active: Bool) -> some View {
         HStack(spacing: 6) {
             Image(systemName: icon).font(.system(size: 11, weight: .bold))
-            Text(title).font(.system(size: 12, weight: .heavy))
+            Text(title).font(.system(size: 11, weight: .heavy))
         }
         .foregroundStyle(active ? Theme.ink : .white)
-        .padding(.horizontal, 14).padding(.vertical, 8)
+        .padding(.horizontal, 12).padding(.vertical, 7)
         .background(active ? Color.white : Color.white.opacity(0.14), in: .capsule)
     }
 
     private func capture() {
+        let gen = UIImpactFeedbackGenerator(style: .heavy); gen.impactOccurred()
+        let slope = currentSlope
+        let pitch = motion.pitchDegrees
+        let elev = motion.elevationFeet
+        Task { @MainActor in
+            let img = await camera.capture(slope: slope, pitchDegrees: pitch, elevationFeet: elev)
+            let captured = CapturedPhoto(image: img, slope: slope,
+                                         pitchDegrees: pitch, elevationFeet: elev)
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
+                capturedPhotos.append(captured)
+            }
+        }
+    }
+
+    private func finishSession() {
         let gen = UIImpactFeedbackGenerator(style: .heavy); gen.impactOccurred()
         withAnimation(.easeInOut(duration: 0.4)) { step = .scanning }
         runScan()
@@ -191,25 +403,54 @@ struct QuickInspectionView: View {
         scanProgress = 0
         detectedHits = []
         currentPass = 0
+        pingedCells = []
         Task { @MainActor in
             let passes: [(CGFloat, Int)] = [
                 (0.20, 700),  // Detecting hail
                 (0.42, 700),  // Analyzing granules
                 (0.62, 700),  // Checking wind damage
                 (0.82, 700),  // Inspecting flashing
-                (1.00, 700)   // Generating report
+                (1.00, 800)   // Generating report
             ]
+
+            // Kick off Gemini analysis in parallel for all photos
+            let analyzeTask = Task<[InspectionFinding], Never> { @MainActor in
+                guard !capturedPhotos.isEmpty else { return InspectionMock.findings }
+                var results: [String: InspectionFinding] = [:]
+                for i in capturedPhotos.indices {
+                    let photo = capturedPhotos[i]
+                    let findings = await GeminiAnalysisService.analyze(image: photo.image,
+                                                                       slope: photo.slope)
+                    capturedPhotos[i].findings = findings
+                    capturedPhotos[i].analyzed = true
+                    for f in findings {
+                        if let existing = results[f.label] {
+                            if f.confidence > existing.confidence || f.severity.rank > existing.severity.rank {
+                                results[f.label] = f
+                            }
+                        } else {
+                            results[f.label] = f
+                        }
+                    }
+                }
+                let order = ["bruising", "granule_loss", "missing_shingles", "wind_creasing",
+                             "blistering", "cracking_splitting", "flashing_damage",
+                             "algae_moss", "ponding_water", "structural_sagging",
+                             "hail_damage"]
+                return order.compactMap { results[$0] } + results.filter { !order.contains($0.key) }.values
+            }
+
             for (i, pass) in passes.enumerated() {
                 withAnimation(.easeInOut(duration: 0.4)) { currentPass = i }
                 withAnimation(.easeOut(duration: 0.65)) { scanProgress = pass.0 }
 
-                // During hail-detection pass, drop hit markers progressively
                 if i == 0 {
                     for hit in InspectionMock.hits.prefix(6) {
                         withAnimation(.spring(response: 0.35, dampingFraction: 0.65)) {
                             detectedHits.append(hit)
                         }
-                        let gen = UIImpactFeedbackGenerator(style: .light); gen.impactOccurred()
+                        pingCell()
+                        let g = UIImpactFeedbackGenerator(style: .light); g.impactOccurred()
                         try? await Task.sleep(for: .milliseconds(90))
                     }
                 } else if i == 2 {
@@ -217,7 +458,8 @@ struct QuickInspectionView: View {
                         withAnimation(.spring(response: 0.35, dampingFraction: 0.65)) {
                             detectedHits.append(hit)
                         }
-                        let gen = UIImpactFeedbackGenerator(style: .light); gen.impactOccurred()
+                        pingCell()
+                        let g = UIImpactFeedbackGenerator(style: .light); g.impactOccurred()
                         try? await Task.sleep(for: .milliseconds(80))
                     }
                 }
@@ -225,10 +467,25 @@ struct QuickInspectionView: View {
                 try? await Task.sleep(for: .milliseconds(pass.1))
             }
 
+            lastFindings = await analyzeTask.value
+
             let success = UINotificationFeedbackGenerator()
             success.notificationOccurred(.success)
             withAnimation(.spring(response: 0.5, dampingFraction: 0.85)) {
                 step = .results
+            }
+        }
+    }
+
+    private func pingCell() {
+        let cell = Int.random(in: 0..<(ShingleGridOverlay.rows * ShingleGridOverlay.cols))
+        withAnimation(.easeOut(duration: 0.4)) {
+            pingedCells.insert(cell)
+        }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(900))
+            withAnimation(.easeIn(duration: 0.4)) {
+                _ = pingedCells.remove(cell)
             }
         }
     }
@@ -239,17 +496,35 @@ struct QuickInspectionView: View {
         withAnimation(.easeInOut) { step = .capture }
     }
 
+    private func generateClaimPacket() {
+        var photosForGrading = capturedPhotos
+        if photosForGrading.isEmpty {
+            // synthesize a single phantom photo using last findings so HAAG can grade
+            let stub = CapturedPhoto(
+                image: CameraCaptureService.synthesizePlaceholder(slope: currentSlope,
+                                                                  pitchDegrees: motion.pitchDegrees,
+                                                                  elevationFeet: motion.elevationFeet),
+                slope: currentSlope,
+                pitchDegrees: motion.pitchDegrees,
+                elevationFeet: motion.elevationFeet
+            )
+            var copy = stub
+            copy.findings = lastFindings.isEmpty ? InspectionMock.findings : lastFindings
+            copy.analyzed = true
+            photosForGrading = [copy]
+        }
+        claimPacket = HaagGrader.grade(photos: photosForGrading)
+    }
+
     // MARK: Scanning
 
     private var scanningView: some View {
         ZStack {
             CameraProxyView().overlay(Color.black.opacity(0.25))
 
-            // LiDAR mesh overlay
             LiDARMeshOverlay(progress: scanProgress)
                 .allowsHitTesting(false)
 
-            // Detected hit markers
             GeometryReader { geo in
                 ForEach(detectedHits) { hit in
                     HitMarker(severity: hit.severity)
@@ -261,12 +536,11 @@ struct QuickInspectionView: View {
             .allowsHitTesting(false)
 
             VStack {
-                // Top
                 HStack {
                     Image(systemName: "dot.radiowaves.left.and.right")
                         .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(Theme.ember)
-                    Text("Scanning roof surface")
+                    Text("Analyzing \(capturedPhotos.count) photo\(capturedPhotos.count == 1 ? "" : "s") with Gemini Vision")
                         .font(.system(size: 13, weight: .heavy))
                         .foregroundStyle(.white)
                 }
@@ -276,7 +550,6 @@ struct QuickInspectionView: View {
 
                 Spacer()
 
-                // Bottom HUD
                 VStack(alignment: .leading, spacing: 14) {
                     HStack {
                         HStack(spacing: 8) {
@@ -306,20 +579,17 @@ struct QuickInspectionView: View {
                     }
                     .frame(height: 6)
 
-                    // Pass dots
                     HStack(spacing: 6) {
                         ForEach(scanPasses.indices, id: \.self) { i in
-                            HStack(spacing: 4) {
-                                ZStack {
-                                    Circle().fill(i <= currentPass ? Theme.ember : Color.white.opacity(0.18))
-                                        .frame(width: 14, height: 14)
-                                    if i < currentPass {
-                                        Image(systemName: "checkmark")
-                                            .font(.system(size: 7, weight: .black))
-                                            .foregroundStyle(.white)
-                                    } else if i == currentPass {
-                                        Circle().fill(.white).frame(width: 5, height: 5)
-                                    }
+                            ZStack {
+                                Circle().fill(i <= currentPass ? Theme.ember : Color.white.opacity(0.18))
+                                    .frame(width: 14, height: 14)
+                                if i < currentPass {
+                                    Image(systemName: "checkmark")
+                                        .font(.system(size: 7, weight: .black))
+                                        .foregroundStyle(.white)
+                                } else if i == currentPass {
+                                    Circle().fill(.white).frame(width: 5, height: 5)
                                 }
                             }
                             .frame(maxWidth: .infinity)
@@ -361,10 +631,142 @@ struct QuickInspectionView: View {
     }
 }
 
+// MARK: - FindingSeverity rank helper
+
+extension FindingSeverity {
+    var rank: Int {
+        switch self {
+        case .none: return 0
+        case .minor: return 1
+        case .moderate: return 2
+        case .severe: return 3
+        }
+    }
+}
+
+// MARK: - Slope Picker
+
+private struct SlopePickerSheet: View {
+    @Binding var selected: SlopeType
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                ForEach(SlopeType.allCases) { slope in
+                    Button {
+                        selected = slope
+                        let g = UISelectionFeedbackGenerator(); g.selectionChanged()
+                        dismiss()
+                    } label: {
+                        HStack(spacing: 12) {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 8).fill(Theme.emberSoft)
+                                Image(systemName: slope.icon)
+                                    .font(.system(size: 13, weight: .bold))
+                                    .foregroundStyle(Theme.ember)
+                            }
+                            .frame(width: 32, height: 32)
+                            Text(slope.rawValue)
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(Theme.ink)
+                            Spacer()
+                            if selected == slope {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 13, weight: .heavy))
+                                    .foregroundStyle(Theme.ember)
+                            }
+                        }
+                    }
+                    .listRowBackground(Color.clear)
+                }
+            }
+            .listStyle(.plain)
+            .navigationTitle("Select Capture Area")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                        .font(.system(size: 14, weight: .heavy))
+                        .foregroundStyle(Theme.ember)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Photo Preview Sheet
+
+private struct PhotoPreviewSheet: View {
+    let photo: CapturedPhoto
+    var onDismiss: (Bool) -> Void
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 14) {
+                    Image(uiImage: photo.image)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxWidth: .infinity)
+                        .clipShape(.rect(cornerRadius: 14))
+                    HStack(spacing: 10) {
+                        statTile(label: "Slope", value: photo.slope.rawValue)
+                        statTile(label: "Pitch", value: String(format: "%.1f°", photo.pitchDegrees))
+                        statTile(label: "Elev", value: "\(Int(photo.elevationFeet)) ft")
+                    }
+                    Button {
+                        onDismiss(true)
+                    } label: {
+                        HStack {
+                            Image(systemName: "trash")
+                            Text("Delete Photo")
+                        }
+                        .font(.system(size: 14, weight: .heavy))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(Theme.crimson, in: .rect(cornerRadius: 12))
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(16)
+            }
+            .background(Theme.canvas)
+            .navigationTitle("Captured Photo")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Close") { onDismiss(false) }
+                        .font(.system(size: 14, weight: .heavy))
+                        .foregroundStyle(Theme.ember)
+                }
+            }
+        }
+    }
+
+    private func statTile(label: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label.uppercased())
+                .font(.system(size: 9, weight: .heavy))
+                .tracking(1)
+                .foregroundStyle(Theme.inkFaint)
+            Text(value)
+                .font(.system(size: 12, weight: .heavy))
+                .foregroundStyle(Theme.ink)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(Theme.card, in: .rect(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.hairline, lineWidth: 0.6))
+    }
+}
+
 // MARK: - Reticle
 
 private struct ReticleOverlay: View {
-    let lidarOn: Bool
+    let active: Bool
     @State private var pulse = false
 
     var body: some View {
@@ -373,7 +775,7 @@ private struct ReticleOverlay: View {
             ZStack {
                 ForEach(0..<4) { i in
                     CornerBracket()
-                        .stroke(lidarOn ? Theme.ember : .white,
+                        .stroke(active ? Theme.ember : .white,
                                 style: StrokeStyle(lineWidth: 3, lineCap: .round))
                         .frame(width: 28, height: 28)
                         .rotationEffect(.degrees(Double(i) * 90))
@@ -408,9 +810,58 @@ private struct CornerBracket: Shape {
     }
 }
 
+// MARK: - Shingle Grid Overlay (perspective-corrected)
+
+struct ShingleGridOverlay: View {
+    static let rows: Int = 14
+    static let cols: Int = 10
+
+    let pinged: Set<Int>
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack {
+                ForEach(0..<Self.rows, id: \.self) { r in
+                    ForEach(0..<Self.cols, id: \.self) { c in
+                        cell(row: r, col: c, size: geo.size)
+                    }
+                }
+            }
+        }
+    }
+
+    private func cell(row: Int, col: Int, size: CGSize) -> some View {
+        // Perspective: rows further away (top) are narrower & shorter.
+        let progress = CGFloat(row) / CGFloat(Self.rows)
+        let perspective = 0.45 + progress * 0.55
+        let rowHeight = size.height / CGFloat(Self.rows + 4) * (0.55 + progress * 0.85)
+        let totalRowWidth = size.width * perspective
+        let cellWidth = totalRowWidth / CGFloat(Self.cols)
+        let stagger: CGFloat = row.isMultiple(of: 2) ? cellWidth / 2 : 0
+        let xOrigin = (size.width - totalRowWidth) / 2 + CGFloat(col) * cellWidth + stagger
+        var yOrigin: CGFloat = size.height * 0.18
+        for rr in 0..<row {
+            let p = CGFloat(rr) / CGFloat(Self.rows)
+            yOrigin += size.height / CGFloat(Self.rows + 4) * (0.55 + p * 0.85)
+        }
+        let index = row * Self.cols + col
+        let isPinged = pinged.contains(index)
+        return RoundedRectangle(cornerRadius: 2)
+            .stroke(Theme.ember.opacity(0.55), lineWidth: 0.8)
+            .background(
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(isPinged ? Theme.ember.opacity(0.55) : Color.white.opacity(0.04))
+            )
+            .frame(width: max(0, cellWidth - 2),
+                   height: max(0, rowHeight * 0.92))
+            .position(x: xOrigin + cellWidth / 2, y: yOrigin + rowHeight / 2)
+            .animation(.easeOut(duration: 0.25), value: isPinged)
+    }
+}
+
 // MARK: - LiDAR mesh overlay
 
-private struct LiDARMeshOverlay: View {
+struct LiDARMeshOverlay: View {
     let progress: CGFloat
 
     var body: some View {
@@ -421,7 +872,6 @@ private struct LiDARMeshOverlay: View {
             let dy = size.height / CGFloat(rows)
             let visibleRows = Int(CGFloat(rows) * min(1, progress * 1.4))
 
-            // Mesh triangles
             for r in 0..<visibleRows {
                 let alpha = 0.55 - Double(r) / Double(rows) * 0.35
                 for c in 0..<cols {
@@ -436,12 +886,13 @@ private struct LiDARMeshOverlay: View {
                 }
             }
 
-            // Scan line
-            let lineY = CGFloat(visibleRows) * dy
-            var line = Path()
-            line.move(to: CGPoint(x: 0, y: lineY))
-            line.addLine(to: CGPoint(x: size.width, y: lineY))
-            ctx.stroke(line, with: .color(Theme.ember.opacity(0.9)), lineWidth: 1.5)
+            if progress < 1 {
+                let lineY = CGFloat(visibleRows) * dy
+                var line = Path()
+                line.move(to: CGPoint(x: 0, y: lineY))
+                line.addLine(to: CGPoint(x: size.width, y: lineY))
+                ctx.stroke(line, with: .color(Theme.ember.opacity(0.9)), lineWidth: 1.5)
+            }
         }
     }
 }
@@ -475,13 +926,36 @@ private struct HitMarker: View {
 // MARK: - Results
 
 private struct ResultsView: View {
+    let findings: [InspectionFinding]
+    let photoCount: Int
     var onClose: () -> Void
     var onRescan: () -> Void
+    var onCreateClaim: () -> Void
 
-    @State private var selectedFinding: InspectionFinding?
+    private var totalHits: Int { InspectionMock.hits.count }
+    private var detectedCount: Int { findings.filter(\.detected).count }
 
-    private let totalHits = InspectionMock.hits.count
-    private let functionalCount = InspectionMock.hits.filter { $0.severity == .functional || $0.severity == .totaled }.count
+    private var damageScore: Int {
+        let base = findings.reduce(0) { acc, f in
+            guard f.detected else { return acc }
+            switch f.severity {
+            case .none: return acc
+            case .minor: return acc + 5
+            case .moderate: return acc + 12
+            case .severe: return acc + 22
+            }
+        }
+        return min(100, max(0, base))
+    }
+
+    private var claimWorthiness: ClaimWorthiness {
+        switch damageScore {
+        case 0..<20: return .notClaimable
+        case 20..<45: return .borderline
+        case 45..<75: return .claimable
+        default: return .urgent
+        }
+    }
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
@@ -504,7 +978,7 @@ private struct ResultsView: View {
     }
 
     private var damageScoreCard: some View {
-        let score = InspectionMock.damageScore
+        let score = damageScore
         return HStack(spacing: 16) {
             ZStack {
                 Circle().stroke(Theme.canvas, lineWidth: 8)
@@ -533,10 +1007,10 @@ private struct ResultsView: View {
                     .font(.system(size: 10, weight: .heavy))
                     .tracking(1.0)
                     .foregroundStyle(Theme.inkSoft)
-                Text("High damage profile")
+                Text(scoreHeadline)
                     .font(.system(size: 16, weight: .heavy))
                     .foregroundStyle(Theme.ink)
-                Text("7 of 10 categories detected. Bruising, granule loss, and missing shingles drove the score.")
+                Text("\(detectedCount) of \(findings.count) categories detected across \(photoCount) photo\(photoCount == 1 ? "" : "s").")
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.inkSoft)
                     .lineSpacing(2)
@@ -548,8 +1022,17 @@ private struct ResultsView: View {
         .overlay(RoundedRectangle(cornerRadius: 20).stroke(Theme.hairline, lineWidth: 0.6))
     }
 
+    private var scoreHeadline: String {
+        switch damageScore {
+        case 0..<20: return "Roof in serviceable condition"
+        case 20..<45: return "Wear consistent with age"
+        case 45..<75: return "Functional damage profile"
+        default: return "Severe damage profile"
+        }
+    }
+
     private var claimWorthinessBanner: some View {
-        let cw = InspectionMock.claimWorthiness
+        let cw = claimWorthiness
         return HStack(spacing: 12) {
             ZStack {
                 Circle().fill(cw.color.opacity(0.15))
@@ -571,7 +1054,7 @@ private struct ResultsView: View {
                 Text(cw.caption)
                     .font(.system(size: 13, weight: .heavy))
                     .foregroundStyle(Theme.ink)
-                Text("Carrier acceptance probability: 92%")
+                Text("Carrier acceptance probability: \(min(99, damageScore + 12))%")
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.inkSoft)
             }
@@ -639,7 +1122,7 @@ private struct ResultsView: View {
             HStack(spacing: 14) {
                 heroStat(value: "\(totalHits)", label: "Hail Hits / 100 sq ft")
                 Rectangle().fill(.white.opacity(0.2)).frame(width: 0.5, height: 36)
-                heroStat(value: "\(Int(91))%", label: "Model Confidence")
+                heroStat(value: "\(photoCount)", label: "Photos Analyzed")
                 Rectangle().fill(.white.opacity(0.2)).frame(width: 0.5, height: 36)
                 heroStat(value: "$24.6k", label: "Est. Replace")
             }
@@ -681,24 +1164,22 @@ private struct ResultsView: View {
     private var hitMapCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Damage Map · SW Slope")
+                Text("Damage Map · Composite Slopes")
                     .font(.system(size: 14, weight: .heavy))
                     .foregroundStyle(Theme.ink)
                 Spacer()
-                Text("12 hits")
+                Text("\(InspectionMock.hits.count) hits")
                     .font(.system(size: 11, weight: .heavy))
                     .foregroundStyle(Theme.crimson)
                     .padding(.horizontal, 8).padding(.vertical, 4)
                     .background(DamageSeverity.functional.bg, in: .capsule)
             }
 
-            // Map view with simulated roof + hits
             ZStack {
                 LinearGradient(colors: [Color(red: 0.16, green: 0.18, blue: 0.24),
                                         Color(red: 0.10, green: 0.12, blue: 0.18)],
                                startPoint: .topLeading, endPoint: .bottomTrailing)
 
-                // Shingle texture
                 Canvas { ctx, size in
                     let rows = 18, cols = 14
                     let dx = size.width / CGFloat(cols)
@@ -755,14 +1236,14 @@ private struct ResultsView: View {
                     .font(.system(size: 14, weight: .heavy))
                     .foregroundStyle(Theme.ink)
                 Spacer()
-                Text("\(InspectionMock.findings.count) detected")
+                Text("\(findings.count) categories · Gemini Vision")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Theme.inkFaint)
             }
             VStack(spacing: 0) {
-                ForEach(Array(InspectionMock.findings.enumerated()), id: \.element.id) { index, finding in
+                ForEach(Array(findings.enumerated()), id: \.element.id) { index, finding in
                     findingRow(finding)
-                    if index < InspectionMock.findings.count - 1 {
+                    if index < findings.count - 1 {
                         Rectangle().fill(Theme.hairline).frame(height: 0.6)
                     }
                 }
@@ -878,7 +1359,7 @@ private struct ResultsView: View {
 
     private var actionButtons: some View {
         VStack(spacing: 10) {
-            Button {} label: {
+            Button { onCreateClaim() } label: {
                 HStack {
                     Image(systemName: "doc.badge.plus")
                     Text("Create Claim Packet")
@@ -922,5 +1403,8 @@ private struct ResultsView: View {
         }
     }
 }
+
+// Make ClaimPacket Identifiable already provides id
+extension ClaimPacket {}
 
 #Preview { QuickInspectionView() }
