@@ -856,7 +856,10 @@ struct QuickInspectionView: View {
                     let findings = result.findings
                     capturedPhotos[i].findings = findings
                     capturedPhotos[i].damageMarkers = result.markers
-                    capturedPhotos[i].analyzed = true
+                    // Only mark the photo as analyzed when the AI call actually succeeded.
+                    // If it failed we leave analyzed=false so the UI can show a retry state
+                    // instead of presenting fake markers as real detections.
+                    capturedPhotos[i].analyzed = !result.failed
                     for f in findings {
                         if let existing = results[f.label] {
                             if f.confidence > existing.confidence || f.severity.rank > existing.severity.rank {

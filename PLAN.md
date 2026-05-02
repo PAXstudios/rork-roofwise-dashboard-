@@ -1,15 +1,21 @@
-# Reorder Home carousel: Today's Lesson first, Storm Alert second
+# Fix Gemini AI damage analysis accuracy
 
-## What changes
+## Problem
 
-On the Home screen carousel that holds the six overview cards, change the order so:
+When inspecting a shingle with obvious hail strikes, the AI did not detect the real
+strikes and the UI showed markers where there was no damage.
 
-1. **Today's Lesson** appears first
-2. **Storm Alert** appears second
-3. Sales Performance, Daily Wrap-Up, Hail & Wind History, and Tasks & Activity follow in their current order
+Root cause: `GeminiAnalysisService.analyzeFull` silently falls back to
+`InspectionMock.damageMarkers` and `mockFindings(...)` whenever the API call
+fails OR the JSON can't be parsed. Those mock markers are then written onto the
+real photo via `capturedPhotos[i].damageMarkers = result.markers` and rendered
+as if they were real AI detections.
 
-## Behavior
+## Fixes
 
-- The carousel still snaps one card per swipe with the next card peeking on the right.
-- The page dots underneath update to reflect the new order, with Today's Lesson highlighted by default when the Home screen first loads.
-- Each card keeps its existing styling, height, and tap behavior — only the position changes.
+- [x] Stop returning mock markers/findings on API failure — return empty results plus an "Analysis unavailable" finding so the UI is honest.
+- [x] Strip ```json fences before parsing (Gemini sometimes wraps even with `responseMimeType`).
+- [x] Upgrade model to `gemini-2.5-flash` for better fine-detail vision (hail strike detection on shingles).
+- [x] Resize huge images to 2048px max edge before upload — keeps strike detail, avoids slow uploads.
+- [x] Add `failed` flag to `AnalysisResult` so callers can leave `analyzed = false` on failure instead of falsely marking photos as analyzed.
+- [x] Log Gemini errors / non-2xx responses to the console for debugging.

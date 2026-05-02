@@ -2,19 +2,25 @@ import Foundation
 import UIKit
 import SwiftUI
 
-/// Gemini 1.5 Flash Vision integration.
+/// Gemini 2.5 Flash Vision integration.
 /// API key is read from `Config.EXPO_PUBLIC_GEMINI_API_KEY` (env var).
 enum GeminiAnalysisService {
     /// Reads the key from the auto-generated Config (env var EXPO_PUBLIC_GEMINI_API_KEY).
     static var apiKey: String { Config.allValues["EXPO_PUBLIC_GEMINI_API_KEY"] ?? "" }
 
-    static let endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+    /// gemini-2.5-flash is significantly better at fine-detail vision (hail strikes,
+    /// granule displacement, soft-metal dings) than 1.5-flash.
+    static let endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 
-    /// Analyze a captured roof photo and return structured findings.
-    /// Falls back to mock findings if API key is unset or the request fails.
+    /// Result returned from `analyzeFull`.
+    /// `failed == true` means the API call could not be completed successfully —
+    /// callers should NOT treat the photo as analyzed and should NOT render the
+    /// (empty) markers as if they were real AI detections.
     struct AnalysisResult {
         let findings: [InspectionFinding]
         let markers: [DamageMarker]
+        var failed: Bool = false
+        var usedMock: Bool = false
     }
 
     /// Convenience for legacy callers that only need findings.
@@ -26,6 +32,8 @@ enum GeminiAnalysisService {
     }
 
     /// Analyze a captured roof photo and return findings + per-pixel damage markers.
+    /// On API failure returns `failed: true` with EMPTY markers (no fake mock data
+    /// gets painted onto real photos).
     static func analyzeFull(image: UIImage,
                             slope: SlopeType,
                             mode: CaptureMode = .square,
@@ -33,11 +41,23 @@ enum GeminiAnalysisService {
         let key = apiKey
         guard !key.isEmpty,
               key != "GEMINI_API_KEY",
-              let url = URL(string: "\(endpoint)?key=\(key)"),
-              let jpeg = image.jpegData(compressionQuality: 0.7) else {
-            try? await Task.sleep(for: .milliseconds(800))
+              let url = URL(string: "\(endpoint)?key=\(key)") else {
+            // No key configured -> dev mode: surface mock so the demo flow still works,
+            // but flag it as mock so the UI can label it.
+            try? await Task.sleep(for: .milliseconds(600))
             return AnalysisResult(findings: mockFindings(for: slope),
-                                  markers: InspectionMock.damageMarkers)
+                                  markers: InspectionMock.damageMarkers,
+                                  failed: false,
+                                  usedMock: true)
+        }
+
+        // Resize for upload: cap at 2048px on the long edge. Gemini downsamples
+        // server-side anyway; sending massive JPEGs only slows the request.
+        let prepared = resizeForUpload(image, maxEdge: 2048)
+        guard let jpeg = prepared.jpegData(compressionQuality: 0.85) else {
+            return AnalysisResult(findings: failureFinding(reason: "Could not encode photo for analysis."),
+                                  markers: [],
+                                  failed: true)
         }
 
         let coverageNote: String = {
@@ -61,6 +81,15 @@ enum GeminiAnalysisService {
         You are a certified forensic roof inspector applying HAAG Engineering standards.
         \(intro)
 
+        CRITICAL ACCURACY RULES:
+          1. Look at the ACTUAL pixels in this image. Do NOT invent or hallucinate damage.
+          2. If a region is undamaged, do NOT place a marker there.
+          3. Every marker you return MUST correspond to a visible pixel feature you can describe.
+          4. Hail strikes look like circular dark spots / mat fractures with displaced granules,
+             often with a slight shine or color contrast. They are usually 1/4" to 2" across.
+          5. If you are not confident a feature is damage, OMIT it. Empty arrays are correct
+             when the shingle is undamaged.
+
         Analyze this image for ALL of the following:
           • Hail damage — count INDIVIDUAL strikes separately on (a) shingles/roof field and
             (b) metal components (vents, pipe jacks, flashing, drip edge, gutters, downspouts,
@@ -71,8 +100,6 @@ enum GeminiAnalysisService {
           • Granule loss — note distinct granule-loss AREAS (each erosion patch is a marker).
           • Wind damage — creasing at the nail line, lifted/folded tabs, missing tabs.
           • Cracking / splitting, blistering, flashing damage, algae/moss, structural sagging.
-          • Damage to non-shingle components: flashing (step / counter / apron), drip edge,
-            ridge cap, valley metal, gutters, downspouts, vents, pipe boots, skylights.
 
         First, identify the roof covering / shingle type. Choose the closest match from:
         "3-tab asphalt", "architectural asphalt" (a.k.a. dimensional/laminated), "luxury asphalt",
@@ -103,30 +130,27 @@ enum GeminiAnalysisService {
               "count": <int, 0 if not applicable>,
               "note": "<short evidence sentence citing HAAG indicators>"
             }
+          ],
+          "damage_markers": [
+            {
+              "type": "hail_strike|crack|granule_loss|missing_shingle|wind_crease|blister|flashing|algae|other",
+              "surface": "shingle|metal|other",
+              "x": 0.0-1.0,
+              "y": 0.0-1.0,
+              "radius": 0.0-1.0,
+              "severity": "minor|moderate|severe",
+              "note": "<short evidence describing the actual pixel feature you see>"
+            }
           ]
         }
-        Include ALL 10 damage categories in `findings`. Be conservative - only mark severe if clearly visible.
+        Include ALL 10 damage categories in `findings`. Be conservative — only mark `detected: true`
+        when clearly visible. Set `severity: "severe"` only when the evidence is unambiguous.
 
-        Then ALSO return precise pixel-region markers for EVERY visible damage point
-        (each individual hail strike on shingles AND on metal, each crack, missing shingle,
-        blister, granule-loss patch, wind crease, flashing dent, gutter dent, etc.) so we
-        can overlay circles on the photo. Coordinates MUST be normalized 0-1 (x from left,
-        y from top) relative to the image. Radius is normalized 0-1 (relative to min image dimension).
-        Add this top-level field to the JSON:
-        "damage_markers": [
-          {
-            "type": "hail_strike|crack|granule_loss|missing_shingle|wind_crease|blister|flashing|algae|other",
-            "surface": "shingle|metal|other",
-            "x": 0.0-1.0,
-            "y": 0.0-1.0,
-            "radius": 0.0-1.0,
-            "severity": "minor|moderate|severe",
-            "note": "<short evidence>"
-          }
-        ]
-        Mark EVERY visible hail strike INDIVIDUALLY — do not group them. If a vent has 4
-        dings and the field has 11 strikes, return 15 markers (4 with surface="metal",
-        11 with surface="shingle"). If none, return [].
+        Coordinates MUST be normalized 0-1 (x from left, y from top) relative to the image.
+        Radius is normalized 0-1 (relative to min image dimension).
+
+        Mark EVERY visible hail strike INDIVIDUALLY — do not group them.
+        If the image shows NO damage, return "damage_markers": [] (empty). Do NOT fabricate markers.
         """
 
         let body: [String: Any] = [
@@ -139,38 +163,76 @@ enum GeminiAnalysisService {
             ]],
             "generationConfig": [
                 "responseMimeType": "application/json",
-                "temperature": 0.2
+                "temperature": 0.1,
+                "topP": 0.95
             ]
         ]
 
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.timeoutInterval = 60
         req.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
         do {
-            let (data, _) = try await URLSession.shared.data(for: req)
+            let (data, response) = try await URLSession.shared.data(for: req)
+            if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+                let bodyStr = String(data: data, encoding: .utf8)?.prefix(500) ?? ""
+                print("[Gemini] HTTP \(http.statusCode): \(bodyStr)")
+                return AnalysisResult(
+                    findings: failureFinding(reason: "AI service returned HTTP \(http.statusCode). Tap retry."),
+                    markers: [],
+                    failed: true
+                )
+            }
             if let parsed = parseResponse(data) {
                 return parsed
             }
+            let raw = String(data: data, encoding: .utf8)?.prefix(800) ?? ""
+            print("[Gemini] Could not parse response JSON. Raw: \(raw)")
+            return AnalysisResult(
+                findings: failureFinding(reason: "AI returned an unreadable response. Tap retry."),
+                markers: [],
+                failed: true
+            )
         } catch {
-            // fall through to mock
+            print("[Gemini] Request failed: \(error.localizedDescription)")
+            return AnalysisResult(
+                findings: failureFinding(reason: "Network error during AI analysis. Tap retry."),
+                markers: [],
+                failed: true
+            )
         }
-
-        try? await Task.sleep(for: .milliseconds(400))
-        return AnalysisResult(findings: mockFindings(for: slope),
-                              markers: InspectionMock.damageMarkers)
     }
+
+    // MARK: - Image preparation
+
+    private static func resizeForUpload(_ image: UIImage, maxEdge: CGFloat) -> UIImage {
+        let size = image.size
+        let longest = max(size.width, size.height)
+        guard longest > maxEdge else { return image }
+        let scale = maxEdge / longest
+        let newSize = CGSize(width: size.width * scale, height: size.height * scale)
+        let renderer = UIGraphicsImageRenderer(size: newSize)
+        return renderer.image { _ in
+            image.draw(in: CGRect(origin: .zero, size: newSize))
+        }
+    }
+
+    // MARK: - Parsing
 
     private static func parseResponse(_ data: Data) -> AnalysisResult? {
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let candidates = root["candidates"] as? [[String: Any]],
               let content = candidates.first?["content"] as? [String: Any],
               let parts = content["parts"] as? [[String: Any]],
-              let text = parts.first?["text"] as? String,
-              let jsonData = text.data(using: .utf8),
-              let payload = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
-              let raw = payload["findings"] as? [[String: Any]] else {
+              let text = parts.first?["text"] as? String else {
+            return nil
+        }
+
+        let cleaned = stripCodeFences(text)
+        guard let jsonData = cleaned.data(using: .utf8),
+              let payload = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else {
             return nil
         }
 
@@ -179,8 +241,10 @@ enum GeminiAnalysisService {
            let typeFinding = shingleTypeFinding(from: typeDict) {
             results.append(typeFinding)
         }
-        for dict in raw {
-            if let finding = findingFromDict(dict) { results.append(finding) }
+        if let raw = payload["findings"] as? [[String: Any]] {
+            for dict in raw {
+                if let finding = findingFromDict(dict) { results.append(finding) }
+            }
         }
 
         var markers: [DamageMarker] = []
@@ -189,7 +253,23 @@ enum GeminiAnalysisService {
                 if let m = markerFromDict(dict) { markers.append(m) }
             }
         }
-        return AnalysisResult(findings: results, markers: markers)
+        return AnalysisResult(findings: results, markers: markers, failed: false)
+    }
+
+    /// Strip ```json ... ``` or ``` ... ``` fences if Gemini wraps despite responseMimeType.
+    private static func stripCodeFences(_ text: String) -> String {
+        var s = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if s.hasPrefix("```") {
+            // remove first fence line (``` or ```json)
+            if let nl = s.firstIndex(of: "\n") {
+                s = String(s[s.index(after: nl)...])
+            }
+            if s.hasSuffix("```") {
+                s = String(s.dropLast(3))
+            }
+            s = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return s
     }
 
     private static func markerFromDict(_ dict: [String: Any]) -> DamageMarker? {
@@ -276,9 +356,24 @@ enum GeminiAnalysisService {
         }
     }
 
-    /// Mock findings used when no API key is set or call fails.
+    /// Surfaced to the user when the AI call fails. We deliberately do NOT return
+    /// fake mock damage markers here — that was masking real failures and painting
+    /// fake circles on real photos.
+    private static func failureFinding(reason: String) -> [InspectionFinding] {
+        [InspectionFinding(
+            label: "ai_unavailable",
+            display: "Analysis Unavailable",
+            value: reason,
+            confidence: 0,
+            icon: "exclamationmark.triangle.fill",
+            tint: Theme.amber,
+            detected: false,
+            severity: .none
+        )]
+    }
+
+    /// Mock findings used ONLY when no API key is set (dev / demo mode).
     private static func mockFindings(for slope: SlopeType) -> [InspectionFinding] {
-        // Reuse existing curated mock list; tweak severity slightly per slope.
         let mockType = InspectionFinding(
             label: "shingle_type",
             display: "Shingle Type",
