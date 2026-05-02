@@ -2,6 +2,7 @@ import SwiftUI
 
 struct CustomerProfileView: View {
     @Environment(CustomerStore.self) private var store
+    @Environment(TrainingProgressStore.self) private var trainingProgress
     @Environment(\.dismiss) private var dismiss
 
     let customerID: UUID
@@ -13,6 +14,8 @@ struct CustomerProfileView: View {
     @State private var isEditing = false
     @State private var draft: Customer?
     @State private var showHomeownerShare = false
+    @State private var showCoach = false
+    @State private var coachTipLesson: Lesson? = nil
 
     private var customer: Customer {
         store.customers.first { $0.id == customerID }
@@ -24,6 +27,8 @@ struct CustomerProfileView: View {
             VStack(spacing: 14) {
                 header
                 shareHomeownerButton
+                practiceCoachButton
+                coachTipCard
                 stagePipeline
                 PropertyStormHistoryCard(customer: customer)
                 contactCard
@@ -73,6 +78,15 @@ struct CustomerProfileView: View {
             HomeownerShareSheet(customer: customer)
                 .presentationDetents([.large])
                 .presentationDragIndicator(.hidden)
+        }
+        .sheet(isPresented: $showCoach) {
+            @Bindable var bindable = trainingProgress
+            RolePlayCoachView(progress: bindable,
+                              customerContext: customerCoachContext)
+        }
+        .sheet(item: $coachTipLesson) { lesson in
+            @Bindable var bindable = trainingProgress
+            LessonDetailView(lesson: lesson, progress: bindable)
         }
         .fullScreenCover(item: $previewPhoto) { photo in
             PhotoDamageOverlayView(
@@ -171,6 +185,138 @@ struct CustomerProfileView: View {
             .shadow(color: Theme.ember.opacity(0.35), radius: 14, y: 8)
         }
         .buttonStyle(.plain)
+    }
+
+    // MARK: Practice Coach Button
+
+    private var practiceCoachButton: some View {
+        let sessions = trainingProgress.customerCoachSessions[customerID] ?? 0
+        let lastScore = trainingProgress.customerCoachLastScore[customerID]
+        return Button { showCoach = true } label: {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(.white.opacity(0.22))
+                    Image(systemName: "mic.and.signal.meter.fill")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(.white)
+                }
+                .frame(width: 38, height: 38)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Practice this approach")
+                        .font(.system(size: 14, weight: .heavy))
+                        .foregroundStyle(.white)
+                    Text(practiceSubtitle(sessions: sessions, lastScore: lastScore))
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.85))
+                        .lineLimit(1)
+                }
+                Spacer()
+                if let score = lastScore {
+                    Text("\(score)")
+                        .font(.system(size: 13, weight: .heavy))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 10).padding(.vertical, 5)
+                        .background(.white.opacity(0.22), in: .capsule)
+                } else {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(.white)
+                }
+            }
+            .padding(14)
+            .background(
+                LinearGradient(colors: [Theme.sky, Color(red: 0.12, green: 0.36, blue: 0.78)],
+                               startPoint: .topLeading, endPoint: .bottomTrailing),
+                in: .rect(cornerRadius: 18)
+            )
+            .shadow(color: Theme.sky.opacity(0.35), radius: 14, y: 8)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func practiceSubtitle(sessions: Int, lastScore: Int?) -> String {
+        if sessions == 0 {
+            return "Role-play this exact pitch with AI coach"
+        }
+        if let score = lastScore {
+            return "\(sessions) rep\(sessions == 1 ? "" : "s") · last score \(score)"
+        }
+        return "\(sessions) practice rep\(sessions == 1 ? "" : "s") logged"
+    }
+
+    // MARK: Coach Tip Card
+
+    private var coachTipCard: some View {
+        let lessonID = customer.stage.coachLessonID
+        let lesson = TrainingCurriculum.lessons.first { $0.id == lessonID }
+        return Button {
+            coachTipLesson = lesson
+        } label: {
+            HStack(alignment: .top, spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(customer.stage.color.opacity(0.16))
+                    Image(systemName: "lightbulb.fill")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(customer.stage.color)
+                }
+                .frame(width: 38, height: 38)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Text("COACH TIP")
+                            .font(.system(size: 9, weight: .heavy))
+                            .tracking(0.6)
+                            .foregroundStyle(customer.stage.color)
+                        Text("· \(customer.stage.shortLabel)")
+                            .font(.system(size: 9, weight: .heavy))
+                            .tracking(0.4)
+                            .foregroundStyle(Theme.inkFaint)
+                    }
+                    Text(customer.stage.coachTip)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Theme.ink)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let lesson {
+                        HStack(spacing: 4) {
+                            Text("Open lesson: \(lesson.title)")
+                                .font(.system(size: 11, weight: .heavy))
+                                .foregroundStyle(customer.stage.color)
+                                .lineLimit(1)
+                            Image(systemName: "arrow.right")
+                                .font(.system(size: 9, weight: .heavy))
+                                .foregroundStyle(customer.stage.color)
+                        }
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Theme.card, in: .rect(cornerRadius: 18))
+            .overlay(RoundedRectangle(cornerRadius: 18)
+                .stroke(customer.stage.color.opacity(0.30), lineWidth: 0.8))
+        }
+        .buttonStyle(.plain)
+        .disabled(lesson == nil)
+    }
+
+    // MARK: Customer coach context builder
+
+    private var customerCoachContext: CustomerCoachContext {
+        // Pull plain-text snippets from the most recent notes — these are
+        // the rep's own captured objections and follow-ups.
+        let recentNotes = customer.notes.prefix(3).map(\.text)
+        return CustomerCoachContext(
+            customerID: customer.id,
+            ownerName: customer.ownerName,
+            address: customer.address,
+            stage: customer.stage,
+            insuranceCompany: customer.insuranceCompany,
+            recentObjections: recentNotes,
+            lastInteraction: customer.notes.first.map { Self.dateFmt.string(from: $0.date) }
+        )
     }
 
     // MARK: Pipeline

@@ -27,7 +27,9 @@ enum TrainingCoachService {
 
     // MARK: - Role-Play Coach
 
-    static func coachPitch(_ pitch: String, scenario: String) async -> CoachFeedback {
+    static func coachPitch(_ pitch: String,
+                           scenario: String,
+                           customerBrief: String? = nil) async -> CoachFeedback {
         let key = apiKey
         let trimmed = pitch.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty, key != "GEMINI_API_KEY",
@@ -37,10 +39,14 @@ enum TrainingCoachService {
             return mockCoachFeedback(for: trimmed)
         }
 
+        let contextBlock = (customerBrief?.isEmpty == false)
+            ? "\nREAL CUSTOMER CONTEXT (tailor the rewrite to this homeowner specifically):\n\(customerBrief!)\n"
+            : ""
+
         let prompt = """
         You are an elite door-to-door sales coach for storm-restoration roofing reps.
         The rep is practicing this scenario: "\(scenario)".
-
+        \(contextBlock)
         REP'S PITCH:
         \"\"\"
         \(trimmed)

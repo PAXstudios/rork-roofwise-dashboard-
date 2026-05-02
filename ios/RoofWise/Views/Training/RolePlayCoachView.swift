@@ -2,6 +2,9 @@ import SwiftUI
 
 struct RolePlayCoachView: View {
     @Bindable var progress: TrainingProgressStore
+    /// When supplied, the coach is locked to this customer's scenario
+    /// and uses their real context (objections, stage, insurance) in prompts.
+    var customerContext: CustomerCoachContext? = nil
     @Environment(\.dismiss) private var dismiss
 
     @State private var pitch: String = ""
@@ -30,7 +33,11 @@ struct RolePlayCoachView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     intro
-                    scenarioPicker
+                    if let ctx = customerContext {
+                        customerScenarioCard(ctx)
+                    } else {
+                        scenarioPicker
+                    }
                     pitchEditor
                     runButton
 
@@ -291,18 +298,120 @@ struct RolePlayCoachView: View {
 
     // MARK: - Logic
 
+    private var resolvedScenarioLabel: String {
+        if let ctx = customerContext { return ctx.scenarioTitle }
+        return scenario.rawValue
+    }
+
+    private var resolvedCategory: LessonCategory {
+        if let ctx = customerContext {
+            switch ctx.stage {
+            case .knocked: return .objections
+            case .interested, .inspectionComplete, .jobComplete: return .homeowner
+            case .inspectionScheduled: return .hailDamage
+            case .claimFiled, .approved, .materialOrdered: return .claims
+            case .adjusterMeeting: return .adjusters
+            case .paid: return .objections
+            }
+        }
+        switch scenario {
+        case .knockColdStorm: return .objections
+        case .followupAdjuster: return .adjusters
+        case .objectionRoofer: return .objections
+        case .closeAfterInspection: return .homeowner
+        }
+    }
+
     private func coach() async {
         isCoaching = true
         feedback = nil
-        let result = await TrainingCoachService.coachPitch(pitch, scenario: scenario.rawValue)
+        let result = await TrainingCoachService.coachPitch(
+            pitch,
+            scenario: resolvedScenarioLabel,
+            customerBrief: customerContext?.promptBrief
+        )
         await MainActor.run {
             withAnimation(.spring(duration: 0.4)) {
                 feedback = result
             }
-            progress.lastCoachScore = result.overallScore
-            progress.coachSessionsCompleted += 1
+            progress.recordCoachSession(
+                score: result.overallScore,
+                category: resolvedCategory,
+                customerID: customerContext?.customerID
+            )
             isCoaching = false
         }
+    }
+
+    // MARK: - Customer-aware scenario card
+
+    private func customerScenarioCard(_ ctx: CustomerCoachContext) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "person.crop.circle.badge.checkmark")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(ctx.stage.color)
+                Text("Practicing with")
+                    .font(.system(size: 11, weight: .heavy))
+                    .tracking(0.5)
+                    .foregroundStyle(Theme.inkSoft)
+                    .textCase(.uppercase)
+                Spacer()
+                Text(ctx.stage.shortLabel.uppercased())
+                    .font(.system(size: 9, weight: .heavy))
+                    .tracking(0.5)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(ctx.stage.color, in: .capsule)
+            }
+            Text(ctx.ownerName)
+                .font(.system(size: 17, weight: .heavy))
+                .foregroundStyle(Theme.ink)
+            Text(ctx.address)
+                .font(.system(size: 12))
+                .foregroundStyle(Theme.inkSoft)
+            if !ctx.insuranceCompany.isEmpty {
+                contextChip(icon: "shield.lefthalf.filled",
+                            label: "Carrier: \(ctx.insuranceCompany)")
+            }
+            if !ctx.recentObjections.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Their objections / notes")
+                        .font(.system(size: 10, weight: .heavy))
+                        .tracking(0.4)
+                        .foregroundStyle(Theme.inkSoft)
+                        .textCase(.uppercase)
+                    ForEach(ctx.recentObjections.prefix(3), id: \.self) { line in
+                        HStack(alignment: .top, spacing: 6) {
+                            Image(systemName: "quote.bubble.fill")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(Theme.amber)
+                                .padding(.top, 3)
+                            Text(line)
+                                .font(.system(size: 12))
+                                .foregroundStyle(Theme.ink)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(10)
+                .background(Theme.amberSoft.opacity(0.5), in: .rect(cornerRadius: 12))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(Theme.card, in: .rect(cornerRadius: 18))
+        .overlay(RoundedRectangle(cornerRadius: 18).stroke(ctx.stage.color.opacity(0.35), lineWidth: 0.8))
+    }
+
+    private func contextChip(icon: String, label: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon).font(.system(size: 10, weight: .bold))
+            Text(label).font(.system(size: 11, weight: .semibold))
+        }
+        .foregroundStyle(Theme.inkSoft)
+        .padding(.horizontal, 9).padding(.vertical, 5)
+        .background(Theme.canvas, in: .capsule)
     }
 
     private func scoreLabel(_ score: Int) -> String {

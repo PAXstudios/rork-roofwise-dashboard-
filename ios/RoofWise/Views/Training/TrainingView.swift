@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct TrainingView: View {
-    @State private var progress = TrainingProgressStore()
+    @Environment(TrainingProgressStore.self) private var progress
     @State private var selectedLesson: Lesson? = nil
     @State private var showCoach = false
     @State private var showExplainer = false
@@ -282,4 +282,4 @@ struct TrainingView: View {
     }
 }
 
-#Preview { TrainingView() }
+#Preview { TrainingView().environment(TrainingProgressStore()) }

@@ -28,6 +28,7 @@ struct RootView: View {
     @State private var showInspection = false
     @State private var showMileage = false
     @State private var customerStore = CustomerStore()
+    @State private var trainingProgress = TrainingProgressStore()
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -35,7 +36,8 @@ struct RootView: View {
 
             Group {
                 switch tab {
-                case .home: DashboardView(onQuickInspection: { showInspection = true })
+                case .home: DashboardView(onQuickInspection: { showInspection = true },
+                                         onOpenTraining: { tab = .training })
                 case .leads: LeadsView()
                 case .map: MapHubView()
                 case .plan: PlanView()
@@ -69,6 +71,7 @@ struct RootView: View {
                 .presentationDragIndicator(.visible)
         }
         .environment(customerStore)
+        .environment(trainingProgress)
     }
 }
 

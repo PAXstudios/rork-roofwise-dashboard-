@@ -327,19 +327,30 @@ enum TrainingCurriculum {
 @Observable
 final class TrainingProgressStore {
     var completedLessonIDs: Set<String> = []
+    var completedAt: [String: Date] = [:]
     var lastCoachScore: Int? = nil
     var coachSessionsCompleted: Int = 0
     var explainerGenerationsCount: Int = 0
 
+    /// Rolling average score per category (0-100). Used to surface the rep's
+    /// weakest skill area for Today's Lesson recommendations.
+    var categoryScores: [LessonCategory: Int] = [:]
+    /// Per-customer coaching activity for inline Customer Profile reps.
+    var customerCoachSessions: [UUID: Int] = [:]
+    var customerCoachLastScore: [UUID: Int] = [:]
+
     func markComplete(_ id: String) {
         completedLessonIDs.insert(id)
+        completedAt[id] = Date()
     }
 
     func toggle(_ id: String) {
         if completedLessonIDs.contains(id) {
             completedLessonIDs.remove(id)
+            completedAt[id] = nil
         } else {
             completedLessonIDs.insert(id)
+            completedAt[id] = Date()
         }
     }
 
@@ -347,10 +358,149 @@ final class TrainingProgressStore {
         completedLessonIDs.contains(id)
     }
 
+    /// True if completed within the last 7 days.
+    func recentlyCompleted(_ id: String, withinDays days: Int = 7) -> Bool {
+        guard let date = completedAt[id] else { return false }
+        let cutoff = Date().addingTimeInterval(-Double(days) * 86_400)
+        return date >= cutoff
+    }
+
     var totalLessons: Int { TrainingCurriculum.lessons.count }
     var completedCount: Int { completedLessonIDs.count }
     var progressFraction: Double {
         guard totalLessons > 0 else { return 0 }
         return Double(completedCount) / Double(totalLessons)
+    }
+
+    // MARK: Coach session tracking
+
+    /// Records a coach session globally. Optionally tags it to a category
+    /// (so we can surface the weakest area) and a customer (for the inline
+    /// Practice flow on the Customer Profile).
+    func recordCoachSession(score: Int,
+                            category: LessonCategory? = nil,
+                            customerID: UUID? = nil) {
+        lastCoachScore = score
+        coachSessionsCompleted += 1
+        if let category {
+            // Exponential moving average — fresh scores weigh slightly more.
+            if let existing = categoryScores[category] {
+                categoryScores[category] = Int(Double(existing) * 0.6 + Double(score) * 0.4)
+            } else {
+                categoryScores[category] = score
+            }
+        }
+        if let customerID {
+            customerCoachSessions[customerID, default: 0] += 1
+            customerCoachLastScore[customerID] = score
+        }
+    }
+
+    /// Lowest-scored category (or `.objections` as the default starting point
+    /// when the rep hasn't logged any sessions yet).
+    var weakestCategory: LessonCategory {
+        if let weakest = categoryScores.min(by: { $0.value < $1.value })?.key {
+            return weakest
+        }
+        return .objections
+    }
+
+    /// Picks today's recommended lesson — biased toward the weakest category,
+    /// skipping any lesson completed within the last 7 days. Rotates daily.
+    func recommendedDailyLesson(on date: Date = Date()) -> Lesson? {
+        let pool = TrainingCurriculum.lessons.filter { !recentlyCompleted($0.id) }
+        guard !pool.isEmpty else { return nil }
+
+        let weak = weakestCategory
+        let weakPool = pool.filter { $0.category == weak }
+        let candidates = weakPool.isEmpty ? pool : weakPool
+
+        // Stable per-day rotation
+        let dayKey = Calendar.current.ordinality(of: .day, in: .era, for: date) ?? 0
+        let idx = abs(dayKey) % candidates.count
+        return candidates[idx]
+    }
+}
+
+// MARK: - Stage → Coaching Hint
+
+extension JobPipelineStage {
+    /// The most relevant lesson to surface as an inline Coach Tip on the
+    /// Customer Profile based on where the customer sits in the pipeline.
+    var coachLessonID: String {
+        switch self {
+        case .knocked: return "objections-101"
+        case .interested: return "homeowner-101"
+        case .inspectionScheduled: return "hail-101"
+        case .inspectionComplete: return "homeowner-101"
+        case .claimFiled: return "claims-101"
+        case .adjusterMeeting: return "adjuster-101"
+        case .approved: return "claims-101"
+        case .materialOrdered: return "claims-101"
+        case .jobComplete: return "homeowner-101"
+        case .paid: return "objections-101"
+        }
+    }
+
+    /// One-line tactical tip framed for this stage.
+    var coachTip: String {
+        switch self {
+        case .knocked:
+            return "Lead with a pattern interrupt — comment on something specific to the home, not the storm."
+        case .interested:
+            return "Translate findings into homeowner-speak. Use analogies (bruise on an apple, broken Ziploc seal)."
+        case .inspectionScheduled:
+            return "Walk in with a checklist. Front, back, sides, ridge, valleys, soft metal — miss nothing."
+        case .inspectionComplete:
+            return "Show photos, trace damage with your finger, connect each finding to a real consequence."
+        case .claimFiled:
+            return "Confirm date of loss matches NOAA storm reports before the adjuster shows up."
+        case .adjusterMeeting:
+            return "Be the adjuster's helper, not adversary. Speak HAAG language: 'mat fracture,' 'displaced granules.'"
+        case .approved:
+            return "Two checks coming: ACV upfront, RCV after build. File supplements for code upgrades early."
+        case .materialOrdered:
+            return "Reconfirm color/profile match. Discontinued shingles unlock full slope replacement supplements."
+        case .jobComplete:
+            return "Submit final invoice + photos to release recoverable depreciation. Don't leave money on the roof."
+        case .paid:
+            return "Ask for the referral now — happiest moment in the cycle. Two neighbors is the standard ask."
+        }
+    }
+}
+
+// MARK: - Customer Coaching Context
+
+/// Snapshot of a customer's situation, passed to the Role-Play Coach so the
+/// rep can practice the exact pitch they'll deliver.
+struct CustomerCoachContext: Equatable {
+    let customerID: UUID
+    let ownerName: String
+    let address: String
+    let stage: JobPipelineStage
+    let insuranceCompany: String
+    let recentObjections: [String]
+    let lastInteraction: String?
+
+    var scenarioTitle: String {
+        "\(ownerName) · \(stage.shortLabel)"
+    }
+
+    /// A scenario brief written for the AI coach — captures the real context
+    /// so feedback aligns with the rep's actual next conversation.
+    var promptBrief: String {
+        var parts: [String] = []
+        parts.append("Customer: \(ownerName) at \(address).")
+        parts.append("Pipeline stage: \(stage.rawValue).")
+        if !insuranceCompany.isEmpty {
+            parts.append("Insurance carrier: \(insuranceCompany).")
+        }
+        if !recentObjections.isEmpty {
+            parts.append("Known objections / notes: " + recentObjections.joined(separator: " | "))
+        }
+        if let last = lastInteraction, !last.isEmpty {
+            parts.append("Last interaction: \(last)")
+        }
+        return parts.joined(separator: " ")
     }
 }
