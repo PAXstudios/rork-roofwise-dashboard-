@@ -13,6 +13,7 @@ enum InspectionStep {
 
 struct QuickInspectionView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(CustomerStore.self) private var customerStore
     @State private var step: InspectionStep = .capture
     @State private var scanProgress: CGFloat = 0
     @State private var detectedHits: [DetectedHit] = []
@@ -125,6 +126,9 @@ struct QuickInspectionView: View {
             }
             if !imported.isEmpty {
                 let g = UIImpactFeedbackGenerator(style: .medium); g.impactOccurred()
+                if let cid = customerStore.activeCustomerID {
+                    customerStore.appendPhotos(imported, to: cid)
+                }
             }
             libraryPickerItems = []
             isImportingLibrary = false
@@ -735,6 +739,9 @@ struct QuickInspectionView: View {
             withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
                 capturedPhotos.append(captured)
             }
+            if let cid = customerStore.activeCustomerID {
+                customerStore.appendPhotos([captured], to: cid)
+            }
         }
     }
 
@@ -815,6 +822,12 @@ struct QuickInspectionView: View {
 
             lastFindings = await analyzeTask.value
 
+            if let cid = customerStore.activeCustomerID {
+                customerStore.updateAnalysis(for: cid,
+                                             photos: capturedPhotos,
+                                             findings: lastFindings)
+            }
+
             let success = UINotificationFeedbackGenerator()
             success.notificationOccurred(.success)
             withAnimation(.spring(response: 0.5, dampingFraction: 0.85)) {
@@ -846,7 +859,11 @@ struct QuickInspectionView: View {
             copy.analyzed = true
             photosForGrading = [copy]
         }
-        claimPacket = HaagGrader.grade(photos: photosForGrading)
+        let packet = HaagGrader.grade(photos: photosForGrading)
+        claimPacket = packet
+        if let cid = customerStore.activeCustomerID {
+            customerStore.attachClaim(for: cid, packet: packet)
+        }
     }
 
     // MARK: Scanning

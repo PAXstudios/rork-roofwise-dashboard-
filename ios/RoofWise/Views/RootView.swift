@@ -25,6 +25,7 @@ struct RootView: View {
     @State private var showQuickAction = false
     @State private var showInspection = false
     @State private var showMileage = false
+    @State private var customerStore = CustomerStore()
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -64,6 +65,7 @@ struct RootView: View {
             MileageTrackerView()
                 .presentationDragIndicator(.visible)
         }
+        .environment(customerStore)
     }
 }
 

@@ -1,92 +1,196 @@
 import SwiftUI
 
 struct LeadsView: View {
-    @State private var filter: PipelineStage? = nil
+    @Environment(CustomerStore.self) private var store
+    @State private var filter: JobPipelineStage? = nil
+    @State private var search: String = ""
+    @State private var showNewCustomer = false
 
-    private let leads: [(name: String, address: String, stage: PipelineStage, value: String, score: Int, storm: Bool)] = [
-        ("Smith Residence", "734 Cedar Hollow Rd", .proposal, "$28,400", 92, true),
-        ("Patel Custom Build", "5501 Stonebriar Pkwy", .contacted, "$54,200", 84, true),
-        ("Hawthorn Apts", "210 Hawthorn Blvd", .new, "$112k", 78, true),
-        ("J. Whitman", "12 Ridge Vista", .proposal, "$18,900", 71, false),
-        ("Oak Valley HOA", "Oak Valley Block 12", .contacted, "$240k", 68, true),
-        ("M. Castellanos", "88 Maple Cove", .new, "$22,500", 60, false),
-        ("R. Greene", "1247 Oakridge Ln", .new, "$31,800", 88, true),
-        ("D. Park", "920 Bluebonnet Way", .won, "$36,400", 99, false)
-    ]
-
-    private var filtered: [(name: String, address: String, stage: PipelineStage, value: String, score: Int, storm: Bool)] {
-        guard let filter else { return leads }
-        return leads.filter { $0.stage == filter }
+    private var filtered: [Customer] {
+        store.customers.filter { c in
+            (filter == nil || c.stage == filter!) &&
+            (search.isEmpty ||
+             c.ownerName.localizedStandardContains(search) ||
+             c.address.localizedStandardContains(search) ||
+             c.policyNumber.localizedStandardContains(search))
+        }
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                // Header
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Leads")
-                        .font(.system(size: 28, weight: .heavy))
-                        .foregroundStyle(Theme.ink)
-                    Text("47 active · 18 storm-tagged")
-                        .font(.system(size: 13))
-                        .foregroundStyle(Theme.inkFaint)
-                }
-                .padding(.horizontal, 20)
-                .padding(.top, 8)
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    headerBar
 
-                // Search
-                HStack(spacing: 10) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "magnifyingglass")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(Theme.inkFaint)
-                        Text("Search address, owner, claim #")
-                            .font(.system(size: 13))
-                            .foregroundStyle(Theme.inkFaint)
-                        Spacer()
-                    }
-                    .padding(12)
-                    .background(Theme.card, in: .rect(cornerRadius: 14))
-                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.hairline, lineWidth: 0.6))
+                    searchBar
 
-                    Button {} label: {
-                        Image(systemName: "slider.horizontal.3")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundStyle(.white)
-                            .frame(width: 42, height: 42)
-                            .background(Theme.ink, in: .rect(cornerRadius: 14))
-                    }
-                }
-                .padding(.horizontal, 20)
+                    stageFilter
 
-                // Stage filter
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        FilterChip(label: "All", active: filter == nil, color: Theme.ink) { filter = nil }
-                        ForEach(PipelineStage.allCases) { stage in
-                            FilterChip(label: stage.rawValue, active: filter == stage, color: stage.color) {
-                                filter = stage
+                    pipelineSummary
+
+                    // Customer list
+                    VStack(spacing: 10) {
+                        ForEach(filtered) { customer in
+                            NavigationLink(value: customer.id) {
+                                CustomerCard(customer: customer,
+                                             isActive: customer.id == store.activeCustomerID)
                             }
+                            .buttonStyle(.plain)
+                            .simultaneousGesture(TapGesture().onEnded {
+                                store.setActive(customer.id)
+                            })
+                        }
+                        if filtered.isEmpty {
+                            VStack(spacing: 8) {
+                                Image(systemName: "person.crop.circle.badge.questionmark")
+                                    .font(.system(size: 28))
+                                    .foregroundStyle(Theme.inkFaint)
+                                Text("No customers match")
+                                    .font(.system(size: 13, weight: .heavy))
+                                    .foregroundStyle(Theme.ink)
+                                Text("Adjust filters or add a new customer.")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(Theme.inkFaint)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 30)
                         }
                     }
                     .padding(.horizontal, 20)
                 }
+                .padding(.bottom, 40)
+            }
+            .background(Theme.canvas)
+            .navigationDestination(for: UUID.self) { id in
+                CustomerProfileView(customerID: id)
+            }
+            .sheet(isPresented: $showNewCustomer) {
+                NewCustomerSheet { newCustomer in
+                    store.add(newCustomer, makeActive: true)
+                    showNewCustomer = false
+                } onCancel: {
+                    showNewCustomer = false
+                }
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+            }
+        }
+    }
 
-                // Lead list
-                VStack(spacing: 10) {
-                    ForEach(Array(filtered.enumerated()), id: \.offset) { _, lead in
-                        LeadCard(name: lead.name, address: lead.address,
-                                 stage: lead.stage, value: lead.value,
-                                 score: lead.score, storm: lead.storm)
+    // MARK: Header
+
+    private var headerBar: some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Leads")
+                    .font(.system(size: 28, weight: .heavy))
+                    .foregroundStyle(Theme.ink)
+                let stormCount = store.customers.filter(\.stormTagged).count
+                Text("\(store.customers.count) active · \(stormCount) storm-tagged")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.inkFaint)
+            }
+            Spacer()
+            Button { showNewCustomer = true } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "plus")
+                        .font(.system(size: 12, weight: .heavy))
+                    Text("New")
+                        .font(.system(size: 13, weight: .heavy))
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 14).padding(.vertical, 10)
+                .background(LinearGradient(colors: [Theme.ember, Theme.emberDeep],
+                                           startPoint: .topLeading, endPoint: .bottomTrailing),
+                            in: .capsule)
+                .shadow(color: Theme.ember.opacity(0.35), radius: 10, y: 5)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 8)
+    }
+
+    private var searchBar: some View {
+        HStack(spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.inkFaint)
+                TextField("Search owner, address, policy #", text: $search)
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.ink)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.words)
+                if !search.isEmpty {
+                    Button { search = "" } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 13))
+                            .foregroundStyle(Theme.inkFaint)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(12)
+            .background(Theme.card, in: .rect(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.hairline, lineWidth: 0.6))
+        }
+        .padding(.horizontal, 20)
+    }
+
+    private var stageFilter: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                FilterChip(label: "All", active: filter == nil, color: Theme.ink) { filter = nil }
+                ForEach(JobPipelineStage.allCases) { stage in
+                    let count = store.customers.filter { $0.stage == stage }.count
+                    FilterChip(label: "\(stage.shortLabel) · \(count)",
+                               active: filter == stage,
+                               color: stage.color) { filter = stage }
+                }
+            }
+            .padding(.horizontal, 20)
+        }
+    }
+
+    private var pipelineSummary: some View {
+        let stages = JobPipelineStage.allCases
+        let counts = stages.map { stage in
+            store.customers.filter { $0.stage == stage }.count
+        }
+        let total = max(counts.reduce(0, +), 1)
+        return VStack(alignment: .leading, spacing: 8) {
+            Text("PIPELINE")
+                .font(.system(size: 10, weight: .heavy))
+                .tracking(0.6)
+                .foregroundStyle(Theme.inkFaint)
+            GeometryReader { geo in
+                HStack(spacing: 2) {
+                    ForEach(stages.indices, id: \.self) { i in
+                        let stage = stages[i]
+                        let count = counts[i]
+                        let width = geo.size.width * CGFloat(count) / CGFloat(total)
+                        if count > 0 {
+                            Rectangle()
+                                .fill(stage.color)
+                                .frame(width: max(width, 12))
+                                .overlay(
+                                    Text("\(count)")
+                                        .font(.system(size: 9, weight: .heavy))
+                                        .foregroundStyle(.white)
+                                )
+                        }
                     }
                 }
-                .padding(.horizontal, 20)
+                .clipShape(.rect(cornerRadius: 6))
             }
-            .padding(.bottom, 40)
+            .frame(height: 14)
         }
-        .background(Theme.canvas)
+        .padding(.horizontal, 20)
     }
 }
+
+// MARK: - Filter Chip
 
 private struct FilterChip: View {
     let label: String
@@ -107,77 +211,210 @@ private struct FilterChip: View {
     }
 }
 
-private struct LeadCard: View {
-    let name: String
-    let address: String
-    let stage: PipelineStage
-    let value: String
-    let score: Int
-    let storm: Bool
+// MARK: - Customer Card
+
+private struct CustomerCard: View {
+    let customer: Customer
+    let isActive: Bool
 
     var body: some View {
         HStack(spacing: 14) {
             ZStack {
-                Circle().fill(stage.color.opacity(0.14))
-                Text(initials)
+                Circle().fill(customer.stage.color.opacity(0.14))
+                Text(customer.initials)
                     .font(.system(size: 14, weight: .heavy))
-                    .foregroundStyle(stage.color)
+                    .foregroundStyle(customer.stage.color)
             }
             .frame(width: 44, height: 44)
+            .overlay(alignment: .bottomTrailing) {
+                if isActive {
+                    Circle().fill(Theme.ember)
+                        .frame(width: 12, height: 12)
+                        .overlay(Circle().stroke(Theme.card, lineWidth: 2))
+                        .offset(x: 2, y: 2)
+                }
+            }
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
-                    Text(name)
+                    Text(customer.ownerName)
                         .font(.system(size: 14, weight: .bold))
                         .foregroundStyle(Theme.ink)
-                    if storm {
+                        .lineLimit(1)
+                    if customer.stormTagged {
                         Image(systemName: "bolt.fill")
                             .font(.system(size: 9, weight: .bold))
                             .foregroundStyle(Theme.ember)
                     }
                 }
-                Text(address)
+                Text(customer.address)
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.inkFaint)
+                    .lineLimit(1)
                 HStack(spacing: 6) {
-                    Text(stage.rawValue.uppercased())
-                        .font(.system(size: 9, weight: .heavy))
-                        .tracking(0.4)
-                        .foregroundStyle(stage.color)
-                        .padding(.horizontal, 7).padding(.vertical, 3)
-                        .background(stage.color.opacity(0.12), in: .capsule)
-                    Text(value)
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Theme.ink)
+                    HStack(spacing: 4) {
+                        Image(systemName: customer.stage.icon)
+                            .font(.system(size: 8, weight: .bold))
+                        Text(customer.stage.shortLabel.uppercased())
+                            .font(.system(size: 9, weight: .heavy))
+                            .tracking(0.4)
+                    }
+                    .foregroundStyle(customer.stage.color)
+                    .padding(.horizontal, 7).padding(.vertical, 3)
+                    .background(customer.stage.color.opacity(0.12), in: .capsule)
+
+                    if !customer.estimatedValue.isEmpty {
+                        Text(customer.estimatedValue)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Theme.ink)
+                    }
                 }
             }
 
             Spacer()
 
             VStack(alignment: .trailing, spacing: 4) {
-                Text("\(score)")
-                    .font(.system(size: 16, weight: .heavy))
-                    .foregroundStyle(scoreColor)
-                Text("score")
-                    .font(.system(size: 9, weight: .semibold))
+                if !customer.photos.isEmpty {
+                    HStack(spacing: 3) {
+                        Image(systemName: "photo.fill")
+                            .font(.system(size: 9, weight: .bold))
+                        Text("\(customer.photos.count)")
+                            .font(.system(size: 11, weight: .heavy))
+                    }
+                    .foregroundStyle(Theme.inkSoft)
+                }
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(Theme.inkFaint)
             }
         }
         .padding(14)
         .background(Theme.card, in: .rect(cornerRadius: 18))
-        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Theme.hairline, lineWidth: 0.6))
+        .overlay(RoundedRectangle(cornerRadius: 18).stroke(
+            isActive ? Theme.ember.opacity(0.35) : Theme.hairline,
+            lineWidth: isActive ? 1.2 : 0.6))
         .shadow(color: Theme.ink.opacity(0.04), radius: 8, y: 3)
     }
+}
 
-    private var initials: String {
-        name.split(separator: " ").compactMap { $0.first }.prefix(2).map(String.init).joined()
+// MARK: - New Customer Sheet
+
+private struct NewCustomerSheet: View {
+    @State private var name = ""
+    @State private var address = ""
+    @State private var phone = ""
+    @State private var email = ""
+    @State private var insurance = ""
+    @State private var policy = ""
+    @State private var stage: JobPipelineStage = .knocked
+    @State private var stormTagged = false
+
+    let onSave: (Customer) -> Void
+    let onCancel: () -> Void
+
+    private var canSave: Bool {
+        !name.trimmingCharacters(in: .whitespaces).isEmpty &&
+        !address.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
-    private var scoreColor: Color {
-        switch score {
-        case 85...: return Theme.mint
-        case 70..<85: return Theme.amber
-        default: return Theme.inkSoft
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    field("Owner Name *", text: $name)
+                    field("Address *", text: $address)
+                    field("Phone", text: $phone, keyboard: .phonePad)
+                    field("Email", text: $email, keyboard: .emailAddress)
+                    field("Insurance Company", text: $insurance)
+                    field("Policy Number", text: $policy)
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Initial Stage")
+                            .font(.system(size: 11, weight: .heavy))
+                            .tracking(0.5)
+                            .foregroundStyle(Theme.inkFaint)
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(JobPipelineStage.allCases) { s in
+                                    Button { stage = s } label: {
+                                        HStack(spacing: 5) {
+                                            Image(systemName: s.icon)
+                                                .font(.system(size: 9, weight: .bold))
+                                            Text(s.shortLabel)
+                                                .font(.system(size: 11, weight: .heavy))
+                                        }
+                                        .foregroundStyle(stage == s ? .white : s.color)
+                                        .padding(.horizontal, 12).padding(.vertical, 8)
+                                        .background(stage == s ? s.color : s.color.opacity(0.12),
+                                                    in: .capsule)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }
+                        .contentMargins(.horizontal, 0)
+                    }
+
+                    Toggle(isOn: $stormTagged) {
+                        Label("Storm-tagged lead", systemImage: "bolt.fill")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Theme.ink)
+                    }
+                    .tint(Theme.ember)
+                    .padding(12)
+                    .background(Theme.card, in: .rect(cornerRadius: 12))
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.hairline, lineWidth: 0.6))
+                }
+                .padding(20)
+            }
+            .background(Theme.canvas)
+            .navigationTitle("New Customer")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel", action: onCancel)
+                        .foregroundStyle(Theme.inkSoft)
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        let c = Customer(
+                            ownerName: name,
+                            address: address,
+                            phone: phone,
+                            email: email,
+                            insuranceCompany: insurance,
+                            policyNumber: policy,
+                            stage: stage,
+                            stormTagged: stormTagged
+                        )
+                        onSave(c)
+                    } label: {
+                        Text("Save")
+                            .font(.system(size: 14, weight: .heavy))
+                            .foregroundStyle(canSave ? Theme.ember : Theme.inkFaint)
+                    }
+                    .disabled(!canSave)
+                }
+            }
+        }
+    }
+
+    private func field(_ label: String, text: Binding<String>,
+                       keyboard: UIKeyboardType = .default) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label)
+                .font(.system(size: 11, weight: .heavy))
+                .tracking(0.5)
+                .foregroundStyle(Theme.inkFaint)
+            TextField(label, text: text)
+                .keyboardType(keyboard)
+                .textInputAutocapitalization(keyboard == .emailAddress ? .never : .words)
+                .autocorrectionDisabled(keyboard == .emailAddress || keyboard == .phonePad)
+                .font(.system(size: 14))
+                .foregroundStyle(Theme.ink)
+                .padding(12)
+                .background(Theme.card, in: .rect(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.hairline, lineWidth: 0.6))
         }
     }
 }
