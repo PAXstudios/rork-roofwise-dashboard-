@@ -1,6 +1,9 @@
 import SwiftUI
 
 struct RecentJobsRow: View {
+    @Environment(CustomerStore.self) private var store
+    var onOpenCustomer: (UUID) -> Void = { _ in }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -28,7 +31,16 @@ struct RecentJobsRow: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 12) {
                     ForEach(MockData.recentJobs) { job in
-                        RecentJobCard(job: job)
+                        Button {
+                            let id = store.resolveCustomer(for: job)
+                            store.setActive(id)
+                            let g = UIImpactFeedbackGenerator(style: .soft)
+                            g.impactOccurred()
+                            onOpenCustomer(id)
+                        } label: {
+                            RecentJobCard(job: job)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
                 .padding(.horizontal, 20)

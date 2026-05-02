@@ -104,6 +104,37 @@ final class CustomerStore {
         }
     }
 
+    /// Find an existing customer matching the recent-job address (street prefix match),
+    /// or create a new lightweight customer from the recent job and return its id.
+    func resolveCustomer(for job: RecentJob) -> UUID {
+        let jobStreet = job.address.split(separator: "·").first.map { $0.trimmingCharacters(in: .whitespaces) } ?? job.address
+        if let match = customers.first(where: { c in
+            jobStreet.localizedCaseInsensitiveContains(c.address) ||
+            c.address.localizedCaseInsensitiveContains(jobStreet) ||
+            c.ownerName.localizedCaseInsensitiveContains(job.title) ||
+            job.title.localizedCaseInsensitiveContains(c.ownerName)
+        }) {
+            return match.id
+        }
+        let stage: JobPipelineStage = {
+            switch job.status {
+            case .done: return .paid
+            case .active: return .materialOrdered
+            case .scheduled: return .inspectionScheduled
+            case .awaiting: return .adjusterMeeting
+            }
+        }()
+        let new = Customer(
+            ownerName: job.title,
+            address: jobStreet,
+            stage: stage,
+            stormTagged: job.status == .awaiting,
+            estimatedValue: ""
+        )
+        customers.append(new)
+        return new.id
+    }
+
     func addNote(_ text: String, to id: UUID) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, let i = customers.firstIndex(where: { $0.id == id }) else { return }

@@ -4,24 +4,31 @@ struct DashboardView: View {
     var onQuickInspection: () -> Void = {}
     var onOpenTraining: () -> Void = {}
 
+    @State private var path: [UUID] = []
+
     var body: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            VStack(spacing: 22) {
-                DashboardHeader()
-                KPIStrip(onQuickInspection: onQuickInspection)
-                HomeCardsCarousel(onOpenTraining: onOpenTraining)
-                CoachingActivityCard(onOpenTraining: onOpenTraining)
-                StormAlertSubscriptionCard()
-                PipelineCard()
-                ScheduleCard()
-                RecentJobsRow()
-                AIInsightsCard()
-                Color.clear.frame(height: 120)
+        NavigationStack(path: $path) {
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 22) {
+                    DashboardHeader()
+                    KPIStrip(onQuickInspection: onQuickInspection)
+                    HomeCardsCarousel(onOpenTraining: onOpenTraining)
+                    CoachingActivityCard(onOpenTraining: onOpenTraining)
+                    StormAlertSubscriptionCard()
+                    PipelineCard()
+                    ScheduleCard()
+                    RecentJobsRow(onOpenCustomer: { id in path.append(id) })
+                    AIInsightsCard()
+                    Color.clear.frame(height: 120)
+                }
+                .padding(.top, 8)
             }
-            .padding(.top, 8)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Theme.canvas)
+            .navigationDestination(for: UUID.self) { id in
+                CustomerProfileView(customerID: id)
+            }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Theme.canvas)
     }
 }
 
