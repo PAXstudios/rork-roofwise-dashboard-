@@ -1,12 +1,15 @@
 import SwiftUI
 import AVFoundation
 
-/// Wraps a real AVFoundation camera preview when a rear camera exists,
-/// otherwise shows a Rork-friendly placeholder for the cloud simulator.
+/// Wraps a real AVFoundation camera preview (sharing the session owned by
+/// `CameraCaptureService`) when a rear camera exists, otherwise shows a
+/// Rork-friendly placeholder for the cloud simulator.
 struct CameraProxyView: View {
+    var session: AVCaptureSession? = nil
+
     var body: some View {
         if Self.hasRearCamera {
-            ActualCameraView()
+            ActualCameraView(session: session ?? AVCaptureSession())
         } else {
             CameraPlaceholderView()
         }
@@ -24,13 +27,11 @@ struct CameraPlaceholderView: View {
 
     var body: some View {
         ZStack {
-            // Dark gradient stand-in for a viewfinder
             LinearGradient(colors: [
                 Color(red: 0.04, green: 0.07, blue: 0.16),
                 Color(red: 0.10, green: 0.14, blue: 0.26)
             ], startPoint: .top, endPoint: .bottom)
 
-            // Faux roof grid
             Canvas { ctx, size in
                 let cols = 14
                 let rows = 22
@@ -52,7 +53,6 @@ struct CameraPlaceholderView: View {
                 }
             }
 
-            // Sweeping LiDAR line
             GeometryReader { geo in
                 LinearGradient(colors: [
                     Theme.ember.opacity(0),
@@ -69,10 +69,10 @@ struct CameraPlaceholderView: View {
                 Image(systemName: "camera.metering.center.weighted")
                     .font(.system(size: 34, weight: .light))
                     .foregroundStyle(.white.opacity(0.85))
-                Text("LiDAR camera unavailable in preview")
+                Text("Live camera unavailable in preview")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.9))
-                Text("Install RoofWise on your device via the Rork App\nto capture live roof scans.")
+                Text("Install RoofWise on your device via the Rork App\nto run live shingle detection.")
                     .font(.system(size: 11))
                     .foregroundStyle(.white.opacity(0.6))
                     .multilineTextAlignment(.center)
@@ -90,32 +90,23 @@ struct CameraPlaceholderView: View {
 // MARK: - Real camera (used on physical device)
 
 struct ActualCameraView: UIViewRepresentable {
+    let session: AVCaptureSession
+
     func makeUIView(context: Context) -> PreviewUIView {
         let view = PreviewUIView()
-        view.startSession()
+        view.previewLayer.videoGravity = .resizeAspectFill
+        view.previewLayer.session = session
         return view
     }
-    func updateUIView(_ uiView: PreviewUIView, context: Context) {}
+
+    func updateUIView(_ uiView: PreviewUIView, context: Context) {
+        if uiView.previewLayer.session !== session {
+            uiView.previewLayer.session = session
+        }
+    }
 
     final class PreviewUIView: UIView {
-        private let session = AVCaptureSession()
         override class var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }
         var previewLayer: AVCaptureVideoPreviewLayer { layer as! AVCaptureVideoPreviewLayer }
-
-        func startSession() {
-            previewLayer.videoGravity = .resizeAspectFill
-            previewLayer.session = session
-            session.beginConfiguration()
-            if let device = AVCaptureDevice.default(.builtInLiDARDepthCamera, for: .video, position: .back)
-                ?? AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back),
-               let input = try? AVCaptureDeviceInput(device: device),
-               session.canAddInput(input) {
-                session.addInput(input)
-            }
-            session.commitConfiguration()
-            DispatchQueue.global(qos: .userInitiated).async { [session] in
-                session.startRunning()
-            }
-        }
     }
 }
