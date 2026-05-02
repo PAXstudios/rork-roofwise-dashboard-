@@ -112,6 +112,9 @@ struct QuickInspectionView: View {
                 onDelete: {
                     capturedPhotos.removeAll { $0.id == photo.id }
                     previewPhoto = nil
+                },
+                onRetry: {
+                    await retryAnalysis(for: photo.id)
                 }
             )
         }
@@ -916,6 +919,28 @@ struct QuickInspectionView: View {
                 step = .results
             }
         }
+    }
+
+    private func retryAnalysis(for photoID: UUID) async {
+        guard let idx = capturedPhotos.firstIndex(where: { $0.id == photoID }) else { return }
+        let photo = capturedPhotos[idx]
+        let result = await GeminiAnalysisService.analyzeFull(image: photo.image,
+                                                              slope: photo.slope,
+                                                              mode: photo.captureMode,
+                                                              squaresCovered: photo.squaresCovered)
+        guard let newIdx = capturedPhotos.firstIndex(where: { $0.id == photoID }) else { return }
+        capturedPhotos[newIdx].findings = result.findings
+        capturedPhotos[newIdx].damageMarkers = result.markers
+        capturedPhotos[newIdx].analyzed = !result.failed
+        // Refresh the preview sheet so the user sees fresh markers/findings.
+        previewPhoto = capturedPhotos[newIdx]
+        if let cid = customerStore.activeCustomerID {
+            customerStore.updateAnalysis(for: cid,
+                                         photos: capturedPhotos,
+                                         findings: lastFindings)
+        }
+        let g = UINotificationFeedbackGenerator()
+        g.notificationOccurred(result.failed ? .error : .success)
     }
 
     private func resetToCapture() {

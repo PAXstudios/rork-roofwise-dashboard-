@@ -97,6 +97,24 @@ struct CustomerProfileView: View {
                     c.photos.removeAll { $0.id == photo.id }
                     store.update(c)
                     previewPhoto = nil
+                },
+                onRetry: {
+                    let result = await GeminiAnalysisService.analyzeFull(
+                        image: photo.image,
+                        slope: photo.slope,
+                        mode: photo.captureMode,
+                        squaresCovered: photo.squaresCovered
+                    )
+                    var c = customer
+                    if let idx = c.photos.firstIndex(where: { $0.id == photo.id }) {
+                        c.photos[idx].findings = result.findings
+                        c.photos[idx].damageMarkers = result.markers
+                        c.photos[idx].analyzed = !result.failed
+                        store.update(c)
+                        previewPhoto = c.photos[idx]
+                    }
+                    let g = UINotificationFeedbackGenerator()
+                    g.notificationOccurred(result.failed ? .error : .success)
                 }
             )
         }

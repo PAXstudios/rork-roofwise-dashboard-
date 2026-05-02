@@ -8,11 +8,16 @@ struct PhotoDamageOverlayView: View {
     let photo: CapturedPhoto
     var onClose: () -> Void
     var onDelete: (() -> Void)? = nil
+    /// Async retry of AI analysis for this photo. If provided and the photo's
+    /// previous analysis failed (`analyzed == false`), a "Retry AI Analysis"
+    /// button is shown.
+    var onRetry: (() async -> Void)? = nil
 
     @State private var selectedMarker: DamageMarker? = nil
     @State private var showLegend: Bool = true
     @State private var showAllMarkers: Bool = true
     @State private var pulse: Bool = false
+    @State private var isRetrying: Bool = false
 
     private var grouped: [(type: DamageMarkerType, items: [DamageMarker])] {
         let dict = Dictionary(grouping: photo.damageMarkers, by: \.type)
@@ -23,6 +28,14 @@ struct PhotoDamageOverlayView: View {
     }
 
     private var totalMarkers: Int { photo.damageMarkers.count }
+
+    private var analysisFailed: Bool {
+        !photo.analyzed || photo.findings.contains { $0.label == "ai_unavailable" }
+    }
+
+    private var failureMessage: String? {
+        photo.findings.first { $0.label == "ai_unavailable" }?.value
+    }
 
     var body: some View {
         ZStack {
@@ -46,6 +59,12 @@ struct PhotoDamageOverlayView: View {
             VStack(spacing: 0) {
                 topBar
                 Spacer(minLength: 0)
+                if analysisFailed && onRetry != nil {
+                    retryBanner
+                        .padding(.horizontal, 14)
+                        .padding(.bottom, showLegend ? 8 : 14)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
                 if showLegend {
                     legendCard
                         .padding(.horizontal, 14)
@@ -158,6 +177,68 @@ struct PhotoDamageOverlayView: View {
         return CGRect(x: (container.width - w) / 2,
                       y: (container.height - h) / 2,
                       width: w, height: h)
+    }
+
+    // MARK: - Retry Banner
+
+    private var retryBanner: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 12, weight: .heavy))
+                    .foregroundStyle(Theme.ember)
+                Text("AI ANALYSIS FAILED")
+                    .font(.system(size: 10, weight: .heavy))
+                    .tracking(1.4)
+                    .foregroundStyle(.white)
+                Spacer()
+            }
+            if let msg = failureMessage, !msg.isEmpty {
+                Text(msg)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.85))
+                    .lineSpacing(2)
+            } else {
+                Text("This photo couldn’t be analyzed. Tap retry to run Gemini Vision again.")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.85))
+            }
+            Button {
+                guard let onRetry, !isRetrying else { return }
+                let g = UIImpactFeedbackGenerator(style: .medium); g.impactOccurred()
+                isRetrying = true
+                Task {
+                    await onRetry()
+                    isRetrying = false
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    if isRetrying {
+                        ProgressView()
+                            .progressViewStyle(.circular)
+                            .tint(.white)
+                            .scaleEffect(0.8)
+                    } else {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 13, weight: .heavy))
+                    }
+                    Text(isRetrying ? "Re-analyzing…" : "Retry AI Analysis")
+                        .font(.system(size: 13, weight: .heavy))
+                }
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 11)
+                .background(Theme.ember, in: .capsule)
+                .overlay(Capsule().stroke(.white.opacity(0.18), lineWidth: 0.6))
+                .shadow(color: Theme.ember.opacity(0.45), radius: 12, y: 6)
+            }
+            .buttonStyle(.plain)
+            .disabled(isRetrying)
+        }
+        .padding(14)
+        .background(.ultraThinMaterial, in: .rect(cornerRadius: 18))
+        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Theme.ember.opacity(0.4), lineWidth: 0.8))
+        .environment(\.colorScheme, .dark)
     }
 
     // MARK: - Legend

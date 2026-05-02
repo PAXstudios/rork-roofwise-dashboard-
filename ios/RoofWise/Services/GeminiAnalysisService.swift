@@ -42,19 +42,23 @@ enum GeminiAnalysisService {
         guard !key.isEmpty,
               key != "GEMINI_API_KEY",
               let url = URL(string: "\(endpoint)?key=\(key)") else {
-            // No key configured -> dev mode: surface mock so the demo flow still works,
-            // but flag it as mock so the UI can label it.
+            // No key configured -> dev mode: surface mock findings so the demo flow
+            // still works, but DO NOT paint fake markers onto a real photo. Empty
+            // markers means the overlay will correctly show "no AI detections".
+            print("[Gemini] \u{26A0}\u{FE0F} No EXPO_PUBLIC_GEMINI_API_KEY set — falling back to MOCK findings (no markers will be drawn).")
             try? await Task.sleep(for: .milliseconds(600))
             return AnalysisResult(findings: mockFindings(for: slope),
-                                  markers: InspectionMock.damageMarkers,
+                                  markers: [],
                                   failed: false,
                                   usedMock: true)
         }
+        print("[Gemini] \u{2705} Using REAL API (gemini-2.5-flash, key prefix=\(key.prefix(6))…) — image \(Int(image.size.width))x\(Int(image.size.height)) slope=\(slope.rawValue) mode=\(mode.rawValue)")
 
-        // Resize for upload: cap at 2048px on the long edge. Gemini downsamples
-        // server-side anyway; sending massive JPEGs only slows the request.
-        let prepared = resizeForUpload(image, maxEdge: 2048)
-        guard let jpeg = prepared.jpegData(compressionQuality: 0.85) else {
+        // Resize for upload: cap at 1536px on the long edge. Large enough to
+        // preserve the granule-scale detail Gemini needs to see hail strikes,
+        // small enough to stay well under token limits and keep latency low.
+        let prepared = resizeForUpload(image, maxEdge: 1536)
+        guard let jpeg = prepared.jpegData(compressionQuality: 0.9) else {
             return AnalysisResult(findings: failureFinding(reason: "Could not encode photo for analysis."),
                                   markers: [],
                                   failed: true)
@@ -81,23 +85,38 @@ enum GeminiAnalysisService {
         You are a certified forensic roof inspector applying HAAG Engineering standards.
         \(intro)
 
-        CRITICAL ACCURACY RULES:
+        CRITICAL ACCURACY RULES — read carefully:
           1. Look at the ACTUAL pixels in this image. Do NOT invent or hallucinate damage.
-          2. If a region is undamaged, do NOT place a marker there.
-          3. Every marker you return MUST correspond to a visible pixel feature you can describe.
-          4. Hail strikes look like circular dark spots / mat fractures with displaced granules,
-             often with a slight shine or color contrast. They are usually 1/4" to 2" across.
-          5. If you are not confident a feature is damage, OMIT it. Empty arrays are correct
-             when the shingle is undamaged.
+          2. If a region is undamaged, do NOT place a marker there. Empty arrays ARE the
+             correct answer when the shingle/roof is undamaged.
+          3. Every marker you return MUST correspond to a visible pixel feature you can
+             describe in its `note` (color, shape, size, texture cue).
+          4. Do NOT distribute markers in a regular grid or random pattern. Markers must
+             land EXACTLY on the pixel feature you are calling out.
+
+        WHAT HAIL DAMAGE LOOKS LIKE (be specific — these are the visual cues):
+          • On asphalt shingles: small CIRCULAR bruises 1/4" to 2" across — darker than the
+             surrounding granules because granules are knocked away exposing the asphalt mat.
+             Often shows a slightly shiny black mat center with a halo of displaced/lighter
+             granules around it. Mat may be fractured (visible hairline crack inside the
+             impact). Press-test signature = soft spot under the granules.
+          • On wood shake: splits radiating from a sharp impact point, often with a clean
+             edge (not weathered) and bright wood underneath.
+          • On soft metal (vents, ridge cap, drip edge, gutters, downspouts, pipe jacks,
+             turbines, exhaust caps, satellite mounts): round DENTS — concave depressions
+             that break the line of the metal. Often paired with paint/coating fractures.
+          • Spatter marks: oxidation/dirt-line ring spatter on metal — confirms directionality.
+          • Distinguish hail from: foot traffic (irregular elongated scuffs), mechanical
+             damage (linear/scrape), age weathering (uniform granule thinning, no impact halo),
+             manufacturing defects (uniform pattern). DO NOT call those hail.
 
         Analyze this image for ALL of the following:
           • Hail damage — count INDIVIDUAL strikes separately on (a) shingles/roof field and
-            (b) metal components (vents, pipe jacks, flashing, drip edge, gutters, downspouts,
-            turbines, exhaust caps, satellite mounts). Hail on soft metal is one of the strongest
-            HAAG indicators of a hail event.
-          • Bruising — soft spots / mat fractures under the granules (press-test signature).
-          • Spatter marks — oxidation/dirt-line spatter on metal that confirms hail directionality.
-          • Granule loss — note distinct granule-loss AREAS (each erosion patch is a marker).
+            (b) metal components. Hail on soft metal is one of the strongest HAAG indicators
+            of a hail event.
+          • Bruising — soft spots / mat fractures under the granules.
+          • Spatter marks — oxidation/dirt-line spatter on metal.
+          • Granule loss — distinct granule-loss AREAS (each erosion patch is one marker).
           • Wind damage — creasing at the nail line, lifted/folded tabs, missing tabs.
           • Cracking / splitting, blistering, flashing damage, algae/moss, structural sagging.
 
@@ -137,6 +156,8 @@ enum GeminiAnalysisService {
               "surface": "shingle|metal|other",
               "x": 0.0-1.0,
               "y": 0.0-1.0,
+              "width": 0.0-1.0,
+              "height": 0.0-1.0,
               "radius": 0.0-1.0,
               "severity": "minor|moderate|severe",
               "note": "<short evidence describing the actual pixel feature you see>"
@@ -146,10 +167,18 @@ enum GeminiAnalysisService {
         Include ALL 10 damage categories in `findings`. Be conservative — only mark `detected: true`
         when clearly visible. Set `severity: "severe"` only when the evidence is unambiguous.
 
-        Coordinates MUST be normalized 0-1 (x from left, y from top) relative to the image.
-        Radius is normalized 0-1 (relative to min image dimension).
+        Coordinate system (CRITICAL):
+          • The image origin is the TOP-LEFT corner. x increases rightward, y increases downward.
+          • All coordinates are FRACTIONS of the image dimensions, in [0.0, 1.0].
+          • (x, y) is the CENTER of the bounding box around the damage feature.
+          • width and height are the bounding box size as fractions of image width/height.
+          • radius is a convenience field: half the longer side of the bbox, as a fraction of
+             the SHORTER image dimension. If unsure, set radius = max(width, height) / 2.
+          • Place markers ON the pixel feature. A hail strike on the lower-right shingle should
+             have x ~0.7, y ~0.7 — NOT centered or in a corner.
 
-        Mark EVERY visible hail strike INDIVIDUALLY — do not group them.
+        Mark EVERY visible hail strike INDIVIDUALLY — do not group them. Typical bbox for a
+        single hail strike on shingles is width ~0.02 to 0.08 (about 1/4" to 2" across).
         If the image shows NO damage, return "damage_markers": [] (empty). Do NOT fabricate markers.
         """
 
@@ -177,26 +206,30 @@ enum GeminiAnalysisService {
         do {
             let (data, response) = try await URLSession.shared.data(for: req)
             if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-                let bodyStr = String(data: data, encoding: .utf8)?.prefix(500) ?? ""
-                print("[Gemini] HTTP \(http.statusCode): \(bodyStr)")
+                let bodyStr = String(data: data, encoding: .utf8)?.prefix(800) ?? ""
+                print("[Gemini] \u{274C} HTTP \(http.statusCode): \(bodyStr)")
                 return AnalysisResult(
                     findings: failureFinding(reason: "AI service returned HTTP \(http.statusCode). Tap retry."),
                     markers: [],
                     failed: true
                 )
             }
+            // Log raw response (truncated) so we can debug what Gemini actually returned.
+            if let raw = String(data: data, encoding: .utf8) {
+                print("[Gemini] \u{1F4E5} raw response (\(data.count) bytes): \(raw.prefix(1200))")
+            }
             if let parsed = parseResponse(data) {
+                print("[Gemini] \u{2705} parsed: \(parsed.findings.count) findings, \(parsed.markers.count) markers")
                 return parsed
             }
-            let raw = String(data: data, encoding: .utf8)?.prefix(800) ?? ""
-            print("[Gemini] Could not parse response JSON. Raw: \(raw)")
+            print("[Gemini] \u{274C} Could not parse response JSON.")
             return AnalysisResult(
                 findings: failureFinding(reason: "AI returned an unreadable response. Tap retry."),
                 markers: [],
                 failed: true
             )
         } catch {
-            print("[Gemini] Request failed: \(error.localizedDescription)")
+            print("[Gemini] \u{274C} Request failed: \(error.localizedDescription)")
             return AnalysisResult(
                 findings: failureFinding(reason: "Network error during AI analysis. Tap retry."),
                 markers: [],
@@ -279,7 +312,16 @@ enum GeminiAnalysisService {
               let yVal = (dict["y"] as? Double) ?? (dict["y"] as? NSNumber)?.doubleValue else {
             return nil
         }
-        let radius = ((dict["radius"] as? Double) ?? (dict["radius"] as? NSNumber)?.doubleValue) ?? 0.04
+        // Prefer explicit radius. Otherwise derive from bbox width/height if Gemini
+        // returned a bounding box (newer schema), so single-strike pins land at the right size.
+        let explicitRadius = (dict["radius"] as? Double) ?? (dict["radius"] as? NSNumber)?.doubleValue
+        let bboxW = (dict["width"] as? Double) ?? (dict["width"] as? NSNumber)?.doubleValue
+        let bboxH = (dict["height"] as? Double) ?? (dict["height"] as? NSNumber)?.doubleValue
+        let radius: Double = {
+            if let r = explicitRadius { return r }
+            if let w = bboxW, let h = bboxH { return max(w, h) / 2 }
+            return 0.04
+        }()
         let severityRaw = (dict["severity"] as? String ?? "moderate").capitalized
         let severity = FindingSeverity(rawValue: severityRaw) ?? .moderate
         let note = dict["note"] as? String ?? type.display
