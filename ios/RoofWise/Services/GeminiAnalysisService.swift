@@ -44,8 +44,17 @@ enum GeminiAnalysisService {
 
         let prompt = """
         You are a HAAG-certified forensic roofing inspector. \(intro)
+        First, identify the roof covering / shingle type from the image. Choose the closest match from:
+        "3-tab asphalt", "architectural asphalt" (a.k.a. dimensional/laminated), "luxury asphalt",
+        "wood shake", "wood shingle", "metal standing seam", "metal shingle", "clay tile",
+        "concrete tile", "slate", "synthetic slate", "composite", "rolled roofing", "TPO", "EPDM", "unknown".
         Return STRICT JSON only, no markdown, with this schema:
         {
+          "shingle_type": {
+            "type": "<one of the values above>",
+            "confidence": 0-100,
+            "note": "<short visual evidence: tab shape, exposure, profile, material cues>"
+          },
           "findings": [
             {
               "label": "hail_damage|granule_loss|missing_shingles|wind_creasing|blistering|cracking_splitting|flashing_damage|algae_moss|bruising|structural_sagging",
@@ -56,7 +65,7 @@ enum GeminiAnalysisService {
             }
           ]
         }
-        Include ALL 10 categories. Be conservative - only mark severe if clearly visible.
+        Include ALL 10 damage categories. Be conservative - only mark severe if clearly visible.
         """
 
         let body: [String: Any] = [
@@ -104,10 +113,32 @@ enum GeminiAnalysisService {
         }
 
         var results: [InspectionFinding] = []
+        if let typeDict = payload["shingle_type"] as? [String: Any],
+           let typeFinding = shingleTypeFinding(from: typeDict) {
+            results.append(typeFinding)
+        }
         for dict in raw {
             if let finding = findingFromDict(dict) { results.append(finding) }
         }
         return results
+    }
+
+    private static func shingleTypeFinding(from dict: [String: Any]) -> InspectionFinding? {
+        let type = (dict["type"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !type.isEmpty else { return nil }
+        let confidence = max(0, min(100, dict["confidence"] as? Int ?? 0))
+        let note = dict["note"] as? String ?? ""
+        let pretty = type.split(separator: " ").map { $0.prefix(1).uppercased() + $0.dropFirst() }.joined(separator: " ")
+        return InspectionFinding(
+            label: "shingle_type",
+            display: "Shingle Type",
+            value: note.isEmpty ? pretty : "\(pretty) — \(note)",
+            confidence: confidence,
+            icon: "square.stack.3d.down.right.fill",
+            tint: Theme.sky,
+            detected: true,
+            severity: .none
+        )
     }
 
     private static func findingFromDict(_ dict: [String: Any]) -> InspectionFinding? {
@@ -159,8 +190,18 @@ enum GeminiAnalysisService {
     /// Mock findings used when no API key is set or call fails.
     private static func mockFindings(for slope: SlopeType) -> [InspectionFinding] {
         // Reuse existing curated mock list; tweak severity slightly per slope.
+        let mockType = InspectionFinding(
+            label: "shingle_type",
+            display: "Shingle Type",
+            value: "Architectural Asphalt — laminated dimensional tabs, ~5\" exposure",
+            confidence: 92,
+            icon: "square.stack.3d.down.right.fill",
+            tint: Theme.sky,
+            detected: true,
+            severity: .none
+        )
         let base = InspectionMock.findings
-        return base.map { f in
+        return [mockType] + base.map { f in
             let bumped = (slope == .ridgeLine && f.label == "wind_creasing")
             return InspectionFinding(
                 label: f.label,
