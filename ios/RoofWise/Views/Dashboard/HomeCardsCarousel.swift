@@ -19,6 +19,7 @@ struct HomeCardsCarousel: View {
     private let sideInset: CGFloat = 20
     private let peek: CGFloat = 18
     private let spacing: CGFloat = 12
+    private let cardHeight: CGFloat = 360
 
     var body: some View {
         VStack(spacing: 12) {
@@ -27,29 +28,35 @@ struct HomeCardsCarousel: View {
 
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: spacing) {
-                        TodaysLessonCard(onOpenTraining: onOpenTraining, embedded: true)
-                            .frame(width: cardWidth)
-                            .id(Page.lesson)
+                        carouselCard(.lesson) {
+                            TodaysLessonCard(onOpenTraining: onOpenTraining, embedded: true)
+                        }
+                        .frame(width: cardWidth)
 
-                        StormAlertCard(embedded: true)
-                            .frame(width: cardWidth)
-                            .id(Page.alert)
+                        carouselCard(.alert) {
+                            StormAlertCard(embedded: true)
+                        }
+                        .frame(width: cardWidth)
 
-                        TasksAndActivityCard(embedded: true)
-                            .frame(width: cardWidth)
-                            .id(Page.tasks)
+                        carouselCard(.tasks) {
+                            TasksAndActivityCard(embedded: true)
+                        }
+                        .frame(width: cardWidth)
 
-                        DailySummaryCard(embedded: true)
-                            .frame(width: cardWidth)
-                            .id(Page.daily)
+                        carouselCard(.daily) {
+                            DailySummaryCard(embedded: true)
+                        }
+                        .frame(width: cardWidth)
 
-                        StormHistoryMapCard(embedded: true)
-                            .frame(width: cardWidth)
-                            .id(Page.storm)
+                        carouselCard(.storm) {
+                            StormHistoryMapCard(embedded: true)
+                        }
+                        .frame(width: cardWidth)
 
-                        SalesMetricsCard(embedded: true)
-                            .frame(width: cardWidth)
-                            .id(Page.sales)
+                        carouselCard(.sales) {
+                            SalesMetricsCard(embedded: true)
+                        }
+                        .frame(width: cardWidth)
                     }
                     .scrollTargetLayout()
                 }
@@ -68,15 +75,14 @@ struct HomeCardsCarousel: View {
         }
     }
 
-    private var cardHeight: CGFloat {
-        switch currentPage ?? .lesson {
-        case .alert: return 280
-        case .sales: return 430
-        case .daily: return 380
-        case .storm: return 520
-        case .lesson: return 320
-        case .tasks: return 460
+    @ViewBuilder
+    private func carouselCard<Content: View>(_ page: Page, @ViewBuilder content: () -> Content) -> some View {
+        ScrollView(.vertical, showsIndicators: false) {
+            content()
         }
+        .scrollBounceBehavior(.basedOnSize)
+        .frame(height: cardHeight)
+        .id(page)
     }
 
     private var pageDots: some View {
