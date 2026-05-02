@@ -26,6 +26,7 @@ struct RootView: View {
     @State private var tab: AppTab = .home
     @State private var showQuickAction = false
     @State private var showInspection = false
+    @State private var showInspectionChooser = false
     @State private var showMileage = false
     @State private var customerStore = CustomerStore()
     @State private var trainingProgress = TrainingProgressStore()
@@ -36,7 +37,7 @@ struct RootView: View {
 
             Group {
                 switch tab {
-                case .home: DashboardView(onQuickInspection: { showInspection = true },
+                case .home: DashboardView(onQuickInspection: { showInspectionChooser = true },
                                          onOpenTraining: { tab = .training })
                 case .leads: LeadsView()
                 case .map: MapHubView()
@@ -52,7 +53,7 @@ struct RootView: View {
             QuickActionSheet(onStartInspection: {
                 showQuickAction = false
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                    showInspection = true
+                    showInspectionChooser = true
                 }
             }, onOpenMileage: {
                 showQuickAction = false
@@ -65,6 +66,16 @@ struct RootView: View {
         }
         .fullScreenCover(isPresented: $showInspection) {
             QuickInspectionView()
+        }
+        .sheet(isPresented: $showInspectionChooser) {
+            InspectionTargetChooserSheet(onProceed: {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                    showInspection = true
+                }
+            })
+            .environment(customerStore)
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showMileage) {
             MileageTrackerView()
