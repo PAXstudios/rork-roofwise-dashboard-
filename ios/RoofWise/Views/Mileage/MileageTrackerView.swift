@@ -1,5 +1,6 @@
 import SwiftUI
 import MapKit
+import CoreLocation
 
 struct MileageTrackerView: View {
     @Environment(\.dismiss) private var dismiss
@@ -156,6 +157,10 @@ struct MileageTrackerView: View {
                          tint: Theme.mint)
             }
 
+            if tracker.isTracking {
+                liveRouteMap
+            }
+
             if tracker.authState == .denied {
                 Label(tracker.lastError ?? "Location access required",
                       systemImage: "exclamationmark.triangle.fill")
@@ -194,6 +199,91 @@ struct MileageTrackerView: View {
     }
 
     @State private var pulseScale: CGFloat = 1.0
+
+    // MARK: live route map snippet
+
+    private var liveRouteCoordinates: [CLLocationCoordinate2D] {
+        tracker.path.map { CLLocationCoordinate2D(latitude: $0.lat, longitude: $0.lon) }
+    }
+
+    private var liveRouteRegion: MKCoordinateRegion {
+        let coords = liveRouteCoordinates
+        guard let first = coords.first else {
+            return MKCoordinateRegion(
+                center: CLLocationCoordinate2D(latitude: 39.7392, longitude: -104.9903),
+                span: MKCoordinateSpan(latitudeDelta: 0.02, longitudeDelta: 0.02)
+            )
+        }
+        if coords.count == 1 {
+            return MKCoordinateRegion(
+                center: first,
+                span: MKCoordinateSpan(latitudeDelta: 0.005, longitudeDelta: 0.005)
+            )
+        }
+        let lats = coords.map { $0.latitude }
+        let lons = coords.map { $0.longitude }
+        let minLat = lats.min() ?? first.latitude
+        let maxLat = lats.max() ?? first.latitude
+        let minLon = lons.min() ?? first.longitude
+        let maxLon = lons.max() ?? first.longitude
+        let center = CLLocationCoordinate2D(latitude: (minLat + maxLat) / 2,
+                                            longitude: (minLon + maxLon) / 2)
+        let span = MKCoordinateSpan(latitudeDelta: max((maxLat - minLat) * 1.6, 0.005),
+                                    longitudeDelta: max((maxLon - minLon) * 1.6, 0.005))
+        return MKCoordinateRegion(center: center, span: span)
+    }
+
+    @ViewBuilder
+    private var liveRouteMap: some View {
+        let coords = liveRouteCoordinates
+        ZStack(alignment: .topLeading) {
+            Map(initialPosition: .region(liveRouteRegion)) {
+                if coords.count >= 2 {
+                    MapPolyline(coordinates: coords)
+                        .stroke(Theme.ember, style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
+                }
+                if let last = coords.last {
+                    Annotation("You", coordinate: last) {
+                        ZStack {
+                            Circle().fill(Theme.ember.opacity(0.25)).frame(width: 26, height: 26)
+                            Circle().fill(Theme.ember).frame(width: 12, height: 12)
+                                .overlay(Circle().stroke(.white, lineWidth: 2))
+                        }
+                    }
+                }
+            }
+            .mapStyle(.standard(elevation: .flat, pointsOfInterest: .excludingAll))
+            .allowsHitTesting(false)
+            .frame(height: 130)
+            .clipShape(.rect(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.hairline, lineWidth: 0.6))
+
+            HStack(spacing: 4) {
+                Circle().fill(Theme.ember).frame(width: 6, height: 6)
+                Text("LIVE ROUTE")
+                    .font(.system(size: 9, weight: .heavy))
+                    .tracking(1.0)
+                    .foregroundStyle(.white)
+            }
+            .padding(.horizontal, 8).padding(.vertical, 4)
+            .background(Theme.ink.opacity(0.78), in: .capsule)
+            .padding(8)
+
+            if coords.isEmpty {
+                VStack(spacing: 4) {
+                    Image(systemName: "location.magnifyingglass")
+                        .font(.system(size: 16, weight: .heavy))
+                        .foregroundStyle(Theme.inkSoft)
+                    Text("Acquiring GPS…")
+                        .font(.system(size: 11, weight: .heavy))
+                        .foregroundStyle(Theme.inkSoft)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Theme.canvas.opacity(0.85))
+                .clipShape(.rect(cornerRadius: 14))
+            }
+        }
+    }
 
     private func startPulse() {
         withAnimation(.easeOut(duration: 1.6).repeatForever(autoreverses: false)) {

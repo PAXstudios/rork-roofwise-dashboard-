@@ -72,7 +72,8 @@ struct MileageTrip: Identifiable, Codable, Hashable {
 // MARK: - IRS rate (2026 estimate; configurable in UI)
 
 enum MileageRates {
-    static let standardBusinessPerMile: Double = 0.70
+    /// IRS standard business mileage rate.
+    static let standardBusinessPerMile: Double = 0.67
 }
 
 extension MileageTrip {

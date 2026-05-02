@@ -18,7 +18,9 @@ final class MileageTrackerService: NSObject {
 
     private let manager = CLLocationManager()
     private var lastLocation: CLLocation?
-    private var path: [MileageTripPoint] = []
+    /// Public live path for map snippet rendering.
+    var path: [MileageTripPoint] = []
+    var lastCoordinate: CLLocationCoordinate2D?
     private var tickerTask: Task<Void, Never>?
     /// Ignore tiny fluctuations so static phone doesn't accumulate distance.
     private let minMoveMeters: Double = 8
@@ -48,6 +50,7 @@ final class MileageTrackerService: NSObject {
         elapsedSeconds = 0
         path = []
         lastLocation = nil
+        lastCoordinate = nil
         startedAt = Date()
         isTracking = true
         isPaused = false
@@ -123,12 +126,14 @@ final class MileageTrackerService: NSObject {
                 path.append(MileageTripPoint(lat: loc.coordinate.latitude,
                                              lon: loc.coordinate.longitude,
                                              timestamp: loc.timestamp))
+                lastCoordinate = loc.coordinate
             }
         } else {
             lastLocation = loc
             path.append(MileageTripPoint(lat: loc.coordinate.latitude,
                                          lon: loc.coordinate.longitude,
                                          timestamp: loc.timestamp))
+            lastCoordinate = loc.coordinate
         }
         // m/s -> mph
         currentSpeedMph = max(0, loc.speed) * 2.23694
