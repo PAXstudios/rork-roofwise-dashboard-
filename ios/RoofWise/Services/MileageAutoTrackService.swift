@@ -56,6 +56,9 @@ final class MileageAutoTrackService: NSObject {
         manager.desiredAccuracy = kCLLocationAccuracyHundredMeters
         manager.activityType = .automotiveNavigation
         manager.pausesLocationUpdatesAutomatically = false
+        // Background updates are only enabled while auto-tracking is ON (see startMonitoring).
+        manager.allowsBackgroundLocationUpdates = false
+        manager.showsBackgroundLocationIndicator = false
         loadBuffer()
         refreshAuth()
         if isEnabled { startMonitoring() }
@@ -102,11 +105,21 @@ final class MileageAutoTrackService: NSObject {
     private func startMonitoring() {
         refreshAuth()
         registerCategory()
+        // Only opt-in to background delivery when the user has enabled auto-tracking AND
+        // granted Always authorization. SLC alone wakes the app from suspended state, but
+        // `allowsBackgroundLocationUpdates` is required to keep receiving updates while
+        // backgrounded if we ever escalate to standard updates.
+        if manager.authorizationStatus == .authorizedAlways {
+            manager.allowsBackgroundLocationUpdates = true
+            manager.showsBackgroundLocationIndicator = true
+        }
         manager.startMonitoringSignificantLocationChanges()
     }
 
     private func stopMonitoring() {
         manager.stopMonitoringSignificantLocationChanges()
+        manager.allowsBackgroundLocationUpdates = false
+        manager.showsBackgroundLocationIndicator = false
         stopCheckTask?.cancel()
         stopCheckTask = nil
         buffer.removeAll()
@@ -270,7 +283,17 @@ extension MileageAutoTrackService: CLLocationManagerDelegate {
     }
 
     nonisolated func locationManager(_ manager: CLLocationManager, didChangeAuthorization status: CLAuthorizationStatus) {
-        Task { @MainActor in self.refreshAuth() }
+        Task { @MainActor in
+            self.refreshAuth()
+            // Re-apply background flag now that auth may have escalated to Always.
+            if self.isEnabled, manager.authorizationStatus == .authorizedAlways {
+                manager.allowsBackgroundLocationUpdates = true
+                manager.showsBackgroundLocationIndicator = true
+            } else if !self.isEnabled {
+                manager.allowsBackgroundLocationUpdates = false
+                manager.showsBackgroundLocationIndicator = false
+            }
+        }
     }
 
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
