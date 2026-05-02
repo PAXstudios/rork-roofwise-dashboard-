@@ -30,6 +30,13 @@ struct PhotoDamageOverlayView: View {
 
     private var totalMarkers: Int { photo.damageMarkers.count }
 
+    /// Compact comma-joined summary like "12 hail strikes, 3 wind creases, 1 crack"
+    /// computed by grouping `photo.damageMarkers` by type. Empty when no markers.
+    private var compactSummary: String {
+        grouped.map { "\($0.items.count) \($0.type.pluralDisplay)" }
+            .joined(separator: ", ")
+    }
+
     private var analysisFailed: Bool {
         !photo.analyzed || photo.findings.contains { $0.label == "ai_unavailable" }
     }
@@ -322,6 +329,14 @@ struct PhotoDamageOverlayView: View {
                     .background(Theme.amber.opacity(0.25), in: .capsule)
             }
 
+            if !compactSummary.isEmpty {
+                Text(compactSummary)
+                    .font(.system(size: 12, weight: .heavy))
+                    .foregroundStyle(.white)
+                    .lineSpacing(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
             if grouped.isEmpty {
                 HStack(spacing: 8) {
                     Image(systemName: "checkmark.seal.fill")
@@ -611,9 +626,10 @@ struct PhotoDamageOverlayView: View {
                     .lineSpacing(3)
             }
             HStack(spacing: 10) {
-                detailStat(label: "X", value: String(format: "%.0f%%", marker.x * 100))
-                detailStat(label: "Y", value: String(format: "%.0f%%", marker.y * 100))
-                detailStat(label: "Size", value: String(format: "%.1f%%", marker.radius * 100))
+                detailStat(label: "Type", value: marker.type.display)
+                detailStat(label: "Severity", value: marker.severity.rawValue)
+                detailStat(label: "Confidence",
+                           value: marker.confidence > 0 ? "\(marker.confidence)%" : "—")
             }
             Spacer(minLength: 0)
         }

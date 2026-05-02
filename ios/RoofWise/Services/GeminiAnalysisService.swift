@@ -415,13 +415,23 @@ enum GeminiAnalysisService {
         let severityRaw = (dict["severity"] as? String ?? "moderate").capitalized
         let severity = FindingSeverity(rawValue: severityRaw) ?? .moderate
         let note = dict["note"] as? String ?? type.display
+        let confidence: Int = {
+            if let i = dict["confidence"] as? Int { return max(0, min(100, i)) }
+            if let d = (dict["confidence"] as? Double) ?? (dict["confidence"] as? NSNumber)?.doubleValue {
+                // Accept either 0-1 or 0-100
+                let v = d <= 1.0 ? d * 100 : d
+                return max(0, min(100, Int(v.rounded())))
+            }
+            return 0
+        }()
         let clamp: (Double) -> CGFloat = { CGFloat(max(0, min(1, $0))) }
         return DamageMarker(x: clamp(xVal),
                             y: clamp(yVal),
                             radius: clamp(radius),
                             type: type,
                             severity: severity,
-                            note: note)
+                            note: note,
+                            confidence: confidence)
     }
 
     private static func shingleTypeFinding(from dict: [String: Any]) -> InspectionFinding? {

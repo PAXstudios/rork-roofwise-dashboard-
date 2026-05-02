@@ -178,11 +178,11 @@ enum DamageMarkerType: String, CaseIterable {
 
     var color: Color {
         switch self {
-        case .hailStrike: return Theme.crimson
-        case .crack: return Theme.ember
+        case .hailStrike: return Theme.crimson                              // RED
+        case .windCrease: return Color(red: 1.00, green: 0.55, blue: 0.10)   // ORANGE
+        case .crack: return Color(red: 0.98, green: 0.82, blue: 0.10)        // YELLOW
+        case .missingShingle: return Color(red: 0.62, green: 0.32, blue: 0.86) // PURPLE
         case .granuleLoss: return Theme.amber
-        case .missingShingle: return Theme.crimson
-        case .windCrease: return Theme.ember
         case .blister: return Theme.amber
         case .flashing: return Theme.ember
         case .algae: return Theme.mint
@@ -199,6 +199,15 @@ struct DamageMarker: Identifiable {
     let type: DamageMarkerType
     let severity: FindingSeverity
     let note: String
+    let confidence: Int  // 0-100 from Gemini
+
+    init(x: CGFloat, y: CGFloat, radius: CGFloat,
+         type: DamageMarkerType, severity: FindingSeverity,
+         note: String, confidence: Int = 0) {
+        self.x = x; self.y = y; self.radius = radius
+        self.type = type; self.severity = severity
+        self.note = note; self.confidence = confidence
+    }
 }
 
 struct DetectedHit: Identifiable {
