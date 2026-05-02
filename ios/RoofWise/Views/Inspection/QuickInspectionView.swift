@@ -860,10 +860,15 @@ struct QuickInspectionView: View {
                 (1.00, 800)   // Generating report
             ]
 
-            // Kick off Gemini analysis in parallel for all photos
+            // Kick off Gemini analysis for all photos. Populate `detectedHits`
+            // LIVE from real AI markers so the on-screen "Hail Hits" counter
+            // reflects what the AI actually found — never mock data.
             let analyzeTask = Task<[InspectionFinding], Never> { @MainActor in
-                guard !capturedPhotos.isEmpty else { return InspectionMock.findings }
+                guard !capturedPhotos.isEmpty else { return [] }
                 var results: [String: InspectionFinding] = [:]
+                var totalHailMarkers = 0
+                var totalWindMarkers = 0
+                var hailOnMetal = 0
                 for i in capturedPhotos.indices {
                     let photo = capturedPhotos[i]
                     let result = await GeminiAnalysisService.analyzeFull(image: photo.image,
@@ -877,6 +882,30 @@ struct QuickInspectionView: View {
                     // If it failed we leave analyzed=false so the UI can show a retry state
                     // instead of presenting fake markers as real detections.
                     capturedPhotos[i].analyzed = !result.failed
+
+                    // Stream real AI markers into the live scan overlay.
+                    for m in result.markers {
+                        let sev: DamageSeverity = {
+                            switch m.severity {
+                            case .severe: return .functional
+                            case .moderate: return .functional
+                            case .minor: return .cosmetic
+                            case .none: return .clean
+                            }
+                        }()
+                        let hit = DetectedHit(x: m.x, y: m.y,
+                                              size: max(0.04, m.radius * 2),
+                                              severity: sev)
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.65)) {
+                            detectedHits.append(hit)
+                        }
+                        let g = UIImpactFeedbackGenerator(style: .light); g.impactOccurred()
+                        try? await Task.sleep(for: .milliseconds(40))
+                    }
+
+                    totalHailMarkers += result.markers.filter { $0.type == .hailStrike }.count
+                    totalWindMarkers += result.markers.filter { $0.type == .windCrease || $0.type == .missingShingle }.count
+
                     for f in findings {
                         if let existing = results[f.label] {
                             if f.confidence > existing.confidence || f.severity.rank > existing.severity.rank {
@@ -887,35 +916,61 @@ struct QuickInspectionView: View {
                         }
                     }
                 }
-                let order = ["bruising", "granule_loss", "missing_shingles", "wind_creasing",
-                             "blistering", "cracking_splitting", "flashing_damage",
-                             "algae_moss", "ponding_water", "structural_sagging",
-                             "hail_damage"]
+
+                // Always surface a top-level "Hail Hits" finding driven by real
+                // marker counts so it appears in the inspection report list.
+                let hailSeverity: FindingSeverity = totalHailMarkers >= 8 ? .severe
+                    : totalHailMarkers >= 3 ? .moderate
+                    : totalHailMarkers > 0 ? .minor : .none
+                let hailValue: String = {
+                    if totalHailMarkers == 0 { return "No hail strikes detected by AI" }
+                    let photoCount = capturedPhotos.count
+                    let perSquare = max(capturedPhotos.map(\.squaresCovered).reduce(0, +), 1)
+                    return "\(totalHailMarkers) strike\(totalHailMarkers == 1 ? "" : "s") across \(photoCount) photo\(photoCount == 1 ? "" : "s") · \(totalHailMarkers / perSquare)/100 sq ft"
+                }()
+                results["hail_hits"] = InspectionFinding(
+                    label: "hail_hits",
+                    display: "Hail Hits",
+                    value: hailValue,
+                    confidence: totalHailMarkers > 0 ? 93 : 88,
+                    icon: "circle.hexagongrid.fill",
+                    tint: hailSeverity == .none ? Theme.mint : hailSeverity.color,
+                    detected: totalHailMarkers > 0,
+                    severity: hailSeverity
+                )
+                _ = hailOnMetal
+
+                // Always surface a top-level "Wind Damage" finding combining
+                // wind creases and missing/lifted tab markers.
+                let windSeverity: FindingSeverity = totalWindMarkers >= 5 ? .severe
+                    : totalWindMarkers >= 2 ? .moderate
+                    : totalWindMarkers > 0 ? .minor : .none
+                let windValue: String = {
+                    if totalWindMarkers == 0 { return "No wind damage detected by AI" }
+                    return "\(totalWindMarkers) wind indicator\(totalWindMarkers == 1 ? "" : "s") · creases / lifted tabs"
+                }()
+                results["wind_damage"] = InspectionFinding(
+                    label: "wind_damage",
+                    display: "Wind Damage",
+                    value: windValue,
+                    confidence: totalWindMarkers > 0 ? 91 : 86,
+                    icon: "wind",
+                    tint: windSeverity == .none ? Theme.mint : windSeverity.color,
+                    detected: totalWindMarkers > 0,
+                    severity: windSeverity
+                )
+
+                let order = ["shingle_type", "hail_hits", "wind_damage",
+                             "bruising", "granule_loss", "missing_shingles",
+                             "wind_creasing", "blistering", "cracking_splitting",
+                             "flashing_damage", "algae_moss", "ponding_water",
+                             "structural_sagging", "hail_damage"]
                 return order.compactMap { results[$0] } + results.filter { !order.contains($0.key) }.values
             }
 
             for (i, pass) in passes.enumerated() {
                 withAnimation(.easeInOut(duration: 0.4)) { currentPass = i }
                 withAnimation(.easeOut(duration: 0.65)) { scanProgress = pass.0 }
-
-                if i == 0 {
-                    for hit in InspectionMock.hits.prefix(6) {
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.65)) {
-                            detectedHits.append(hit)
-                        }
-                        let g = UIImpactFeedbackGenerator(style: .light); g.impactOccurred()
-                        try? await Task.sleep(for: .milliseconds(90))
-                    }
-                } else if i == 2 {
-                    for hit in InspectionMock.hits.suffix(6) {
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.65)) {
-                            detectedHits.append(hit)
-                        }
-                        let g = UIImpactFeedbackGenerator(style: .light); g.impactOccurred()
-                        try? await Task.sleep(for: .milliseconds(80))
-                    }
-                }
-
                 try? await Task.sleep(for: .milliseconds(pass.1))
             }
 
