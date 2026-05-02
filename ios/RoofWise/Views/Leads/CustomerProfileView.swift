@@ -12,6 +12,7 @@ struct CustomerProfileView: View {
     @State private var previewPhoto: CapturedPhoto?
     @State private var isEditing = false
     @State private var draft: Customer?
+    @State private var showHomeownerShare = false
 
     private var customer: Customer {
         store.customers.first { $0.id == customerID }
@@ -22,7 +23,9 @@ struct CustomerProfileView: View {
         ScrollView {
             VStack(spacing: 14) {
                 header
+                shareHomeownerButton
                 stagePipeline
+                PropertyStormHistoryCard(customer: customer)
                 contactCard
                 insuranceCard
                 photosSection
@@ -65,6 +68,11 @@ struct CustomerProfileView: View {
                 showAddNote = false
             }
             .presentationDetents([.medium])
+        }
+        .sheet(isPresented: $showHomeownerShare) {
+            HomeownerShareSheet(customer: customer)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.hidden)
         }
         .fullScreenCover(item: $previewPhoto) { photo in
             PhotoDamageOverlayView(
@@ -126,6 +134,43 @@ struct CustomerProfileView: View {
         .padding(.horizontal, 14)
         .background(Theme.card, in: .rect(cornerRadius: 22))
         .overlay(RoundedRectangle(cornerRadius: 22).stroke(Theme.hairline, lineWidth: 0.6))
+    }
+
+    // MARK: Share with Homeowner
+
+    private var shareHomeownerButton: some View {
+        Button { showHomeownerShare = true } label: {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(.white.opacity(0.22))
+                    Image(systemName: "paperplane.fill")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(.white)
+                }
+                .frame(width: 38, height: 38)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Share with Homeowner")
+                        .font(.system(size: 14, weight: .heavy))
+                        .foregroundStyle(.white)
+                    Text("One-page recap · text, email, or AirDrop")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.85))
+                }
+                Spacer()
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(.white)
+            }
+            .padding(14)
+            .background(
+                LinearGradient(colors: [Theme.ember, Theme.emberDeep],
+                               startPoint: .topLeading, endPoint: .bottomTrailing),
+                in: .rect(cornerRadius: 18)
+            )
+            .shadow(color: Theme.ember.opacity(0.35), radius: 14, y: 8)
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: Pipeline

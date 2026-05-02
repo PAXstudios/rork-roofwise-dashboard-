@@ -8,12 +8,15 @@ struct DashboardView: View {
             VStack(spacing: 22) {
                 DashboardHeader()
                 KPIStrip(onQuickInspection: onQuickInspection)
+                SalesMetricsCard()
                 StormAlertCard()
+                StormAlertSubscriptionCard()
                 StormHistoryMapCard()
                 PipelineCard()
                 ScheduleCard()
                 RecentJobsRow()
                 AIInsightsCard()
+                DailySummaryCard()
                 TasksAndActivityCard()
                 Color.clear.frame(height: 120)
             }
