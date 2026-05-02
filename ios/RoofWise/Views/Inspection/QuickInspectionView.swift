@@ -2263,19 +2263,93 @@ private struct ResultsView: View {
         }
     }
 
+    /// The AI's detected roof material, parsed from the `shingle_type` finding.
+    private var detectedMaterial: (name: String, icon: String, confidence: Int)? {
+        guard let f = findings.first(where: { $0.label == "shingle_type" }) else { return nil }
+        let raw = f.value.split(separator: "\u{2014}").first.map(String.init) ?? f.value
+        let name = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return nil }
+        let icon = mappedRoofMaterial(for: name)?.icon ?? f.icon
+        return (name, icon, f.confidence)
+    }
+
+    /// Best-effort map from the AI's free-text material name to a `RoofMaterial` case.
+    private func mappedRoofMaterial(for name: String) -> RoofMaterial? {
+        let n = name.lowercased()
+        if n.contains("3-tab") || n.contains("3 tab") || n.contains("three tab") || n.contains("three-tab") {
+            return .asphalt3Tab
+        }
+        if n.contains("architectural") || n.contains("laminat") || n.contains("dimensional") {
+            return .architectural
+        }
+        if n.contains("metal") || n.contains("standing seam") || n.contains("steel") || n.contains("aluminum") {
+            return .metal
+        }
+        if n.contains("tile") || n.contains("clay") || n.contains("terracotta") || n.contains("terra cotta") || n.contains("concrete") {
+            return .tile
+        }
+        if n.contains("wood") || n.contains("shake") || n.contains("cedar") {
+            return .wood
+        }
+        if n.contains("tpo") || n.contains("membrane") || n.contains("epdm") || n.contains("flat") {
+            return .tpo
+        }
+        // Generic asphalt fallback
+        if n.contains("asphalt") || n.contains("shingle") {
+            return .architectural
+        }
+        return nil
+    }
+
+    @ViewBuilder
+    private var materialPill: some View {
+        if let m = detectedMaterial {
+            HStack(spacing: 8) {
+                ZStack {
+                    Circle().fill(.white.opacity(0.22))
+                    Image(systemName: m.icon)
+                        .font(.system(size: 11, weight: .heavy))
+                        .foregroundStyle(.white)
+                }
+                .frame(width: 22, height: 22)
+                Text(m.name)
+                    .font(.system(size: 12, weight: .heavy))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                if m.confidence > 0 {
+                    Text("\u{00B7}")
+                        .font(.system(size: 12, weight: .heavy))
+                        .foregroundStyle(.white.opacity(0.6))
+                    Text("\(m.confidence)%")
+                        .font(.system(size: 11, weight: .heavy))
+                        .foregroundStyle(.white.opacity(0.92))
+                        .monospacedDigit()
+                }
+            }
+            .padding(.horizontal, 10).padding(.vertical, 5)
+            .background(.white.opacity(0.16), in: .capsule)
+            .overlay(Capsule().stroke(.white.opacity(0.28), lineWidth: 0.6))
+        }
+    }
+
     private var heroCard: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 8) {
-                Image(systemName: "checkmark.seal.fill")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(.white)
-                Text("AI ANALYSIS COMPLETE")
-                    .font(.system(size: 10, weight: .heavy))
-                    .tracking(1.4)
-                    .foregroundStyle(.white)
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark.seal.fill")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(.white)
+                    Text("AI ANALYSIS COMPLETE")
+                        .font(.system(size: 10, weight: .heavy))
+                        .tracking(1.4)
+                        .foregroundStyle(.white)
+                }
+                .padding(.horizontal, 10).padding(.vertical, 6)
+                .background(.white.opacity(0.18), in: .capsule)
+                Spacer(minLength: 6)
             }
-            .padding(.horizontal, 10).padding(.vertical, 6)
-            .background(.white.opacity(0.18), in: .capsule)
+
+            materialPill
 
             Text("Functional damage confirmed.\nClaim is supportable.")
                 .font(.system(size: 22, weight: .heavy))
