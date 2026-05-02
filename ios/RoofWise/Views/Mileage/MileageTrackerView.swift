@@ -12,6 +12,9 @@ struct MileageTrackerView: View {
     @State private var showRateSheet: Bool = false
     @State private var editingTrip: MileageTrip?
     @State private var showAddManual: Bool = false
+    @State private var showSettings: Bool = false
+    @State private var autoTrack = MileageAutoTrackService.shared
+    @State private var inbox = AutoTripInbox.shared
 
     var body: some View {
         NavigationStack {
@@ -55,6 +58,11 @@ struct MileageTrackerView: View {
                         } label: {
                             Label("Set Mileage Rate", systemImage: "dollarsign.circle")
                         }
+                        Button {
+                            showSettings = true
+                        } label: {
+                            Label("Auto-Tracking Settings", systemImage: "sensor.tag.radiowaves.forward.fill")
+                        }
                     } label: {
                         Image(systemName: "ellipsis.circle")
                             .font(.system(size: 16, weight: .semibold))
@@ -85,6 +93,23 @@ struct MileageTrackerView: View {
             .sheet(isPresented: $showAddManual) {
                 ManualTripSheet { trip in
                     store.add(trip)
+                }
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+            }
+            .sheet(isPresented: $showSettings) {
+                MileageAutoTrackSettingsSheet()
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
+            }
+            .sheet(item: Binding(get: { inbox.presented }, set: { inbox.presented = $0 })) { trip in
+                AutoDetectedTripSheet(trip: trip) { saved in
+                    store.add(saved)
+                    inbox.remove(id: trip.id)
+                    inbox.presented = nil
+                } onDiscard: {
+                    inbox.remove(id: trip.id)
+                    inbox.presented = nil
                 }
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)

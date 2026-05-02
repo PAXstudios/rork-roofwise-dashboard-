@@ -402,10 +402,12 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSCameraUsageDescription = "RoofWise uses the camera and LiDAR to capture and analyze roof damage during inspections.";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "RoofWise records GPS elevation at inspection sites for storm history and claim documentation.";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "RoofWise uses background location to auto-detect drives and offer to log them as mileage — even when the app is closed.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "RoofWise records GPS for inspection elevation and live mileage tracking. Background access enables auto-trip detection.";
 				INFOPLIST_KEY_NSMotionUsageDescription = "RoofWise uses motion sensors to measure live roof pitch while you aim the camera.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UIBackgroundModes = location;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
@@ -438,10 +440,12 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSCameraUsageDescription = "RoofWise uses the camera and LiDAR to capture and analyze roof damage during inspections.";
-				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "RoofWise records GPS elevation at inspection sites for storm history and claim documentation.";
+				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "RoofWise uses background location to auto-detect drives and offer to log them as mileage — even when the app is closed.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "RoofWise records GPS for inspection elevation and live mileage tracking. Background access enables auto-trip detection.";
 				INFOPLIST_KEY_NSMotionUsageDescription = "RoofWise uses motion sensors to measure live roof pitch while you aim the camera.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UIBackgroundModes = location;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
