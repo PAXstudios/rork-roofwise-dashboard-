@@ -94,21 +94,42 @@ enum GeminiAnalysisService {
           4. Do NOT distribute markers in a regular grid or random pattern. Markers must
              land EXACTLY on the pixel feature you are calling out.
 
-        WHAT HAIL DAMAGE LOOKS LIKE (be specific — these are the visual cues):
-          • On asphalt shingles: small CIRCULAR bruises 1/4" to 2" across — darker than the
-             surrounding granules because granules are knocked away exposing the asphalt mat.
-             Often shows a slightly shiny black mat center with a halo of displaced/lighter
-             granules around it. Mat may be fractured (visible hairline crack inside the
-             impact). Press-test signature = soft spot under the granules.
-          • On wood shake: splits radiating from a sharp impact point, often with a clean
-             edge (not weathered) and bright wood underneath.
-          • On soft metal (vents, ridge cap, drip edge, gutters, downspouts, pipe jacks,
-             turbines, exhaust caps, satellite mounts): round DENTS — concave depressions
-             that break the line of the metal. Often paired with paint/coating fractures.
-          • Spatter marks: oxidation/dirt-line ring spatter on metal — confirms directionality.
-          • Distinguish hail from: foot traffic (irregular elongated scuffs), mechanical
-             damage (linear/scrape), age weathering (uniform granule thinning, no impact halo),
-             manufacturing defects (uniform pattern). DO NOT call those hail.
+        WHAT HAIL DAMAGE LOOKS LIKE IN A PHOTO (purely visual cues — judge by pixels,
+        not physical inches; you don't know the camera distance or zoom level):
+          • On asphalt shingles: roughly CIRCULAR or oval spots that are visibly
+             DARKER than the surrounding granules, because granules have been
+             displaced and the black asphalt mat is exposed. The spot center often
+             looks slightly shinier/wetter than the matte surrounding granules. A
+             halo of lighter, scattered granules may ring the impact. A hairline
+             crack or pucker inside the spot indicates mat fracture. Spots are
+             usually scattered randomly — NOT in rows or grids.
+          • On wood shake: sharp clean splits with bright unweathered wood inside,
+             often radiating from a single point.
+          • On soft metal (vents, ridge cap, drip edge, gutters, downspouts, pipe
+             jacks, turbines, exhaust caps, satellite mounts): round concave DENTS
+             that break the straight/curved line of the metal — visible as shadows
+             on one side and highlights on the other under raking light. Paint or
+             coating may be fractured at the dent.
+          • Spatter marks: ring-shaped oxidation or clean dirt-line spots on
+             painted or weathered metal — no dent, just a tell-tale circular clean
+             spot where hail removed surface oxidation.
+
+        DO NOT confuse hail with these look-alikes (very common false positives):
+          • Foot traffic — elongated, smeared scuffs, often along a path; no halo.
+          • Mechanical / tool damage — linear scrapes, gouges, sharp straight edges.
+          • Age weathering — UNIFORM granule thinning across the whole shingle with
+             no discrete impact spots and no exposed-mat halo.
+          • Manufacturing pattern / shadow lines — repeating regular pattern
+             across tabs.
+          • Blisters — RAISED bumps with intact granules on top; hail spots are
+             FLUSH or slightly recessed with granules MISSING.
+          • Shadows, water stains, lichen specks, leaf debris, camera lens dust,
+             JPEG compression artifacts, or normal shingle color variation — these
+             are NOT hail.
+          • A single isolated dark fleck with no halo and no displaced granules
+             around it is almost certainly NOT hail. Require BOTH a darker
+             exposed-mat center AND visible granule disturbance around it before
+             calling a strike.
 
         Analyze this image for ALL of the following:
           • Hail damage — count INDIVIDUAL strikes separately on (a) shingles/roof field and
@@ -177,9 +198,22 @@ enum GeminiAnalysisService {
           • Place markers ON the pixel feature. A hail strike on the lower-right shingle should
              have x ~0.7, y ~0.7 — NOT centered or in a corner.
 
-        Mark EVERY visible hail strike INDIVIDUALLY — do not group them. Typical bbox for a
-        single hail strike on shingles is width ~0.02 to 0.08 (about 1/4" to 2" across).
-        If the image shows NO damage, return "damage_markers": [] (empty). Do NOT fabricate markers.
+        Mark EVERY visible hail strike INDIVIDUALLY — do not group them. Size each
+        bbox to the ACTUAL pixel extent of the spot in THIS specific image. Camera
+        distance and zoom are unknown, so do NOT assume any physical inch size —
+        measure the feature in the pixels you actually see.
+
+        FINAL CHECK before returning each marker, ask yourself:
+          1. Can I describe in `note` the exact visual cue at this (x, y) — color
+             contrast, halo, mat exposure, dent shadow? If not, drop the marker.
+          2. For shingle hail: is there a darker exposed-mat center AND visible
+             granule disturbance around it? If only one is present, drop the marker.
+          3. Am I placing this marker because I actually see the feature, or
+             because I expect hail to be present? If the latter, drop it.
+
+        If the image shows NO damage, return "damage_markers": [] (empty). A
+        confident empty result is far better than fabricated markers. Do NOT
+        invent damage to be helpful.
         """
 
         let body: [String: Any] = [
