@@ -11,6 +11,7 @@ struct DashboardView: View {
                 KPIStrip(onQuickInspection: onQuickInspection)
                 TodaysLessonCard(onOpenTraining: onOpenTraining)
                 SalesMetricsCard()
+                CoachingActivityCard(onOpenTraining: onOpenTraining)
                 StormAlertCard()
                 StormAlertSubscriptionCard()
                 StormHistoryMapCard()
