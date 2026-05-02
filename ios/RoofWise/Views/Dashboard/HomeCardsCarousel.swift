@@ -3,18 +3,18 @@ import SwiftUI
 import UIKit
 #endif
 
-/// Horizontally scrolling carousel of the four primary Home overview cards.
+/// Horizontally scrolling carousel of the six primary Home overview cards.
 /// Snaps one card per swipe, peeks the next card on the right, and shows a
 /// page indicator beneath the row.
 struct HomeCardsCarousel: View {
     var onOpenTraining: () -> Void = {}
 
     private enum Page: Int, CaseIterable, Identifiable, Hashable {
-        case sales, daily, storm, lesson
+        case alert, sales, daily, storm, lesson, tasks
         var id: Int { rawValue }
     }
 
-    @State private var currentPage: Page? = .sales
+    @State private var currentPage: Page? = .alert
 
     private let sideInset: CGFloat = 20
     private let peek: CGFloat = 18
@@ -27,6 +27,10 @@ struct HomeCardsCarousel: View {
 
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: spacing) {
+                        StormAlertCard(embedded: true)
+                            .frame(width: cardWidth)
+                            .id(Page.alert)
+
                         SalesMetricsCard(embedded: true)
                             .frame(width: cardWidth)
                             .id(Page.sales)
@@ -42,6 +46,10 @@ struct HomeCardsCarousel: View {
                         TodaysLessonCard(onOpenTraining: onOpenTraining, embedded: true)
                             .frame(width: cardWidth)
                             .id(Page.lesson)
+
+                        TasksAndActivityCard(embedded: true)
+                            .frame(width: cardWidth)
+                            .id(Page.tasks)
                     }
                     .scrollTargetLayout()
                 }
@@ -61,11 +69,13 @@ struct HomeCardsCarousel: View {
     }
 
     private var cardHeight: CGFloat {
-        switch currentPage ?? .sales {
+        switch currentPage ?? .alert {
+        case .alert: return 280
         case .sales: return 430
         case .daily: return 380
         case .storm: return 520
         case .lesson: return 320
+        case .tasks: return 460
         }
     }
 
@@ -73,8 +83,8 @@ struct HomeCardsCarousel: View {
         HStack(spacing: 6) {
             ForEach(Page.allCases) { page in
                 Capsule()
-                    .fill(page == (currentPage ?? .sales) ? Theme.ink : Theme.hairline)
-                    .frame(width: page == (currentPage ?? .sales) ? 18 : 6, height: 6)
+                    .fill(page == (currentPage ?? .alert) ? Theme.ink : Theme.hairline)
+                    .frame(width: page == (currentPage ?? .alert) ? 18 : 6, height: 6)
                     .animation(.spring(duration: 0.3), value: currentPage)
             }
         }

@@ -11,13 +11,11 @@ struct DashboardView: View {
                 KPIStrip(onQuickInspection: onQuickInspection)
                 HomeCardsCarousel(onOpenTraining: onOpenTraining)
                 CoachingActivityCard(onOpenTraining: onOpenTraining)
-                StormAlertCard()
                 StormAlertSubscriptionCard()
                 PipelineCard()
                 ScheduleCard()
                 RecentJobsRow()
                 AIInsightsCard()
-                TasksAndActivityCard()
                 Color.clear.frame(height: 120)
             }
             .padding(.top, 8)

@@ -1,22 +1,28 @@
-# Group four cards into a horizontal carousel on the Home screen
+# Group all 6 Home cards into one horizontal carousel
 
-**What changes**
+## What changes
 
-- The slot currently occupied by "Today's Lesson" on the Home screen becomes a horizontally scrolling carousel containing four cards in this order:
-  1. **Sales Performance**
-  2. **Daily Wrap-Up**
-  3. **Hail & Wind History**
-  4. **Today's Lesson**
-- Each card keeps its current look, size, and behavior — they're just laid out side-by-side and swipeable left/right.
-- The carousel snaps cleanly to one card per swipe, with a small gap between cards and a subtle peek of the next card on the right so users know there's more to explore.
-- A row of four small page indicator dots sits just below the carousel, highlighting the current card as you swipe.
+Combine six Home screen cards into a single horizontal, swipe-snapping carousel positioned where Today's Lesson currently sits. Remove their standalone placements elsewhere on the Home screen so each card only appears once — inside the carousel.
 
-**Cleanup elsewhere**
+## Card order (left to right)
 
-- Sales Performance, Daily Wrap-Up, and Hail & Wind History are removed from their previous standalone positions further down the Home screen so they only appear inside this new carousel.
-- All other Home cards (Coaching Activity, Storm Alerts, Pipeline, Schedule, Recent Jobs, AI Insights, Tasks & Activity) stay exactly where they are.
+1. **Storm Alert** — urgent, leads the row
+2. **Sales Performance**
+3. **Daily Wrap-Up**
+4. **Hail & Wind History**
+5. **Today's Lesson**
+6. **Tasks & Activity**
 
-**Feel**
+## Behavior & design
 
-- Smooth native paging swipe with a light haptic tick when each card snaps into place.
-- The peeking next-card edge invites the swipe without crowding the focused card.
+- One card visible at a time, with a small peek of the next card on the right to invite swiping.
+- Snap-to-card scrolling with a soft haptic tick on each page change.
+- Page dots underneath update as you swipe; the active dot stretches into a pill.
+- Each card keeps its existing look, sizing, and interactions — nothing about the cards themselves changes.
+- The carousel auto-adjusts its height to whichever card is currently in view so nothing gets cut off.
+- The Storm Alert, Tasks & Activity cards no longer appear as standalone sections lower on the Home screen — they live only inside the carousel now.
+- Other Home sections (Coaching Activity, Storm Alert Subscription, Pipeline, Schedule, Recent Jobs, AI Insights) stay in their current positions, untouched.
+
+## Where it appears
+
+- **Home screen** — directly below the KPI row, replacing the current 4-card carousel with the new 6-card version.

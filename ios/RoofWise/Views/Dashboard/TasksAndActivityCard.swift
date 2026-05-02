@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct TasksAndActivityCard: View {
+    var embedded: Bool = false
     @State private var tasks: [TaskItem] = MockData.tasks
     @State private var tab: String = "Tasks"
 
@@ -40,7 +41,7 @@ struct TasksAndActivityCard: View {
             }
         }
         .cardStyle(padding: 18, radius: 24)
-        .padding(.horizontal, 20)
+        .padding(.horizontal, embedded ? 0 : 20)
     }
 }
 

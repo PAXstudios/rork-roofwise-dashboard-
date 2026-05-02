@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct StormAlertCard: View {
+    var embedded: Bool = false
+
     var body: some View {
         ZStack {
             // Sky atmospherics
@@ -109,7 +111,7 @@ struct StormAlertCard: View {
         }
         .frame(height: 260)
         .clipShape(.rect(cornerRadius: 24))
-        .padding(.horizontal, 20)
+        .padding(.horizontal, embedded ? 0 : 20)
         .shadow(color: Theme.ink.opacity(0.18), radius: 16, x: 0, y: 8)
     }
 }
