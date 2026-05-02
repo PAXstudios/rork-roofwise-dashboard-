@@ -3,7 +3,13 @@ import SwiftUI
 struct ClaimPacketView: View {
     let packet: ClaimPacket
     let photoCount: Int
+    var photos: [CapturedPhoto] = []
+    var findings: [InspectionFinding] = []
+    var customer: Customer? = nil
     var onClose: () -> Void
+    @State private var showShareSheet: Bool = false
+    @State private var pdfURL: URL?
+    @State private var isGeneratingPDF: Bool = false
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
@@ -21,6 +27,34 @@ struct ClaimPacketView: View {
         }
         .safeAreaInset(edge: .top) { topNav }
         .background(Theme.canvas)
+        .sheet(isPresented: $showShareSheet) {
+            if let url = pdfURL {
+                ShareSheet(items: [url])
+                    .presentationDetents([.medium, .large])
+            }
+        }
+    }
+
+    private func exportPDF() {
+        isGeneratingPDF = true
+        let g = UIImpactFeedbackGenerator(style: .medium); g.impactOccurred()
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(40))
+            let input = PDFReportService.Input(
+                customer: customer,
+                photos: photos,
+                findings: findings.isEmpty ? InspectionMock.findings : findings,
+                packet: packet,
+                repName: "Sarah Jenkins",
+                repPhone: "(214) 555-0142",
+                repCompany: "RoofWise · Forensic Field Team"
+            )
+            if let url = PDFReportService.generate(input: input) {
+                pdfURL = url
+                showShareSheet = true
+            }
+            isGeneratingPDF = false
+        }
     }
 
     private var topNav: some View {
@@ -43,14 +77,22 @@ struct ClaimPacketView: View {
                     .foregroundStyle(Theme.inkFaint)
             }
             Spacer()
-            Button {} label: {
-                Image(systemName: "square.and.arrow.up")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(Theme.ink)
-                    .frame(width: 38, height: 38)
-                    .background(Theme.card, in: .circle)
-                    .overlay(Circle().stroke(Theme.hairline, lineWidth: 0.6))
+            Button { exportPDF() } label: {
+                ZStack {
+                    if isGeneratingPDF {
+                        ProgressView().scaleEffect(0.6).tint(Theme.ember)
+                    } else {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(Theme.ink)
+                    }
+                }
+                .frame(width: 38, height: 38)
+                .background(Theme.card, in: .circle)
+                .overlay(Circle().stroke(Theme.hairline, lineWidth: 0.6))
             }
+            .buttonStyle(.plain)
+            .disabled(isGeneratingPDF)
         }
         .padding(.horizontal, 16)
         .padding(.top, 16)
@@ -259,10 +301,14 @@ struct ClaimPacketView: View {
 
     private var actions: some View {
         VStack(spacing: 10) {
-            Button {} label: {
+            Button { exportPDF() } label: {
                 HStack {
-                    Image(systemName: "paperplane.fill")
-                    Text("Send Packet to Carrier")
+                    if isGeneratingPDF {
+                        ProgressView().tint(.white)
+                    } else {
+                        Image(systemName: "doc.richtext.fill")
+                    }
+                    Text(isGeneratingPDF ? "Generating PDF…" : "Export & Share PDF Packet")
                 }
                 .font(.system(size: 15, weight: .heavy))
                 .foregroundStyle(.white)
@@ -276,6 +322,7 @@ struct ClaimPacketView: View {
                 .shadow(color: Theme.ember.opacity(0.4), radius: 12, x: 0, y: 6)
             }
             .buttonStyle(.plain)
+            .disabled(isGeneratingPDF)
 
             Button { onClose() } label: {
                 Text("Back to Inspection")

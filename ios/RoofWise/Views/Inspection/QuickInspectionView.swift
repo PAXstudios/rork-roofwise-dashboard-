@@ -29,6 +29,13 @@ struct QuickInspectionView: View {
     @State private var zoomLevel: CGFloat = 1.0
     @State private var capturedPhotos: [CapturedPhoto] = []
     @State private var previewPhoto: CapturedPhoto?
+    // Guided inspection mode
+    @State private var isGuidedMode: Bool = false
+    @State private var guidedZoneCounts: [GuidedZone: Int] = [:]
+    @State private var currentGuidedZone: GuidedZone = .frontSlope
+    @State private var showGuidedChecklist: Bool = false
+    @State private var showShareSheet: Bool = false
+    @State private var pdfShareURL: URL?
     @State private var libraryPickerItems: [PhotosPickerItem] = []
     @State private var isImportingLibrary: Bool = false
     @State private var lastFindings: [InspectionFinding] = []
@@ -58,6 +65,8 @@ struct QuickInspectionView: View {
             case .results:
                 ResultsView(findings: lastFindings.isEmpty ? InspectionMock.findings : lastFindings,
                             photoCount: capturedPhotos.count,
+                            photos: capturedPhotos,
+                            customer: customerStore.activeCustomer,
                             onClose: { dismiss() },
                             onRescan: { resetToCapture() },
                             onCreateClaim: { generateClaimPacket() })
@@ -69,6 +78,32 @@ struct QuickInspectionView: View {
         .sheet(isPresented: $showSlopePicker) {
             SlopePickerSheet(selected: $currentSlope)
                 .presentationDetents([.medium, .large])
+        }
+        .sheet(isPresented: $showGuidedChecklist) {
+            GuidedChecklistSheet(zoneCounts: guidedZoneCounts,
+                                 currentZone: $currentGuidedZone,
+                                 isGuidedMode: $isGuidedMode)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+        }
+        .onChange(of: currentGuidedZone) { _, newZone in
+            guard isGuidedMode else { return }
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                currentSlope = newZone.slope
+                captureMode = newZone.captureMode
+            }
+        }
+        .onChange(of: isGuidedMode) { _, newValue in
+            if newValue {
+                // Snap to first uncompleted zone
+                if let next = GuidedZone.allCases.first(where: { (guidedZoneCounts[$0] ?? 0) < $0.minPhotos }) {
+                    currentGuidedZone = next
+                }
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                    currentSlope = currentGuidedZone.slope
+                    captureMode = currentGuidedZone.captureMode
+                }
+            }
         }
         .fullScreenCover(item: $previewPhoto) { photo in
             PhotoDamageOverlayView(
@@ -82,7 +117,10 @@ struct QuickInspectionView: View {
         }
         .fullScreenCover(item: $claimPacket) { packet in
             ClaimPacketView(packet: packet,
-                            photoCount: capturedPhotos.count) {
+                            photoCount: capturedPhotos.count,
+                            photos: capturedPhotos,
+                            findings: lastFindings.isEmpty ? InspectionMock.findings : lastFindings,
+                            customer: customerStore.activeCustomer) {
                 claimPacket = nil
             }
         }
@@ -128,6 +166,9 @@ struct QuickInspectionView: View {
                 let g = UIImpactFeedbackGenerator(style: .medium); g.impactOccurred()
                 if let cid = customerStore.activeCustomerID {
                     customerStore.appendPhotos(imported, to: cid)
+                }
+                if isGuidedMode {
+                    for _ in imported { advanceGuidedZoneAfterCapture() }
                 }
             }
             libraryPickerItems = []
@@ -329,6 +370,16 @@ struct QuickInspectionView: View {
                 }
             }
 
+            if isGuidedMode {
+                GuidedZonePill(
+                    currentZone: currentGuidedZone,
+                    completedCount: GuidedZone.allCases.filter { (guidedZoneCounts[$0] ?? 0) >= $0.minPhotos }.count,
+                    totalCount: GuidedZone.allCases.count,
+                    onTap: { showGuidedChecklist = true }
+                )
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+
             slopeDropdown
 
             captureModeToggle
@@ -344,6 +395,16 @@ struct QuickInspectionView: View {
     private var viewOptionsRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
+                viewOptionChip(icon: "checklist",
+                               label: "Guided",
+                               isOn: isGuidedMode) {
+                    withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
+                        isGuidedMode.toggle()
+                    }
+                    if isGuidedMode {
+                        showGuidedChecklist = true
+                    }
+                }
                 viewOptionChip(icon: "viewfinder.circle.fill",
                                label: "Shingle Detect",
                                isOn: showShingleDetect) {
@@ -741,6 +802,24 @@ struct QuickInspectionView: View {
             }
             if let cid = customerStore.activeCustomerID {
                 customerStore.appendPhotos([captured], to: cid)
+            }
+            if isGuidedMode {
+                advanceGuidedZoneAfterCapture()
+            }
+        }
+    }
+
+    private func advanceGuidedZoneAfterCapture() {
+        let zone = currentGuidedZone
+        let newCount = (guidedZoneCounts[zone] ?? 0) + 1
+        guidedZoneCounts[zone] = newCount
+        // If this zone now meets its minimum, jump to next uncompleted zone
+        if newCount >= zone.minPhotos {
+            let g = UINotificationFeedbackGenerator(); g.notificationOccurred(.success)
+            if let next = GuidedZone.allCases.first(where: { (guidedZoneCounts[$0] ?? 0) < $0.minPhotos }) {
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.78)) {
+                    currentGuidedZone = next
+                }
             }
         }
     }
@@ -1456,9 +1535,14 @@ private struct HitMarker: View {
 private struct ResultsView: View {
     let findings: [InspectionFinding]
     let photoCount: Int
+    let photos: [CapturedPhoto]
+    let customer: Customer?
     var onClose: () -> Void
     var onRescan: () -> Void
     var onCreateClaim: () -> Void
+    @State private var showShareSheet: Bool = false
+    @State private var pdfURL: URL?
+    @State private var isGeneratingPDF: Bool = false
 
     private var totalHits: Int { InspectionMock.hits.count }
     private var detectedCount: Int { findings.filter(\.detected).count }
@@ -1503,6 +1587,12 @@ private struct ResultsView: View {
         }
         .safeAreaInset(edge: .top) { topNav }
         .background(Theme.canvas)
+        .sheet(isPresented: $showShareSheet) {
+            if let url = pdfURL {
+                ShareSheet(items: [url])
+                    .presentationDetents([.medium, .large])
+            }
+        }
     }
 
     private var damageScoreCard: some View {
@@ -1613,19 +1703,50 @@ private struct ResultsView: View {
                     .foregroundStyle(Theme.inkFaint)
             }
             Spacer()
-            Button {} label: {
-                Image(systemName: "square.and.arrow.up")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(Theme.ink)
-                    .frame(width: 38, height: 38)
-                    .background(Theme.card, in: .circle)
-                    .overlay(Circle().stroke(Theme.hairline, lineWidth: 0.6))
+            Button { exportPDF() } label: {
+                ZStack {
+                    if isGeneratingPDF {
+                        ProgressView().scaleEffect(0.6).tint(Theme.ember)
+                    } else {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(Theme.ink)
+                    }
+                }
+                .frame(width: 38, height: 38)
+                .background(Theme.card, in: .circle)
+                .overlay(Circle().stroke(Theme.hairline, lineWidth: 0.6))
             }
+            .buttonStyle(.plain)
+            .disabled(isGeneratingPDF)
         }
         .padding(.horizontal, 16)
         .padding(.top, 56)
         .padding(.bottom, 8)
         .background(Theme.canvas)
+    }
+
+    private func exportPDF() {
+        isGeneratingPDF = true
+        let g = UIImpactFeedbackGenerator(style: .medium); g.impactOccurred()
+        Task { @MainActor in
+            // Yield so the spinner can show
+            try? await Task.sleep(for: .milliseconds(40))
+            let input = PDFReportService.Input(
+                customer: customer,
+                photos: photos,
+                findings: findings,
+                packet: nil,
+                repName: "Sarah Jenkins",
+                repPhone: "(214) 555-0142",
+                repCompany: "RoofWise · Forensic Field Team"
+            )
+            if let url = PDFReportService.generate(input: input) {
+                pdfURL = url
+                showShareSheet = true
+            }
+            isGeneratingPDF = false
+        }
     }
 
     private var heroCard: some View {
@@ -1904,6 +2025,25 @@ private struct ResultsView: View {
                 .shadow(color: Theme.ember.opacity(0.4), radius: 12, x: 0, y: 6)
             }
             .buttonStyle(.plain)
+
+            Button { exportPDF() } label: {
+                HStack {
+                    if isGeneratingPDF {
+                        ProgressView().tint(Theme.ink)
+                    } else {
+                        Image(systemName: "doc.richtext.fill")
+                    }
+                    Text(isGeneratingPDF ? "Generating PDF…" : "Share Branded PDF Report")
+                }
+                .font(.system(size: 14, weight: .heavy))
+                .foregroundStyle(Theme.ink)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(Theme.card, in: .rect(cornerRadius: 14))
+                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.ember.opacity(0.4), lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            .disabled(isGeneratingPDF)
 
             HStack(spacing: 10) {
                 Button { onRescan() } label: {
