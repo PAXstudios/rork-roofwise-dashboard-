@@ -41,8 +41,25 @@ final class CameraCaptureService: NSObject {
     private static let gridDim: Int = 24
 
     private var mockTimer: Timer?
+    private var activeDevice: AVCaptureDevice?
 
     var hasCamera: Bool { CameraProxyView.hasRearCamera }
+
+    /// Current zoom factor (1, 2, 3...). Mock value used when running in the cloud simulator.
+    var zoomFactor: CGFloat = 1.0
+
+    func setZoom(_ factor: CGFloat) {
+        zoomFactor = factor
+        guard let device = activeDevice else { return }
+        do {
+            try device.lockForConfiguration()
+            let clamped = max(1.0, min(factor, min(device.activeFormat.videoMaxZoomFactor, 6.0)))
+            device.ramp(toVideoZoomFactor: clamped, withRate: 4.0)
+            device.unlockForConfiguration()
+        } catch {
+            // ignore — leave zoom at previous value
+        }
+    }
 
     // MARK: - Lifecycle
 
@@ -69,6 +86,7 @@ final class CameraCaptureService: NSObject {
            let input = try? AVCaptureDeviceInput(device: device),
            session.canAddInput(input) {
             session.addInput(input)
+            activeDevice = device
         }
 
         if session.canAddOutput(photoOutput) {

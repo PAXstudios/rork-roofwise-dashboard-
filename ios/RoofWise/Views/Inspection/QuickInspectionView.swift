@@ -22,6 +22,10 @@ struct QuickInspectionView: View {
     @State private var currentSlope: SlopeType = .frontSlope
     @State private var showSlopePicker: Bool = false
     @State private var captureMode: CaptureMode = .square
+    @State private var showShingleDetect: Bool = true
+    @State private var showLiDARMesh: Bool = false
+    @State private var showGridOverlay: Bool = false
+    @State private var zoomLevel: CGFloat = 1.0
     @State private var capturedPhotos: [CapturedPhoto] = []
     @State private var previewPhoto: CapturedPhoto?
     @State private var libraryPickerItems: [PhotosPickerItem] = []
@@ -128,13 +132,31 @@ struct QuickInspectionView: View {
                            center: .center, startRadius: 180, endRadius: 520)
                 .allowsHitTesting(false)
 
+            // Live LiDAR-style mesh (only when toggled on in capture)
+            if showLiDARMesh {
+                LiDARMeshOverlay(progress: 1.0)
+                    .opacity(0.55)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
+
+            // Optional rule-of-thirds / measurement grid overlay
+            if showGridOverlay {
+                CaptureGridOverlay()
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
+
             // Real-time AI shingle detection (Vision: VNDetectRectanglesRequest)
-            ShingleDetectionOverlay(detections: filteredDetections,
-                                    confidences: filteredConfidences,
-                                    squareProgress: camera.currentSquareProgress,
-                                    showSquareProgress: captureMode == .square,
-                                    singleShingleMode: captureMode == .singleShingle)
-                .allowsHitTesting(false)
+            if showShingleDetect {
+                ShingleDetectionOverlay(detections: filteredDetections,
+                                        confidences: filteredConfidences,
+                                        squareProgress: camera.currentSquareProgress,
+                                        showSquareProgress: captureMode == .square,
+                                        singleShingleMode: captureMode == .singleShingle)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
 
             // Targeting reticle
             ReticleOverlay(active: true)
@@ -296,9 +318,116 @@ struct QuickInspectionView: View {
             slopeDropdown
 
             captureModeToggle
+
+            viewOptionsRow
         }
         .padding(.horizontal, 16)
         .padding(.top, 56)
+    }
+
+    // MARK: View options (multi-select)
+
+    private var viewOptionsRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                viewOptionChip(icon: "viewfinder.circle.fill",
+                               label: "Shingle Detect",
+                               isOn: showShingleDetect) {
+                    withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
+                        showShingleDetect.toggle()
+                    }
+                }
+                viewOptionChip(icon: "cube.transparent.fill",
+                               label: "LiDAR Mesh",
+                               isOn: showLiDARMesh) {
+                    withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
+                        showLiDARMesh.toggle()
+                    }
+                }
+                viewOptionChip(icon: "grid",
+                               label: "Grid Overlay",
+                               isOn: showGridOverlay) {
+                    withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
+                        showGridOverlay.toggle()
+                    }
+                }
+
+                Rectangle()
+                    .fill(.white.opacity(0.18))
+                    .frame(width: 1, height: 22)
+                    .padding(.horizontal, 2)
+
+                ForEach([CGFloat(1), 2, 3], id: \.self) { z in
+                    zoomChip(level: z)
+                }
+            }
+            .padding(.horizontal, 2)
+        }
+        .scrollClipDisabled()
+    }
+
+    private func viewOptionChip(icon: String, label: String, isOn: Bool, action: @escaping () -> Void) -> some View {
+        Button {
+            let g = UISelectionFeedbackGenerator(); g.selectionChanged()
+            action()
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 11, weight: .heavy))
+                Text(label)
+                    .font(.system(size: 11, weight: .heavy))
+                    .tracking(0.4)
+            }
+            .foregroundStyle(isOn ? .black : .white.opacity(0.78))
+            .padding(.horizontal, 11)
+            .padding(.vertical, 7)
+            .background {
+                if isOn {
+                    Capsule().fill(
+                        LinearGradient(colors: [Theme.amber, Theme.ember],
+                                       startPoint: .leading, endPoint: .trailing)
+                    )
+                    .shadow(color: Theme.amber.opacity(0.45), radius: 6, y: 2)
+                } else {
+                    Capsule().fill(.ultraThinMaterial)
+                }
+            }
+            .overlay(
+                Capsule().stroke(isOn ? .clear : .white.opacity(0.18), lineWidth: 0.6)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func zoomChip(level: CGFloat) -> some View {
+        let isOn = abs(zoomLevel - level) < 0.05
+        return Button {
+            let g = UISelectionFeedbackGenerator(); g.selectionChanged()
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                zoomLevel = level
+            }
+            camera.setZoom(level)
+        } label: {
+            Text("\(Int(level))x")
+                .font(.system(size: 11, weight: .heavy))
+                .foregroundStyle(isOn ? .black : .white.opacity(0.78))
+                .frame(width: 34, height: 28)
+                .background {
+                    if isOn {
+                        Circle().fill(
+                            LinearGradient(colors: [Theme.amber, Theme.ember],
+                                           startPoint: .top, endPoint: .bottom)
+                        )
+                        .shadow(color: Theme.amber.opacity(0.45), radius: 6, y: 2)
+                    } else {
+                        Circle().fill(.ultraThinMaterial)
+                    }
+                }
+                .overlay(
+                    Circle().stroke(isOn ? .clear : .white.opacity(0.18), lineWidth: 0.6)
+                )
+        }
+        .buttonStyle(.plain)
     }
 
     private var captureModeToggle: some View {
@@ -1029,6 +1158,43 @@ struct LiDARMeshOverlay: View {
                 line.addLine(to: CGPoint(x: size.width, y: lineY))
                 ctx.stroke(line, with: .color(Theme.ember.opacity(0.9)), lineWidth: 1.5)
             }
+        }
+    }
+}
+
+// MARK: - Capture Grid Overlay (rule-of-thirds + measurement)
+
+struct CaptureGridOverlay: View {
+    var body: some View {
+        GeometryReader { geo in
+            Canvas { ctx, size in
+                let lineColor = GraphicsContext.Shading.color(Color.white.opacity(0.35))
+                let accentColor = GraphicsContext.Shading.color(Theme.amber.opacity(0.55))
+                // Rule of thirds
+                for i in 1..<3 {
+                    let x = size.width * CGFloat(i) / 3
+                    var v = Path()
+                    v.move(to: CGPoint(x: x, y: 0))
+                    v.addLine(to: CGPoint(x: x, y: size.height))
+                    ctx.stroke(v, with: lineColor, lineWidth: 0.6)
+
+                    let y = size.height * CGFloat(i) / 3
+                    var h = Path()
+                    h.move(to: CGPoint(x: 0, y: y))
+                    h.addLine(to: CGPoint(x: size.width, y: y))
+                    ctx.stroke(h, with: lineColor, lineWidth: 0.6)
+                }
+                // Center crosshair
+                let cx = size.width / 2
+                let cy = size.height / 2
+                var cross = Path()
+                cross.move(to: CGPoint(x: cx - 12, y: cy))
+                cross.addLine(to: CGPoint(x: cx + 12, y: cy))
+                cross.move(to: CGPoint(x: cx, y: cy - 12))
+                cross.addLine(to: CGPoint(x: cx, y: cy + 12))
+                ctx.stroke(cross, with: accentColor, lineWidth: 1.0)
+            }
+            .frame(width: geo.size.width, height: geo.size.height)
         }
     }
 }
