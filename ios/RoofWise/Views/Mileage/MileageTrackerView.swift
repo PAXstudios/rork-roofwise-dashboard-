@@ -801,8 +801,10 @@ private struct ManualTripSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var miles: String = ""
-    @State private var purpose: TripPurpose = .inspection
+    @State private var purpose: TripPurpose = .doorKnocking
     @State private var date: Date = Date()
+    @State private var durationHours: Int = 0
+    @State private var durationMinutes: Int = 20
     @State private var startLabel: String = ""
     @State private var endLabel: String = ""
     @State private var jobName: String = ""
@@ -815,6 +817,26 @@ private struct ManualTripSheet: View {
                     TextField("Miles", text: $miles)
                         .keyboardType(.decimalPad)
                     DatePicker("Date", selection: $date)
+                    HStack(spacing: 0) {
+                        Text("Duration")
+                        Spacer()
+                        Picker("Hours", selection: $durationHours) {
+                            ForEach(0..<13) { Text("\($0)h").tag($0) }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.wheel)
+                        .frame(width: 80, height: 100)
+                        .clipped()
+                        Picker("Minutes", selection: $durationMinutes) {
+                            ForEach(Array(stride(from: 0, through: 55, by: 5)), id: \.self) {
+                                Text("\($0)m").tag($0)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.wheel)
+                        .frame(width: 80, height: 100)
+                        .clipped()
+                    }
                     Picker("Purpose", selection: $purpose) {
                         ForEach(TripPurpose.allCases) { p in
                             Label(p.rawValue, systemImage: p.icon).tag(p)
@@ -841,10 +863,11 @@ private struct ManualTripSheet: View {
                     Button("Save") {
                         let m = Double(miles) ?? 0
                         guard m > 0 else { dismiss(); return }
+                        let totalSeconds = max(60, durationHours * 3600 + durationMinutes * 60)
                         let trip = MileageTrip(
                             id: existing?.id ?? UUID(),
                             startedAt: date,
-                            endedAt: date.addingTimeInterval(60 * 20),
+                            endedAt: date.addingTimeInterval(TimeInterval(totalSeconds)),
                             miles: m,
                             purpose: purpose,
                             startLabel: startLabel.isEmpty ? "Start" : startLabel,
@@ -865,6 +888,10 @@ private struct ManualTripSheet: View {
                     miles = String(format: "%.2f", e.miles)
                     purpose = e.purpose
                     date = e.startedAt
+                    let total = Int(e.durationSeconds)
+                    durationHours = total / 3600
+                    let mins = (total % 3600) / 60
+                    durationMinutes = (mins / 5) * 5
                     startLabel = e.startLabel
                     endLabel = e.endLabel
                     jobName = e.jobName ?? ""

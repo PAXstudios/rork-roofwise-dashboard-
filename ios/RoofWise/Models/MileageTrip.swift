@@ -3,36 +3,45 @@ import CoreLocation
 import SwiftUI
 
 enum TripPurpose: String, Codable, CaseIterable, Identifiable {
+    case doorKnocking = "Door Knocking"
     case inspection = "Inspection"
-    case estimate = "Estimate"
-    case jobSite = "Job Site"
+    case followUp = "Follow-up"
+    case jobSite = "Job Site Visit"
     case supplyRun = "Supply Run"
+    case estimate = "Estimate"
     case clientMeeting = "Client Meeting"
     case office = "Office"
+    case other = "Other"
     case personal = "Personal"
 
     var id: String { rawValue }
 
     var icon: String {
         switch self {
+        case .doorKnocking:  return "hand.tap.fill"
         case .inspection:    return "binoculars.fill"
-        case .estimate:      return "doc.text.fill"
+        case .followUp:      return "arrow.uturn.right.circle.fill"
         case .jobSite:       return "hammer.fill"
         case .supplyRun:     return "shippingbox.fill"
+        case .estimate:      return "doc.text.fill"
         case .clientMeeting: return "person.2.fill"
         case .office:        return "building.2.fill"
+        case .other:         return "ellipsis.circle.fill"
         case .personal:      return "car.fill"
         }
     }
 
     var tint: Color {
         switch self {
+        case .doorKnocking:  return Theme.ember
         case .inspection:    return Theme.ember
-        case .estimate:      return Theme.amber
+        case .followUp:      return Theme.amber
         case .jobSite:       return Theme.crimson
         case .supplyRun:     return Theme.sky
+        case .estimate:      return Theme.amber
         case .clientMeeting: return Theme.mint
         case .office:        return Theme.inkSoft
+        case .other:         return Theme.inkSoft
         case .personal:      return Theme.inkFaint
         }
     }
