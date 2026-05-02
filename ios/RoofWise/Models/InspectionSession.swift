@@ -77,6 +77,8 @@ struct ClaimPacket: Identifiable {
     let recommendation: String
     let slopeFindings: [SlopePacketEntry]
     let summary: String
+    let roofCovering: String?
+    let damagedTilesPercent: Double?
     let generatedAt: Date = Date()
 }
 
@@ -154,16 +156,93 @@ enum HaagGrader {
             summary = "Combined peril event. Both hail and wind functional damage confirmed across multiple slopes. Full roof replacement is supportable per HAAG standards."
         }
 
+        // Roof-covering specific overrides (e.g. concrete tile uses tile-damage % rules).
+        let covering = detectedCovering(from: allFindings)
+        var finalRecommendation = grade.recommendedAction
+        var finalSummary = summary
+        var damagedTilesPercent: Double? = nil
+
+        if let covering, covering.contains("concrete tile") {
+            let pct = estimatedDamagedTilesPercent(photos: photos)
+            damagedTilesPercent = pct
+            if pct >= 10 {
+                finalRecommendation = "Replacement"
+                finalSummary = String(
+                    format: "Concrete tile roof: %.1f%% of visible tiles show damage (cracked, broken, slipped, or missing). Per concrete-tile criteria, damage at or above 10%% supports full Replacement rather than spot repair.",
+                    pct
+                )
+            }
+        }
+
         return ClaimPacket(grade: grade,
                            perils: perils,
                            affectedSquares: affectedSquares,
-                           recommendation: grade.recommendedAction,
+                           recommendation: finalRecommendation,
                            slopeFindings: entries,
-                           summary: summary)
+                           summary: finalSummary,
+                           roofCovering: covering,
+                           damagedTilesPercent: damagedTilesPercent)
     }
 
     private static func isFunctional(_ finding: InspectionFinding?) -> Bool {
         guard let f = finding, f.detected else { return false }
         return f.severity == .moderate || f.severity == .severe
+    }
+
+    /// Pulls the lower-cased covering name out of the AI's `shingle_type` finding, if any.
+    private static func detectedCovering(from findings: [InspectionFinding]) -> String? {
+        guard let typeFinding = findings.first(where: { $0.label == "shingle_type" }) else {
+            return nil
+        }
+        // value is formatted as "Pretty Name — note"; take the part before the em dash.
+        let raw = typeFinding.value.split(separator: "\u{2014}").first.map(String.init) ?? typeFinding.value
+        return raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    /// Estimates % of visible tiles showing damage across all captured photos.
+    /// We approximate ~30 tiles visible per square-mode photo and ~6 per single-shingle photo,
+    /// then count damage markers (cracks, missing/slipped tiles) plus per-photo missing/cracking
+    /// findings as damaged tiles.
+    private static func estimatedDamagedTilesPercent(photos: [CapturedPhoto]) -> Double {
+        var totalTiles = 0
+        var damagedTiles = 0
+        for photo in photos {
+            let tilesInFrame: Int = {
+                switch photo.captureMode {
+                case .square: return max(1, 30 * max(1, photo.squaresCovered == 0 ? 1 : photo.squaresCovered))
+                case .singleShingle: return 6
+                }
+            }()
+            totalTiles += tilesInFrame
+
+            // Each marker that indicates a broken/missing/cracked tile counts as one damaged tile.
+            let markerHits = photo.damageMarkers.filter {
+                $0.type == .crack || $0.type == .missingShingle || $0.type == .other
+            }.count
+
+            // Fallback if no markers: derive from findings counts/severity.
+            let findingHits: Int = {
+                if markerHits > 0 { return 0 }
+                let cracking = photo.findings.first { $0.label == "cracking_splitting" && $0.detected }
+                let missing = photo.findings.first { $0.label == "missing_shingles" && $0.detected }
+                var n = 0
+                if let s = cracking?.severity { n += severityWeight(s) }
+                if let s = missing?.severity { n += severityWeight(s) }
+                return n
+            }()
+
+            damagedTiles += min(tilesInFrame, markerHits + findingHits)
+        }
+        guard totalTiles > 0 else { return 0 }
+        return (Double(damagedTiles) / Double(totalTiles)) * 100.0
+    }
+
+    private static func severityWeight(_ s: FindingSeverity) -> Int {
+        switch s {
+        case .none: return 0
+        case .minor: return 1
+        case .moderate: return 3
+        case .severe: return 6
+        }
     }
 }
