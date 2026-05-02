@@ -26,6 +26,7 @@ struct QuickInspectionView: View {
     @State private var showShingleDetect: Bool = true
     @State private var showLiDARMesh: Bool = false
     @State private var showGridOverlay: Bool = false
+    @State private var showARMode: Bool = false
     @State private var zoomLevel: CGFloat = 1.0
     @State private var capturedPhotos: [CapturedPhoto] = []
     @State private var previewPhoto: CapturedPhoto?
@@ -104,6 +105,13 @@ struct QuickInspectionView: View {
                     captureMode = currentGuidedZone.captureMode
                 }
             }
+        }
+        .fullScreenCover(isPresented: $showARMode) {
+            ARInspectionView(
+                slope: currentSlope,
+                onSave: { snapshot in importARSnapshot(snapshot) },
+                onClose: { showARMode = false }
+            )
         }
         .fullScreenCover(item: $previewPhoto) { photo in
             PhotoDamageOverlayView(
@@ -428,6 +436,12 @@ struct QuickInspectionView: View {
                     withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
                         showGridOverlay.toggle()
                     }
+                }
+                viewOptionChip(icon: "arkit",
+                               label: "AR Mode",
+                               isOn: showARMode) {
+                    let g = UIImpactFeedbackGenerator(style: .medium); g.impactOccurred()
+                    showARMode = true
                 }
 
                 Rectangle()
@@ -941,6 +955,85 @@ struct QuickInspectionView: View {
         }
         let g = UINotificationFeedbackGenerator()
         g.notificationOccurred(result.failed ? .error : .success)
+    }
+
+    private func importARSnapshot(_ snapshot: ARInspectionSnapshot) {
+        // Bridge AR markers back into the standard CapturedPhoto pipeline so
+        // the rest of the app (Gemini analysis, claim packet, PDF report)
+        // keeps working unchanged.
+        let damageMarkers = snapshot.markers.enumerated().map { idx, m -> DamageMarker in
+            // Project 3D markers into a synthetic 2D layout so they render in
+            // PhotoDamageOverlayView. Real screen-space coordinates aren't
+            // recovered here — markers live primarily in 3D and are surfaced
+            // for parity with the existing 2D photo overlay.
+            let count = max(snapshot.markers.count, 1)
+            let cols = Int(ceil(sqrt(Double(count))))
+            let row = idx / cols
+            let col = idx % cols
+            let x = CGFloat(col) / CGFloat(max(cols - 1, 1)) * 0.7 + 0.15
+            let y = CGFloat(row) / CGFloat(max(cols - 1, 1)) * 0.7 + 0.15
+            return DamageMarker(x: x, y: y, radius: 0.04,
+                                type: m.type, severity: .moderate, note: m.note)
+        }
+
+        var arFindings: [InspectionFinding] = []
+        if snapshot.pitchDegrees > 0 {
+            arFindings.append(InspectionFinding(
+                label: "ar_pitch",
+                display: "Roof Pitch (LiDAR)",
+                value: "\(snapshot.pitchRatio) (\(String(format: "%.0f", snapshot.pitchDegrees))°)",
+                confidence: 96,
+                icon: "angle",
+                tint: Theme.ember,
+                detected: true,
+                severity: .none
+            ))
+        }
+        if snapshot.squarePlaced {
+            arFindings.append(InspectionFinding(
+                label: "ar_square_hits",
+                display: "Hits in 10×10 Test Square",
+                value: "\(snapshot.hitsInSquare) hit\(snapshot.hitsInSquare == 1 ? "" : "s") within HAAG square",
+                confidence: 100,
+                icon: "square.dashed.inset.filled",
+                tint: snapshot.hitsInSquare >= 8 ? Theme.crimson : Theme.amber,
+                detected: snapshot.hitsInSquare > 0,
+                severity: snapshot.hitsInSquare >= 8 ? .severe : (snapshot.hitsInSquare > 0 ? .moderate : .none)
+            ))
+        }
+        if !snapshot.markers.isEmpty {
+            arFindings.append(InspectionFinding(
+                label: "ar_markers",
+                display: "AR 3D Damage Markers",
+                value: "\(snapshot.markers.count) marker\(snapshot.markers.count == 1 ? "" : "s") anchored in 3D space",
+                confidence: 100,
+                icon: "mappin.and.ellipse",
+                tint: Theme.ember,
+                detected: true,
+                severity: .moderate
+            ))
+        }
+
+        var photo = CapturedPhoto(
+            image: snapshot.snapshotImage,
+            slope: snapshot.slope,
+            pitchDegrees: snapshot.pitchDegrees,
+            elevationFeet: motion.elevationFeet,
+            captureMode: snapshot.squarePlaced ? .square : .singleShingle,
+            squaresCovered: snapshot.squarePlaced ? 1 : 0
+        )
+        photo.findings = arFindings
+        photo.damageMarkers = damageMarkers
+        photo.analyzed = true
+
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.78)) {
+            capturedPhotos.append(photo)
+        }
+        if let cid = customerStore.activeCustomerID {
+            customerStore.appendPhotos([photo], to: cid)
+        }
+        let g = UINotificationFeedbackGenerator(); g.notificationOccurred(.success)
+        showARMode = false
     }
 
     private func resetToCapture() {
