@@ -101,9 +101,15 @@ final class MileageStore {
 
     private let key = "rw.mileage.trips.v1"
     private let rateKey = "rw.mileage.rate.v1"
+    private let trackingEnabledKey = "rw.mileage.trackingEnabled.v1"
 
     var trips: [MileageTrip] = []
     var ratePerMile: Double = MileageRates.standardBusinessPerMile
+    var trackingEnabled: Bool = true {
+        didSet {
+            UserDefaults.standard.set(trackingEnabled, forKey: trackingEnabledKey)
+        }
+    }
 
     private init() {
         load()
@@ -145,6 +151,9 @@ final class MileageStore {
         }
         let r = UserDefaults.standard.double(forKey: rateKey)
         if r > 0 { ratePerMile = r }
+        if UserDefaults.standard.object(forKey: trackingEnabledKey) != nil {
+            trackingEnabled = UserDefaults.standard.bool(forKey: trackingEnabledKey)
+        }
     }
 
     // MARK: Aggregations

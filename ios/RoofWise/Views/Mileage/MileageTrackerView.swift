@@ -23,7 +23,12 @@ struct MileageTrackerView: View {
 
                 ScrollView {
                     VStack(spacing: 16) {
-                        liveCard
+                        masterToggleCard
+                        if store.trackingEnabled {
+                            liveCard
+                        } else {
+                            trackingPausedCard
+                        }
                         statsHeader
                         rangeFilter
                         tripsSection
@@ -122,6 +127,112 @@ struct MileageTrackerView: View {
                 .presentationDragIndicator(.visible)
             }
         }
+    }
+
+    // MARK: master toggle
+
+    private var masterToggleCard: some View {
+        HStack(spacing: 14) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(LinearGradient(colors: store.trackingEnabled
+                                         ? [Theme.mint, Theme.sky]
+                                         : [Theme.inkFaint, Theme.inkSoft],
+                                         startPoint: .topLeading, endPoint: .bottomTrailing))
+                Image(systemName: store.trackingEnabled ? "location.fill.viewfinder" : "location.slash.fill")
+                    .font(.system(size: 16, weight: .heavy))
+                    .foregroundStyle(.white)
+            }
+            .frame(width: 42, height: 42)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(store.trackingEnabled ? "GPS Tracking" : "Tracking Paused")
+                    .font(.system(size: 14, weight: .heavy))
+                    .foregroundStyle(Theme.ink)
+                Text(store.trackingEnabled
+                     ? "Auto + manual mileage tracking is active."
+                     : "All GPS tracking is disabled.")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Theme.inkSoft)
+            }
+
+            Spacer()
+
+            Toggle("", isOn: Binding(
+                get: { store.trackingEnabled },
+                set: { newValue in
+                    let g = UIImpactFeedbackGenerator(style: .medium); g.impactOccurred()
+                    if !newValue {
+                        // Stop any active trip and disable auto-tracking.
+                        if tracker.isTracking { tracker.cancel() }
+                        if autoTrack.isEnabled { autoTrack.toggle(false) }
+                    }
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                        store.trackingEnabled = newValue
+                    }
+                }
+            ))
+            .labelsHidden()
+            .tint(Theme.mint)
+        }
+        .padding(14)
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: 18).fill(Theme.card)
+                if !store.trackingEnabled {
+                    LinearGradient(colors: [Theme.inkFaint.opacity(0.18), .clear],
+                                   startPoint: .topLeading, endPoint: .bottomTrailing)
+                        .clipShape(.rect(cornerRadius: 18))
+                }
+            }
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18)
+                .stroke(store.trackingEnabled ? Theme.mint.opacity(0.45) : Theme.hairline,
+                        lineWidth: store.trackingEnabled ? 1.0 : 0.6)
+        )
+    }
+
+    private var trackingPausedCard: some View {
+        VStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(Theme.inkFaint.opacity(0.15))
+                    .frame(width: 64, height: 64)
+                Image(systemName: "pause.circle.fill")
+                    .font(.system(size: 38, weight: .heavy))
+                    .foregroundStyle(Theme.inkSoft)
+            }
+            Text("Tracking Paused")
+                .font(.system(size: 18, weight: .heavy))
+                .foregroundStyle(Theme.ink)
+            Text("GPS tracking is fully disabled. No trips will be recorded automatically or manually until you turn tracking back on.")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Theme.inkSoft)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 12)
+            Button {
+                let g = UIImpactFeedbackGenerator(style: .medium); g.impactOccurred()
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                    store.trackingEnabled = true
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "power")
+                        .font(.system(size: 12, weight: .heavy))
+                    Text("Resume Tracking")
+                        .font(.system(size: 13, weight: .heavy))
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 18).padding(.vertical, 10)
+                .background(Theme.ink, in: .capsule)
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 26)
+        .background(Theme.card, in: .rect(cornerRadius: 22))
+        .overlay(RoundedRectangle(cornerRadius: 22).stroke(Theme.hairline, lineWidth: 0.6))
     }
 
     // MARK: live state
@@ -482,7 +593,7 @@ struct MileageTrackerView: View {
     private var bottomBar: some View {
         VStack {
             HStack(spacing: 10) {
-                if tracker.isTracking {
+                if store.trackingEnabled, tracker.isTracking {
                     Button {
                         let g = UIImpactFeedbackGenerator(style: .medium); g.impactOccurred()
                         if tracker.isPaused { tracker.resume() } else { tracker.pause() }
@@ -523,7 +634,7 @@ struct MileageTrackerView: View {
                         .shadow(color: Theme.crimson.opacity(0.4), radius: 10, y: 4)
                     }
                     .buttonStyle(.plain)
-                } else {
+                } else if store.trackingEnabled {
                     Button {
                         let g = UIImpactFeedbackGenerator(style: .medium); g.impactOccurred()
                         tracker.start()
@@ -543,6 +654,28 @@ struct MileageTrackerView: View {
                             in: .capsule
                         )
                         .shadow(color: Theme.ember.opacity(0.45), radius: 12, y: 5)
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    Button {
+                        let g = UIImpactFeedbackGenerator(style: .medium); g.impactOccurred()
+                        store.trackingEnabled = true
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "power")
+                                .font(.system(size: 16, weight: .heavy))
+                            Text("Enable Tracking")
+                                .font(.system(size: 16, weight: .heavy))
+                        }
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 18)
+                        .background(
+                            LinearGradient(colors: [Theme.ink, Theme.inkSoft],
+                                           startPoint: .leading, endPoint: .trailing),
+                            in: .capsule
+                        )
+                        .shadow(color: Theme.ink.opacity(0.25), radius: 10, y: 4)
                     }
                     .buttonStyle(.plain)
                 }
