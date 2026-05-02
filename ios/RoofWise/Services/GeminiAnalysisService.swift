@@ -2,19 +2,21 @@ import Foundation
 import UIKit
 import SwiftUI
 
-/// Gemini 1.5 Flash Vision integration. Replace `GEMINI_API_KEY` with your key.
+/// Gemini 1.5 Flash Vision integration.
+/// API key is read from `Config.EXPO_PUBLIC_GEMINI_API_KEY` (env var).
 enum GeminiAnalysisService {
-    /// Placeholder API key constant - replace with your actual Google AI Studio key.
-    static let GEMINI_API_KEY: String = "GEMINI_API_KEY"
+    /// Reads the key from the auto-generated Config (env var EXPO_PUBLIC_GEMINI_API_KEY).
+    static var apiKey: String { Config.EXPO_PUBLIC_GEMINI_API_KEY }
 
     static let endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
 
     /// Analyze a captured roof photo and return structured findings.
     /// Falls back to mock findings if API key is unset or the request fails.
     static func analyze(image: UIImage, slope: SlopeType) async -> [InspectionFinding] {
-        guard GEMINI_API_KEY != "GEMINI_API_KEY",
-              !GEMINI_API_KEY.isEmpty,
-              let url = URL(string: "\(endpoint)?key=\(GEMINI_API_KEY)"),
+        let key = apiKey
+        guard !key.isEmpty,
+              key != "GEMINI_API_KEY",
+              let url = URL(string: "\(endpoint)?key=\(key)"),
               let jpeg = image.jpegData(compressionQuality: 0.7) else {
             try? await Task.sleep(for: .milliseconds(800))
             return mockFindings(for: slope)
