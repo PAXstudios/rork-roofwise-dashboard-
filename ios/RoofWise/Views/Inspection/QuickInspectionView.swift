@@ -64,7 +64,7 @@ struct QuickInspectionView: View {
             case .scanning:
                 scanningView
             case .results:
-                ResultsView(findings: lastFindings.isEmpty ? InspectionMock.findings : lastFindings,
+                ResultsView(findings: lastFindings,
                             photoCount: capturedPhotos.count,
                             photos: capturedPhotos,
                             customer: customerStore.activeCustomer,
@@ -130,7 +130,7 @@ struct QuickInspectionView: View {
             ClaimPacketView(packet: packet,
                             photoCount: capturedPhotos.count,
                             photos: capturedPhotos,
-                            findings: lastFindings.isEmpty ? InspectionMock.findings : lastFindings,
+                            findings: lastFindings,
                             customer: customerStore.activeCustomer) {
                 claimPacket = nil
             }
@@ -1110,7 +1110,7 @@ struct QuickInspectionView: View {
                 elevationFeet: motion.elevationFeet
             )
             var copy = stub
-            copy.findings = lastFindings.isEmpty ? InspectionMock.findings : lastFindings
+            copy.findings = lastFindings
             copy.analyzed = true
             photosForGrading = [copy]
         }
@@ -1738,7 +1738,15 @@ private struct ResultsView: View {
         return customerStore.activeCustomer
     }
 
-    private var totalHits: Int { InspectionMock.hits.count }
+    private var totalHits: Int {
+        photos.reduce(0) { acc, photo in
+            acc + photo.damageMarkers.filter { $0.type == .hailStrike }.count
+        }
+    }
+
+    private var realHits: [DamageMarker] {
+        photos.flatMap { $0.damageMarkers }
+    }
     private var detectedCount: Int { findings.filter(\.detected).count }
 
     private var damageScore: Int {
@@ -2304,7 +2312,7 @@ private struct ResultsView: View {
                     .font(.system(size: 14, weight: .heavy))
                     .foregroundStyle(Theme.ink)
                 Spacer()
-                Text("\(InspectionMock.hits.count) hits")
+                Text("\(realHits.count) hits")
                     .font(.system(size: 11, weight: .heavy))
                     .foregroundStyle(Theme.crimson)
                     .padding(.horizontal, 8).padding(.vertical, 4)
@@ -2332,13 +2340,31 @@ private struct ResultsView: View {
                 }
 
                 GeometryReader { geo in
-                    ForEach(InspectionMock.hits) { hit in
-                        Circle()
-                            .fill(hit.severity.color.opacity(0.85))
-                            .overlay(Circle().stroke(.white.opacity(0.6), lineWidth: 1))
-                            .shadow(color: hit.severity.color, radius: 6)
-                            .frame(width: 16 + hit.size * 60, height: 16 + hit.size * 60)
-                            .position(x: hit.x * geo.size.width, y: hit.y * geo.size.height)
+                    if realHits.isEmpty {
+                        VStack(spacing: 6) {
+                            Image(systemName: "sparkle.magnifyingglass")
+                                .font(.system(size: 22, weight: .bold))
+                                .foregroundStyle(.white.opacity(0.6))
+                            Text("No AI-detected hits yet")
+                                .font(.system(size: 11, weight: .heavy))
+                                .foregroundStyle(.white.opacity(0.7))
+                            Text("Capture & analyze photos to populate the map")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.white.opacity(0.5))
+                        }
+                        .frame(width: geo.size.width, height: geo.size.height)
+                    } else {
+                        ForEach(realHits) { hit in
+                            let severityColor = hit.severity.color
+                            Circle()
+                                .fill(severityColor.opacity(0.85))
+                                .overlay(Circle().stroke(.white.opacity(0.6), lineWidth: 1))
+                                .shadow(color: severityColor, radius: 6)
+                                .frame(width: 16 + CGFloat(hit.radius) * 200,
+                                       height: 16 + CGFloat(hit.radius) * 200)
+                                .position(x: CGFloat(hit.x) * geo.size.width,
+                                          y: CGFloat(hit.y) * geo.size.height)
+                        }
                     }
                 }
             }

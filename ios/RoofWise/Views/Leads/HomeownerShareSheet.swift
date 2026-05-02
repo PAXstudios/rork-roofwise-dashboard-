@@ -23,7 +23,7 @@ struct HomeownerShareSheet: View {
         HomeownerReportService.Input(
             customer: customer,
             photos: customer.photos,
-            findings: customer.damageFindings.isEmpty ? InspectionMock.findings : customer.damageFindings,
+            findings: customer.damageFindings,
             nextStep: nextStep,
             repName: "Alex Coleman",
             repPhone: "(214) 555-0142",

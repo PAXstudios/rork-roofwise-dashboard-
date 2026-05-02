@@ -309,7 +309,23 @@ enum PDFReportService {
         drawPageHeader(ctx.cgContext, title: "Damage Analysis", subtitle: "AI-confirmed findings · Gemini Vision")
 
         var y: CGFloat = 130
-        let findings = input.findings.isEmpty ? InspectionMock.findings : input.findings
+        let findings = input.findings
+
+        if findings.isEmpty {
+            let empty = CGRect(x: margin, y: y, width: pageSize.width - margin*2, height: 80)
+            drawCard(ctx.cgContext, rect: empty, fill: .white)
+            draw("NO AI FINDINGS RECORDED",
+                 at: CGPoint(x: empty.minX + 16, y: empty.minY + 16),
+                 font: .systemFont(ofSize: 9, weight: .heavy),
+                 color: inkFaint, kern: 1.2)
+            drawWrapped("Capture and analyze inspection photos with Gemini Vision to populate this section. No mock or placeholder data is shown.",
+                        rect: CGRect(x: empty.minX + 16, y: empty.minY + 32,
+                                     width: empty.width - 32, height: empty.height - 40),
+                        font: .systemFont(ofSize: 11, weight: .regular),
+                        color: inkSoft, lineSpacing: 3)
+            drawFooter(ctx.cgContext, page: 0)
+            return
+        }
 
         for f in findings {
             let rowRect = CGRect(x: margin, y: y, width: pageSize.width - margin*2, height: 56)

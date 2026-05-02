@@ -64,7 +64,7 @@ struct ClaimPacketView: View {
             let input = PDFReportService.Input(
                 customer: customer,
                 photos: photos,
-                findings: findings.isEmpty ? InspectionMock.findings : findings,
+                findings: findings,
                 packet: packet,
                 repName: "Sarah Jenkins",
                 repPhone: "(214) 555-0142",
