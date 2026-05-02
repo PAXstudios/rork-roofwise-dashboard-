@@ -58,11 +58,27 @@ enum GeminiAnalysisService {
         }()
 
         let prompt = """
-        You are a HAAG-certified forensic roofing inspector. \(intro)
-        First, identify the roof covering / shingle type from the image. Choose the closest match from:
+        You are a certified forensic roof inspector applying HAAG Engineering standards.
+        \(intro)
+
+        Analyze this image for ALL of the following:
+          • Hail damage — count INDIVIDUAL strikes separately on (a) shingles/roof field and
+            (b) metal components (vents, pipe jacks, flashing, drip edge, gutters, downspouts,
+            turbines, exhaust caps, satellite mounts). Hail on soft metal is one of the strongest
+            HAAG indicators of a hail event.
+          • Bruising — soft spots / mat fractures under the granules (press-test signature).
+          • Spatter marks — oxidation/dirt-line spatter on metal that confirms hail directionality.
+          • Granule loss — note distinct granule-loss AREAS (each erosion patch is a marker).
+          • Wind damage — creasing at the nail line, lifted/folded tabs, missing tabs.
+          • Cracking / splitting, blistering, flashing damage, algae/moss, structural sagging.
+          • Damage to non-shingle components: flashing (step / counter / apron), drip edge,
+            ridge cap, valley metal, gutters, downspouts, vents, pipe boots, skylights.
+
+        First, identify the roof covering / shingle type. Choose the closest match from:
         "3-tab asphalt", "architectural asphalt" (a.k.a. dimensional/laminated), "luxury asphalt",
         "wood shake", "wood shingle", "metal standing seam", "metal shingle", "clay tile",
         "concrete tile", "slate", "synthetic slate", "composite", "rolled roofing", "TPO", "EPDM", "unknown".
+
         Return STRICT JSON only, no markdown, with this schema:
         {
           "shingle_type": {
@@ -70,26 +86,37 @@ enum GeminiAnalysisService {
             "confidence": 0-100,
             "note": "<short visual evidence: tab shape, exposure, profile, material cues>"
           },
+          "hail_summary": {
+            "strikes_on_shingles": <int>,
+            "strikes_on_metal": <int>,
+            "affected_metal_components": ["vent"|"flashing"|"drip_edge"|"gutter"|"downspout"|"pipe_boot"|"ridge_cap"|"valley_metal"|"skylight"|"other"],
+            "directionality": "<e.g. 'predominantly south-facing' or 'random'>",
+            "spatter_observed": true|false
+          },
           "findings": [
             {
               "label": "hail_damage|granule_loss|missing_shingles|wind_creasing|blistering|cracking_splitting|flashing_damage|algae_moss|bruising|structural_sagging",
               "detected": true|false,
               "severity": "none|minor|moderate|severe",
               "confidence": 0-100,
-              "note": "<short evidence sentence>"
+              "affected_components": ["shingle"|"flashing"|"drip_edge"|"gutter"|"downspout"|"vent"|"pipe_boot"|"ridge_cap"|"valley_metal"|"skylight"],
+              "count": <int, 0 if not applicable>,
+              "note": "<short evidence sentence citing HAAG indicators>"
             }
           ]
         }
-        Include ALL 10 damage categories. Be conservative - only mark severe if clearly visible.
+        Include ALL 10 damage categories in `findings`. Be conservative - only mark severe if clearly visible.
 
-        Then ALSO return precise pixel-region markers for every visible damage point
-        (each hail strike, crack, missing shingle, blister, etc.) so we can overlay
-        circles on the photo. Coordinates MUST be normalized 0-1 (x from left, y from top)
-        relative to the image. Radius is normalized 0-1 (relative to min image dimension).
+        Then ALSO return precise pixel-region markers for EVERY visible damage point
+        (each individual hail strike on shingles AND on metal, each crack, missing shingle,
+        blister, granule-loss patch, wind crease, flashing dent, gutter dent, etc.) so we
+        can overlay circles on the photo. Coordinates MUST be normalized 0-1 (x from left,
+        y from top) relative to the image. Radius is normalized 0-1 (relative to min image dimension).
         Add this top-level field to the JSON:
         "damage_markers": [
           {
             "type": "hail_strike|crack|granule_loss|missing_shingle|wind_crease|blister|flashing|algae|other",
+            "surface": "shingle|metal|other",
             "x": 0.0-1.0,
             "y": 0.0-1.0,
             "radius": 0.0-1.0,
@@ -97,8 +124,9 @@ enum GeminiAnalysisService {
             "note": "<short evidence>"
           }
         ]
-        Mark EVERY visible hail strike individually (not just one for the whole photo).
-        Aim for accuracy: if you see 12 hail strikes, return 12 markers. If none, return [].
+        Mark EVERY visible hail strike INDIVIDUALLY — do not group them. If a vent has 4
+        dings and the field has 11 strikes, return 15 markers (4 with surface="metal",
+        11 with surface="shingle"). If none, return [].
         """
 
         let body: [String: Any] = [
