@@ -153,6 +153,11 @@ enum GeminiAnalysisService {
             "confidence": 0-100,
             "note": "<short visual evidence: tab shape, exposure, profile, material cues>"
           },
+          "shingleScaleEstimate": {
+            "pixelsPerInch": <number, estimated pixels-per-inch in this photo based on the visible shingle features (tab width ~12in for 3-tab, exposure ~5-5.625in for architectural, granule size ~1mm). 0 if you cannot estimate.>,
+            "confidence": 0-100,
+            "basis": "<short note describing which feature you measured (e.g. 'tab width spans ~480px and 3-tab tabs are ~12in wide, so ~40 px/in')>"
+          },
           "hail_summary": {
             "strikes_on_shingles": <int>,
             "strikes_on_metal": <int>,
@@ -301,6 +306,22 @@ enum GeminiAnalysisService {
         guard let jsonData = cleaned.data(using: .utf8),
               let payload = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else {
             return nil
+        }
+
+        // Calibration log: surface Gemini's pixels-per-inch estimate so we can
+        // tune marker size and physical-size reasoning over time. We deliberately
+        // do NOT use this value for any sizing decisions yet — just log it.
+        if let scale = payload["shingleScaleEstimate"] as? [String: Any] {
+            let ppi = (scale["pixelsPerInch"] as? Double)
+                ?? (scale["pixelsPerInch"] as? NSNumber)?.doubleValue
+                ?? 0
+            let confidence = (scale["confidence"] as? Int)
+                ?? (scale["confidence"] as? NSNumber)?.intValue
+                ?? 0
+            let basis = (scale["basis"] as? String) ?? ""
+            print("[Gemini] \u{1F4CF} shingleScaleEstimate: \(String(format: "%.1f", ppi)) px/in (confidence \(confidence)%) — \(basis)")
+        } else {
+            print("[Gemini] \u{1F4CF} shingleScaleEstimate: not provided")
         }
 
         var results: [InspectionFinding] = []
