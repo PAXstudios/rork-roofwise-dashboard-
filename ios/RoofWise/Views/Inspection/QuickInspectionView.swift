@@ -41,6 +41,13 @@ struct QuickInspectionView: View {
     @State private var isImportingLibrary: Bool = false
     @State private var lastFindings: [InspectionFinding] = []
     @State private var claimPacket: ClaimPacket?
+    // Live analysis progress (drives Feature 3 panel during scanning)
+    @State private var analyzingPhotoIndex: Int = 0      // 1-based, current photo being analyzed
+    @State private var analyzingTotal: Int = 0
+    @State private var analyzingThumbnail: UIImage?
+    @State private var analyzingPhotosCompleted: Int = 0
+    @State private var analyzingEtaSeconds: Int = 0
+    @State private var analyzingPerPhotoSeconds: Double = 6.0  // initial estimate, updated from real timings
     @State private var motion = MotionElevationService()
     @State private var camera = CameraCaptureService()
 
@@ -618,14 +625,41 @@ struct QuickInspectionView: View {
         .buttonStyle(.plain)
     }
 
+    /// Feature 1: yellow banner shown above the shutter when the 10×10 test
+    /// square is not fully visible in the viewfinder. The shutter itself is
+    /// NEVER disabled — the user can always capture; the banner just warns
+    /// that analysis may be less precise.
+    @ViewBuilder
+    private var testSquareWarningBanner: some View {
+        if captureMode == .square && camera.currentSquareProgress < 1.0 {
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 11, weight: .heavy))
+                Text("Test square not fully visible — analysis may be less precise")
+                    .font(.system(size: 11, weight: .heavy))
+                    .multilineTextAlignment(.center)
+            }
+            .foregroundStyle(Color.yellow)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(.black.opacity(0.55), in: .capsule)
+            .overlay(Capsule().stroke(Color.yellow.opacity(0.6), lineWidth: 0.8))
+            .transition(.opacity.combined(with: .move(edge: .bottom)))
+        }
+    }
+
     private var bottomCaptureBar: some View {
         VStack(spacing: 14) {
+            testSquareWarningBanner
+                .animation(.easeInOut(duration: 0.25), value: camera.currentSquareProgress)
+                .animation(.easeInOut(duration: 0.25), value: captureMode)
+
             HStack(alignment: .center) {
                 photoStripThumb
 
                 Spacer()
 
-                // Shutter
+                // Shutter — always tappable; no .disabled, no dimming.
                 Button(action: capture) {
                     ZStack {
                         Circle().stroke(.white.opacity(0.85), lineWidth: 4)
@@ -851,6 +885,12 @@ struct QuickInspectionView: View {
         scanProgress = 0
         detectedHits = []
         currentPass = 0
+        analyzingPhotosCompleted = 0
+        analyzingTotal = capturedPhotos.count
+        analyzingPhotoIndex = capturedPhotos.isEmpty ? 0 : 1
+        analyzingThumbnail = capturedPhotos.first?.image
+        analyzingPerPhotoSeconds = 6.0
+        analyzingEtaSeconds = Int((Double(max(capturedPhotos.count, 1)) * 6.0).rounded())
         Task { @MainActor in
             let passes: [(CGFloat, Int)] = [
                 (0.20, 700),  // Detecting hail
@@ -869,12 +909,29 @@ struct QuickInspectionView: View {
                 var totalHailMarkers = 0
                 var totalWindMarkers = 0
                 var hailOnMetal = 0
+                var observedTimings: [Double] = []
                 for i in capturedPhotos.indices {
                     let photo = capturedPhotos[i]
+                    // Feature 3: surface which photo is being analyzed + ETA.
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        analyzingPhotoIndex = i + 1
+                        analyzingThumbnail = photo.image
+                    }
+                    let started = Date()
                     let result = await GeminiAnalysisService.analyzeFull(image: photo.image,
                                                                           slope: photo.slope,
                                                                           mode: photo.captureMode,
                                                                           squaresCovered: photo.squaresCovered)
+                    let elapsed = Date().timeIntervalSince(started)
+                    if elapsed > 0.2 { observedTimings.append(elapsed) }
+                    if !observedTimings.isEmpty {
+                        analyzingPerPhotoSeconds = observedTimings.reduce(0, +) / Double(observedTimings.count)
+                    }
+                    let remaining = max(0, capturedPhotos.count - (i + 1))
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        analyzingPhotosCompleted = i + 1
+                        analyzingEtaSeconds = Int((Double(remaining) * analyzingPerPhotoSeconds).rounded())
+                    }
                     let findings = result.findings
                     capturedPhotos[i].findings = findings
                     capturedPhotos[i].damageMarkers = result.markers
@@ -903,6 +960,14 @@ struct QuickInspectionView: View {
                         try? await Task.sleep(for: .milliseconds(40))
                     }
 
+                    // Skip non-roof photos entirely — don't pollute the report
+                    // with fabricated findings on grass / sky / etc.
+                    if result.noRoofDetected {
+                        capturedPhotos[i].findings = result.findings
+                        capturedPhotos[i].damageMarkers = []
+                        capturedPhotos[i].analyzed = true
+                        continue
+                    }
                     totalHailMarkers += result.markers.filter { $0.type == .hailStrike }.count
                     totalWindMarkers += result.markers.filter { $0.type == .windCrease || $0.type == .missingShingle }.count
 
@@ -1153,6 +1218,11 @@ struct QuickInspectionView: View {
                 .background(.ultraThinMaterial, in: .capsule)
                 .padding(.top, 64)
 
+                // Feature 3: live per-photo analysis panel.
+                analyzingPhotoPanel
+                    .padding(.horizontal, 18)
+                    .padding(.top, 14)
+
                 Spacer()
 
                 VStack(alignment: .leading, spacing: 14) {
@@ -1213,6 +1283,68 @@ struct QuickInspectionView: View {
                 .padding(.bottom, 44)
             }
         }
+    }
+
+    /// Feature 3: shows which photo is being analyzed, a thumbnail, the
+    /// estimated time remaining, and a smooth progress bar (photos completed
+    /// / total).
+    private var analyzingPhotoPanel: some View {
+        let total = max(analyzingTotal, 1)
+        let completed = min(analyzingPhotosCompleted, total)
+        let progress: CGFloat = CGFloat(completed) / CGFloat(total)
+        return HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(.white.opacity(0.08))
+                    .frame(width: 56, height: 56)
+                if let thumb = analyzingThumbnail {
+                    Image(uiImage: thumb)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 56, height: 56)
+                        .clipShape(.rect(cornerRadius: 10))
+                        .overlay(RoundedRectangle(cornerRadius: 10)
+                            .stroke(.white.opacity(0.35), lineWidth: 0.8))
+                } else {
+                    Image(systemName: "photo")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.55))
+                }
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("Analyzing photo \(max(analyzingPhotoIndex, 1)) of \(max(analyzingTotal, 1))")
+                        .font(.system(size: 12, weight: .heavy))
+                        .foregroundStyle(.white)
+                        .monospacedDigit()
+                    Spacer()
+                    Text(analyzingEtaSeconds <= 0
+                         ? "Wrapping up…"
+                         : "~\(analyzingEtaSeconds)s left")
+                        .font(.system(size: 11, weight: .heavy))
+                        .foregroundStyle(Theme.ember)
+                        .monospacedDigit()
+                }
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(.white.opacity(0.16))
+                        Capsule()
+                            .fill(LinearGradient(colors: [Theme.ember, Theme.amber],
+                                                 startPoint: .leading, endPoint: .trailing))
+                            .frame(width: geo.size.width * progress)
+                            .animation(.easeInOut(duration: 0.45), value: progress)
+                    }
+                }
+                .frame(height: 5)
+                Text("\(completed)/\(total) complete")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.6))
+                    .monospacedDigit()
+            }
+        }
+        .padding(12)
+        .background(.ultraThinMaterial, in: .rect(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(.white.opacity(0.12), lineWidth: 0.6))
     }
 
     private func liveStat(icon: String, label: String, value: String) -> some View {

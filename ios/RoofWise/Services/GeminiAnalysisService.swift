@@ -21,6 +21,11 @@ enum GeminiAnalysisService {
         let markers: [DamageMarker]
         var failed: Bool = false
         var usedMock: Bool = false
+        /// True when Gemini reports the photo does NOT show a roof / shingles /
+        /// roofing material at all (e.g. grass, sky, indoors, a person). Callers
+        /// should treat this as "nothing to analyze" and avoid surfacing fake
+        /// damage findings.
+        var noRoofDetected: Bool = false
     }
 
     /// Convenience for legacy callers that only need findings.
@@ -219,6 +224,11 @@ enum GeminiAnalysisService {
         If the image shows NO damage, return "damage_markers": [] (empty). A
         confident empty result is far better than fabricated markers. Do NOT
         invent damage to be helpful.
+
+        CRITICAL: If the image does NOT clearly show a roof surface, asphalt shingles, tile, metal panels, or any roofing material — for example if it shows grass, sky, ground, indoors, a person, a vehicle, or any non-roof scene — you MUST set analyzed=false, return an empty damage_markers array, and add a finding with label="no_roof_detected" and note="No roof or shingles visible in this photo". Do not fabricate damage findings on non-roof images.
+
+        Add an `"analyzed": true|false` boolean at the top level of the JSON. Set it
+        to false ONLY when the image is a non-roof scene as described above; otherwise true.
         """
 
         let body: [String: Any] = [
@@ -329,19 +339,44 @@ enum GeminiAnalysisService {
            let typeFinding = shingleTypeFinding(from: typeDict) {
             results.append(typeFinding)
         }
+        var noRoofFlag = false
+        if let analyzed = payload["analyzed"] as? Bool, analyzed == false {
+            noRoofFlag = true
+        }
         if let raw = payload["findings"] as? [[String: Any]] {
             for dict in raw {
+                if let lbl = dict["label"] as? String, lbl == "no_roof_detected" {
+                    noRoofFlag = true
+                    let note = (dict["note"] as? String) ?? "No roof or shingles visible in this photo"
+                    results.append(InspectionFinding(
+                        label: "no_roof_detected",
+                        display: "No Roof Detected",
+                        value: note,
+                        confidence: (dict["confidence"] as? Int) ?? 95,
+                        icon: "questionmark.app.dashed",
+                        tint: Theme.amber,
+                        detected: false,
+                        severity: .none
+                    ))
+                    continue
+                }
                 if let finding = findingFromDict(dict) { results.append(finding) }
             }
         }
 
         var markers: [DamageMarker] = []
-        if let rawMarkers = payload["damage_markers"] as? [[String: Any]] {
+        if !noRoofFlag, let rawMarkers = payload["damage_markers"] as? [[String: Any]] {
             for dict in rawMarkers {
                 if let m = markerFromDict(dict) { markers.append(m) }
             }
         }
-        return AnalysisResult(findings: results, markers: markers, failed: false)
+        if noRoofFlag {
+            print("[Gemini] \u{26A0}\u{FE0F} no_roof_detected — image does not show a roof; suppressing markers.")
+        }
+        return AnalysisResult(findings: results,
+                              markers: markers,
+                              failed: false,
+                              noRoofDetected: noRoofFlag)
     }
 
     /// Strip ```json ... ``` or ``` ... ``` fences if Gemini wraps despite responseMimeType.
