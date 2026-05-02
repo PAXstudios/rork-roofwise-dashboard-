@@ -7,6 +7,7 @@ enum JobPipelineStage: String, CaseIterable, Identifiable, Codable {
     case interested = "Interested"
     case inspectionScheduled = "Inspection Scheduled"
     case inspectionComplete = "Inspection Complete"
+    case recapSent = "Recap Sent"
     case claimFiled = "Claim Filed"
     case adjusterMeeting = "Adjuster Meeting"
     case approved = "Approved"
@@ -22,6 +23,7 @@ enum JobPipelineStage: String, CaseIterable, Identifiable, Codable {
         case .interested: return "Interested"
         case .inspectionScheduled: return "Insp. Scheduled"
         case .inspectionComplete: return "Insp. Done"
+        case .recapSent: return "Recap Sent"
         case .claimFiled: return "Claim Filed"
         case .adjusterMeeting: return "Adjuster Mtg"
         case .approved: return "Approved"
@@ -37,6 +39,7 @@ enum JobPipelineStage: String, CaseIterable, Identifiable, Codable {
         case .interested: return Theme.sky
         case .inspectionScheduled: return Theme.amber
         case .inspectionComplete: return Theme.amber
+        case .recapSent: return Theme.ember
         case .claimFiled: return Theme.ember
         case .adjusterMeeting: return Theme.ember
         case .approved: return Theme.mint
@@ -52,6 +55,7 @@ enum JobPipelineStage: String, CaseIterable, Identifiable, Codable {
         case .interested: return "hand.thumbsup.fill"
         case .inspectionScheduled: return "calendar.badge.clock"
         case .inspectionComplete: return "checkmark.seal.fill"
+        case .recapSent: return "paperplane.fill"
         case .claimFiled: return "doc.badge.plus"
         case .adjusterMeeting: return "person.2.wave.2.fill"
         case .approved: return "checkmark.shield.fill"

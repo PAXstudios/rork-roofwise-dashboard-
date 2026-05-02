@@ -1540,9 +1540,25 @@ private struct ResultsView: View {
     var onClose: () -> Void
     var onRescan: () -> Void
     var onCreateClaim: () -> Void
+    @Environment(CustomerStore.self) private var customerStore
     @State private var showShareSheet: Bool = false
     @State private var pdfURL: URL?
     @State private var isGeneratingPDF: Bool = false
+    @State private var showHomeownerShare: Bool = false
+    @State private var showCustomerPicker: Bool = false
+    @State private var skippedHomeownerShare: Bool = false
+    @State private var sentHomeownerShareChannel: HomeownerShareChannel? = nil
+    @AppStorage("roofwise.homeowner.lastShareChannel") private var lastShareChannelRaw: String = HomeownerShareChannel.messages.rawValue
+
+    private var lastShareChannel: HomeownerShareChannel {
+        HomeownerShareChannel(rawValue: lastShareChannelRaw) ?? .messages
+    }
+
+    private var activeLinkedCustomer: Customer? {
+        // Prefer the customer passed in from the inspection; fall back to store's active.
+        if let c = customer { return c }
+        return customerStore.activeCustomer
+    }
 
     private var totalHits: Int { InspectionMock.hits.count }
     private var detectedCount: Int { findings.filter(\.detected).count }
@@ -1573,6 +1589,7 @@ private struct ResultsView: View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(spacing: 18) {
                 heroCard
+                homeownerRecapCTA
                 damageScoreCard
                 claimWorthinessBanner
                 hitMapCard
@@ -1593,6 +1610,165 @@ private struct ResultsView: View {
                     .presentationDetents([.medium, .large])
             }
         }
+        .sheet(isPresented: $showHomeownerShare) {
+            if let linked = activeLinkedCustomer {
+                HomeownerShareSheet(
+                    customer: linked,
+                    onShared: { channel in
+                        handleHomeownerShareSent(channel: channel, customerID: linked.id)
+                    },
+                    onSkip: {
+                        skippedHomeownerShare = true
+                    }
+                )
+                .presentationDetents([.large])
+                .presentationDragIndicator(.hidden)
+            }
+        }
+        .sheet(isPresented: $showCustomerPicker) {
+            LinkCustomerSheet(store: customerStore) { picked in
+                customerStore.setActive(picked.id)
+                showCustomerPicker = false
+                // Defer to next runloop so dismissal completes before the share sheet opens.
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(220))
+                    showHomeownerShare = true
+                }
+            } onCancel: {
+                showCustomerPicker = false
+            }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        }
+    }
+
+    // MARK: - Homeowner Recap CTA
+
+    @ViewBuilder
+    private var homeownerRecapCTA: some View {
+        if let channel = sentHomeownerShareChannel {
+            sentHomeownerCard(channel: channel)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+        } else if !skippedHomeownerShare {
+            VStack(spacing: 10) {
+                Button {
+                    let g = UIImpactFeedbackGenerator(style: .medium); g.impactOccurred()
+                    if activeLinkedCustomer != nil {
+                        showHomeownerShare = true
+                    } else {
+                        showCustomerPicker = true
+                    }
+                } label: {
+                    HStack(spacing: 12) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(.white.opacity(0.22))
+                            Image(systemName: "paperplane.fill")
+                                .font(.system(size: 15, weight: .heavy))
+                                .foregroundStyle(.white)
+                        }
+                        .frame(width: 42, height: 42)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Send Homeowner Recap")
+                                .font(.system(size: 15, weight: .heavy))
+                                .foregroundStyle(.white)
+                            Text(ctaSubtitle)
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(.white.opacity(0.88))
+                                .lineLimit(1)
+                        }
+                        Spacer(minLength: 6)
+                        Image(systemName: "arrow.right")
+                            .font(.system(size: 13, weight: .heavy))
+                            .foregroundStyle(.white)
+                            .frame(width: 28, height: 28)
+                            .background(.white.opacity(0.22), in: .circle)
+                    }
+                    .padding(14)
+                    .background(
+                        LinearGradient(colors: [Theme.ember, Theme.emberDeep],
+                                       startPoint: .topLeading, endPoint: .bottomTrailing),
+                        in: .rect(cornerRadius: 18)
+                    )
+                    .shadow(color: Theme.ember.opacity(0.45), radius: 16, y: 8)
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        skippedHomeownerShare = true
+                    }
+                } label: {
+                    Text("Skip for now")
+                        .font(.system(size: 12, weight: .heavy))
+                        .foregroundStyle(Theme.inkSoft)
+                        .underline()
+                        .padding(.vertical, 4)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private var ctaSubtitle: String {
+        if let c = activeLinkedCustomer {
+            let parts = [c.phone, c.email].map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+            if let first = parts.first {
+                return "Auto-fill \(first) · default \(lastShareChannel.shortLabel)"
+            }
+            return "To \(c.ownerName) · default \(lastShareChannel.shortLabel)"
+        }
+        return "Link to a customer first · takes 5 seconds"
+    }
+
+    private func sentHomeownerCard(channel: HomeownerShareChannel) -> some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle().fill(channel.tint.opacity(0.18))
+                Image(systemName: "checkmark")
+                    .font(.system(size: 14, weight: .heavy))
+                    .foregroundStyle(channel.tint)
+            }
+            .frame(width: 36, height: 36)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Recap Sent via \(channel.rawValue)")
+                    .font(.system(size: 13, weight: .heavy))
+                    .foregroundStyle(Theme.ink)
+                if let c = activeLinkedCustomer {
+                    Text("Logged to \(c.ownerName) · pipeline updated")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.inkSoft)
+                        .lineLimit(1)
+                } else {
+                    Text("Logged to customer timeline")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.inkSoft)
+                }
+            }
+            Spacer()
+            Button {
+                showHomeownerShare = true
+            } label: {
+                Text("Resend")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(channel.tint)
+                    .padding(.horizontal, 10).padding(.vertical, 6)
+                    .background(channel.tint.opacity(0.12), in: .capsule)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(14)
+        .background(channel.tint.opacity(0.08), in: .rect(cornerRadius: 18))
+        .overlay(RoundedRectangle(cornerRadius: 18).stroke(channel.tint.opacity(0.30), lineWidth: 0.8))
+    }
+
+    private func handleHomeownerShareSent(channel: HomeownerShareChannel, customerID: UUID) {
+        customerStore.logHomeownerShare(channel: channel, to: customerID)
+        let g = UINotificationFeedbackGenerator(); g.notificationOccurred(.success)
+        withAnimation(.spring(response: 0.45, dampingFraction: 0.82)) {
+            sentHomeownerShareChannel = channel
+        }
+        showHomeownerShare = false
     }
 
     private var damageScoreCard: some View {
@@ -2074,5 +2250,119 @@ private struct ResultsView: View {
 
 // Make ClaimPacket Identifiable already provides id
 extension ClaimPacket {}
+
+// MARK: - Link Customer Sheet (post-inspection)
+
+/// Lightweight customer picker shown when the rep taps "Send Homeowner Recap"
+/// before linking the inspection to a customer profile.
+private struct LinkCustomerSheet: View {
+    let store: CustomerStore
+    var onPick: (Customer) -> Void
+    var onCancel: () -> Void
+
+    @State private var query: String = ""
+
+    private var filtered: [Customer] {
+        let q = query.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !q.isEmpty else { return store.customers }
+        return store.customers.filter {
+            $0.ownerName.lowercased().contains(q) ||
+            $0.address.lowercased().contains(q)
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Link to a customer first?")
+                        .font(.system(size: 18, weight: .heavy))
+                        .foregroundStyle(Theme.ink)
+                    Text("Pick a profile so the recap auto-fills phone/email and the pipeline can advance.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.inkSoft)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 18)
+                .padding(.top, 16)
+                .padding(.bottom, 10)
+
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(Theme.inkFaint)
+                    TextField("Search by name or address", text: $query)
+                        .font(.system(size: 13))
+                        .foregroundStyle(Theme.ink)
+                        .autocorrectionDisabled(true)
+                        .textInputAutocapitalization(.words)
+                }
+                .padding(.horizontal, 12).padding(.vertical, 10)
+                .background(Theme.canvas, in: .rect(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.hairline, lineWidth: 0.6))
+                .padding(.horizontal, 18)
+                .padding(.bottom, 8)
+
+                ScrollView {
+                    LazyVStack(spacing: 8) {
+                        ForEach(filtered) { c in
+                            Button { onPick(c) } label: {
+                                HStack(spacing: 12) {
+                                    ZStack {
+                                        Circle().fill(c.stage.color.opacity(0.18))
+                                        Text(c.initials)
+                                            .font(.system(size: 13, weight: .heavy))
+                                            .foregroundStyle(c.stage.color)
+                                    }
+                                    .frame(width: 38, height: 38)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(c.ownerName)
+                                            .font(.system(size: 13, weight: .heavy))
+                                            .foregroundStyle(Theme.ink)
+                                            .lineLimit(1)
+                                        Text(c.address)
+                                            .font(.system(size: 11))
+                                            .foregroundStyle(Theme.inkSoft)
+                                            .lineLimit(1)
+                                    }
+                                    Spacer(minLength: 6)
+                                    Text(c.stage.shortLabel)
+                                        .font(.system(size: 9, weight: .heavy))
+                                        .tracking(0.4)
+                                        .foregroundStyle(c.stage.color)
+                                        .padding(.horizontal, 7).padding(.vertical, 3)
+                                        .background(c.stage.color.opacity(0.14), in: .capsule)
+                                }
+                                .padding(12)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(Theme.card, in: .rect(cornerRadius: 14))
+                                .overlay(RoundedRectangle(cornerRadius: 14)
+                                    .stroke(Theme.hairline, lineWidth: 0.6))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        if filtered.isEmpty {
+                            Text("No matches")
+                                .font(.system(size: 12))
+                                .foregroundStyle(Theme.inkFaint)
+                                .padding(.top, 30)
+                        }
+                    }
+                    .padding(.horizontal, 18)
+                    .padding(.bottom, 24)
+                }
+            }
+            .background(Theme.canvas)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel", action: onCancel)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Theme.inkSoft)
+                }
+            }
+        }
+    }
+}
 
 #Preview { QuickInspectionView() }

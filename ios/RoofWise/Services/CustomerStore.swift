@@ -109,4 +109,56 @@ final class CustomerStore {
         guard !trimmed.isEmpty, let i = customers.firstIndex(where: { $0.id == id }) else { return }
         customers[i].notes.insert(CustomerNote(text: trimmed), at: 0)
     }
+
+    /// Log a homeowner-recap share to the customer's timeline and bump
+    /// pipeline stage from Inspection Complete → Recap Sent if applicable.
+    func logHomeownerShare(channel: HomeownerShareChannel, to id: UUID) {
+        guard let i = customers.firstIndex(where: { $0.id == id }) else { return }
+        let f = DateFormatter()
+        f.dateFormat = "h:mm a"
+        let timeStr = f.string(from: Date())
+        let entry = "Recap sent via \(channel.rawValue) — \(timeStr)"
+        customers[i].notes.insert(CustomerNote(text: entry), at: 0)
+        if customers[i].stage == .inspectionComplete {
+            customers[i].stage = .recapSent
+        }
+    }
+}
+
+// MARK: - Homeowner Share Channel
+
+enum HomeownerShareChannel: String, CaseIterable, Identifiable, Codable {
+    case messages = "Messages"
+    case mail = "Mail"
+    case airdrop = "AirDrop"
+    case shareSheet = "Share Sheet"
+
+    var id: String { rawValue }
+
+    var icon: String {
+        switch self {
+        case .messages: return "message.fill"
+        case .mail: return "envelope.fill"
+        case .airdrop: return "dot.radiowaves.left.and.right"
+        case .shareSheet: return "square.and.arrow.up"
+        }
+    }
+
+    var tint: Color {
+        switch self {
+        case .messages: return Theme.mint
+        case .mail: return Theme.sky
+        case .airdrop: return Theme.amber
+        case .shareSheet: return Theme.ember
+        }
+    }
+
+    var shortLabel: String {
+        switch self {
+        case .messages: return "Text"
+        case .mail: return "Email"
+        case .airdrop: return "AirDrop"
+        case .shareSheet: return "Share…"
+        }
+    }
 }

@@ -433,6 +433,7 @@ extension JobPipelineStage {
         case .interested: return "homeowner-101"
         case .inspectionScheduled: return "hail-101"
         case .inspectionComplete: return "homeowner-101"
+        case .recapSent: return "homeowner-101"
         case .claimFiled: return "claims-101"
         case .adjusterMeeting: return "adjuster-101"
         case .approved: return "claims-101"
@@ -453,6 +454,8 @@ extension JobPipelineStage {
             return "Walk in with a checklist. Front, back, sides, ridge, valleys, soft metal — miss nothing."
         case .inspectionComplete:
             return "Show photos, trace damage with your finger, connect each finding to a real consequence."
+        case .recapSent:
+            return "Follow up within 24 hours — homeowners forget specifics fast. Reinforce the next step you recommended."
         case .claimFiled:
             return "Confirm date of loss matches NOAA storm reports before the adjuster shows up."
         case .adjusterMeeting:

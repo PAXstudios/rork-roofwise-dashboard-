@@ -307,7 +307,7 @@ struct RolePlayCoachView: View {
         if let ctx = customerContext {
             switch ctx.stage {
             case .knocked: return .objections
-            case .interested, .inspectionComplete, .jobComplete: return .homeowner
+            case .interested, .inspectionComplete, .recapSent, .jobComplete: return .homeowner
             case .inspectionScheduled: return .hailDamage
             case .claimFiled, .approved, .materialOrdered: return .claims
             case .adjusterMeeting: return .adjusters
