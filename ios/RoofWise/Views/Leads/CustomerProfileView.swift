@@ -11,6 +11,7 @@ struct CustomerProfileView: View {
     @State private var showAddNote = false
     @State private var newNoteText = ""
     @State private var previewPhoto: CapturedPhoto?
+    @State private var slopeBeingViewed: SlopeType?
     @State private var isEditing = false
     @State private var draft: Customer?
     @State private var showHomeownerShare = false
@@ -87,6 +88,21 @@ struct CustomerProfileView: View {
         .sheet(item: $coachTipLesson) { lesson in
             @Bindable var bindable = trainingProgress
             LessonDetailView(lesson: lesson, progress: bindable)
+        }
+        .sheet(item: $slopeBeingViewed) { slope in
+            SlopePhotosSheet(
+                slope: slope,
+                photos: customer.photos.filter { $0.slope == slope },
+                onSelect: { picked in
+                    slopeBeingViewed = nil
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                        previewPhoto = picked
+                    }
+                },
+                onClose: { slopeBeingViewed = nil }
+            )
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
         }
         .fullScreenCover(item: $previewPhoto) { photo in
             PhotoDamageOverlayView(
@@ -468,33 +484,221 @@ struct CustomerProfileView: View {
         }
     }
 
-    // MARK: Photos
+    // MARK: Photos (slope-grouped damage cards)
+
+    private var slopeGroups: [(slope: SlopeType, photos: [CapturedPhoto])] {
+        let dict = Dictionary(grouping: customer.photos, by: \.slope)
+        return SlopeType.allCases.compactMap { s in
+            guard let items = dict[s], !items.isEmpty else { return nil }
+            let sorted = items.sorted { $0.timestamp > $1.timestamp }
+            return (s, sorted)
+        }
+    }
+
+    private var totalDamageMarkers: Int {
+        customer.photos.reduce(0) { $0 + $1.damageMarkers.count }
+    }
 
     private var photosSection: some View {
-        sectionCard(title: "Inspection Photos", icon: "photo.stack.fill", tint: Theme.ember,
+        sectionCard(title: "Damaged Photos by Slope", icon: "photo.stack.fill", tint: Theme.ember,
                     trailing: AnyView(
-                        Text("\(customer.photos.count)")
-                            .font(.system(size: 11, weight: .heavy))
-                            .foregroundStyle(Theme.inkSoft)
+                        HStack(spacing: 4) {
+                            Image(systemName: "scope")
+                                .font(.system(size: 9, weight: .heavy))
+                                .foregroundStyle(Theme.crimson)
+                            Text("\(totalDamageMarkers)")
+                                .font(.system(size: 11, weight: .heavy))
+                                .foregroundStyle(Theme.ink)
+                                .monospacedDigit()
+                        }
+                        .padding(.horizontal, 7).padding(.vertical, 3)
+                        .background(Theme.crimson.opacity(0.10), in: .capsule)
                     )) {
             if customer.photos.isEmpty {
                 emptyState(icon: "camera.viewfinder",
                            title: "No photos yet",
                            subtitle: "Photos taken during Quick Inspection auto-attach here.")
             } else {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 10) {
-                        ForEach(customer.photos) { photo in
-                            Button { previewPhoto = photo } label: {
-                                photoThumb(photo)
+                VStack(spacing: 10) {
+                    ForEach(slopeGroups, id: \.slope) { group in
+                        Button {
+                            let g = UIImpactFeedbackGenerator(style: .light); g.impactOccurred()
+                            slopeBeingViewed = group.slope
+                        } label: {
+                            slopeDamageCard(slope: group.slope, photos: group.photos)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+    }
+
+    private func slopeDamageCard(slope: SlopeType, photos: [CapturedPhoto]) -> some View {
+        let markers = photos.reduce(0) { $0 + $1.damageMarkers.count }
+        let worst: FindingSeverity = photos
+            .map(\.worstSeverity)
+            .max(by: { $0.rank < $1.rank }) ?? .none
+        let preview = Array(photos.prefix(3))
+        let extra = max(0, photos.count - preview.count)
+        let damageTypes: [DamageMarkerType] = {
+            let all = photos.flatMap { $0.damageMarkers.map(\.type) }
+            var seen = Set<DamageMarkerType>()
+            return all.filter { seen.insert($0).inserted }
+        }()
+
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 11).fill(Theme.emberSoft)
+                    Image(systemName: slope.icon)
+                        .font(.system(size: 13, weight: .heavy))
+                        .foregroundStyle(Theme.ember)
+                }
+                .frame(width: 38, height: 38)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(slope.shortName)
+                        .font(.system(size: 14, weight: .heavy))
+                        .foregroundStyle(Theme.ink)
+                    HStack(spacing: 6) {
+                        Text("\(photos.count) photo\(photos.count == 1 ? "" : "s")")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Theme.inkSoft)
+                        if markers > 0 {
+                            Text("·")
+                                .font(.system(size: 11, weight: .heavy))
+                                .foregroundStyle(Theme.inkFaint)
+                            HStack(spacing: 3) {
+                                Image(systemName: "scope")
+                                    .font(.system(size: 9, weight: .heavy))
+                                Text("\(markers) marker\(markers == 1 ? "" : "s")")
+                                    .font(.system(size: 11, weight: .heavy))
                             }
-                            .buttonStyle(.plain)
+                            .foregroundStyle(Theme.crimson)
                         }
                     }
                 }
-                .contentMargins(.horizontal, 0)
+                Spacer(minLength: 0)
+                if worst != .none {
+                    Text(worst.rawValue.uppercased())
+                        .font(.system(size: 9, weight: .heavy))
+                        .tracking(0.8)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 7).padding(.vertical, 3)
+                        .background(worst.color, in: .capsule)
+                }
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(Theme.inkFaint)
+            }
+
+            // Photo strip with marker dots overlaid
+            HStack(spacing: 8) {
+                ForEach(preview) { photo in
+                    slopePhotoPreview(photo)
+                }
+                if extra > 0 {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 12).fill(Theme.canvas)
+                        VStack(spacing: 2) {
+                            Text("+\(extra)")
+                                .font(.system(size: 15, weight: .heavy))
+                                .foregroundStyle(Theme.ink)
+                            Text("more")
+                                .font(.system(size: 9, weight: .heavy))
+                                .tracking(0.6)
+                                .foregroundStyle(Theme.inkFaint)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 78)
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.hairline, lineWidth: 0.6))
+                }
+            }
+
+            if !damageTypes.isEmpty {
+                HStack(spacing: 6) {
+                    ForEach(damageTypes.prefix(4), id: \.self) { t in
+                        HStack(spacing: 4) {
+                            Image(systemName: t.icon)
+                                .font(.system(size: 9, weight: .heavy))
+                            Text(t.display)
+                                .font(.system(size: 10, weight: .heavy))
+                                .lineLimit(1)
+                        }
+                        .foregroundStyle(t.color)
+                        .padding(.horizontal, 7).padding(.vertical, 4)
+                        .background(t.color.opacity(0.12), in: .capsule)
+                        .overlay(Capsule().stroke(t.color.opacity(0.3), lineWidth: 0.5))
+                    }
+                    Spacer(minLength: 0)
+                }
+            } else {
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.seal.fill")
+                        .font(.system(size: 10, weight: .heavy))
+                        .foregroundStyle(Theme.mint)
+                    Text("No AI damage detected on this slope")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Theme.inkSoft)
+                    Spacer(minLength: 0)
+                }
             }
         }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.canvas, in: .rect(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.hairline, lineWidth: 0.6))
+    }
+
+    private func slopePhotoPreview(_ photo: CapturedPhoto) -> some View {
+        Color(.secondarySystemBackground)
+            .frame(maxWidth: .infinity)
+            .frame(height: 78)
+            .overlay {
+                Image(uiImage: photo.image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .allowsHitTesting(false)
+            }
+            .clipShape(.rect(cornerRadius: 12))
+            .overlay {
+                GeometryReader { geo in
+                    ForEach(photo.damageMarkers) { marker in
+                        Circle()
+                            .fill(marker.type.color.opacity(0.95))
+                            .overlay(Circle().stroke(.white, lineWidth: 1))
+                            .frame(width: 7, height: 7)
+                            .position(x: marker.x * geo.size.width,
+                                      y: marker.y * geo.size.height)
+                    }
+                }
+                .allowsHitTesting(false)
+            }
+            .overlay(alignment: .topLeading) {
+                if photo.damageMarkers.count > 0 {
+                    Text("\(photo.damageMarkers.count)")
+                        .font(.system(size: 9, weight: .heavy))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 5).padding(.vertical, 2)
+                        .background(Theme.crimson, in: .capsule)
+                        .padding(5)
+                }
+            }
+            .overlay(alignment: .bottomLeading) {
+                if photo.analyzed {
+                    HStack(spacing: 3) {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 8, weight: .heavy))
+                        Text("AI")
+                            .font(.system(size: 8, weight: .heavy))
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 5).padding(.vertical, 2)
+                    .background(Theme.ember, in: .capsule)
+                    .padding(5)
+                }
+            }
     }
 
     private func photoThumb(_ photo: CapturedPhoto) -> some View {
