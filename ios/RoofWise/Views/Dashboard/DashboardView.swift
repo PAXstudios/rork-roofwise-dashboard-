@@ -9,17 +9,14 @@ struct DashboardView: View {
             VStack(spacing: 22) {
                 DashboardHeader()
                 KPIStrip(onQuickInspection: onQuickInspection)
-                TodaysLessonCard(onOpenTraining: onOpenTraining)
-                SalesMetricsCard()
+                HomeCardsCarousel(onOpenTraining: onOpenTraining)
                 CoachingActivityCard(onOpenTraining: onOpenTraining)
                 StormAlertCard()
                 StormAlertSubscriptionCard()
-                StormHistoryMapCard()
                 PipelineCard()
                 ScheduleCard()
                 RecentJobsRow()
                 AIInsightsCard()
-                DailySummaryCard()
                 TasksAndActivityCard()
                 Color.clear.frame(height: 120)
             }

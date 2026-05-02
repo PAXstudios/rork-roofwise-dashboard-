@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SalesMetricsCard: View {
     @Environment(CustomerStore.self) private var store
+    var embedded: Bool = false
 
     private var metrics: SalesMetrics { SalesMetrics.compute(from: store.customers) }
 
@@ -41,7 +42,7 @@ struct SalesMetricsCard: View {
             pipelineRevenueBar
         }
         .cardStyle(padding: 18, radius: 24)
-        .padding(.horizontal, 20)
+        .padding(.horizontal, embedded ? 0 : 20)
     }
 
     // MARK: Pieces

@@ -6,6 +6,7 @@ import SwiftUI
 struct TodaysLessonCard: View {
     @Environment(TrainingProgressStore.self) private var progress
     var onOpenTraining: () -> Void = {}
+    var embedded: Bool = false
 
     @State private var presented: Lesson? = nil
 
@@ -17,7 +18,7 @@ struct TodaysLessonCard: View {
                 allCaughtUp
             }
         }
-        .padding(.horizontal, 18)
+        .padding(.horizontal, embedded ? 0 : 18)
         .sheet(item: $presented) { lesson in
             @Bindable var bindable = progress
             LessonDetailView(lesson: lesson, progress: bindable)

@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct StormHistoryMapCard: View {
+    var embedded: Bool = false
     @State private var selectedYear: Int? = nil   // nil == All
     @State private var selectedTypes: Set<StormType> = [.hail, .wind]
     @State private var detailStorm: StormEvent?
@@ -50,7 +51,7 @@ struct StormHistoryMapCard: View {
             intensityLegend
         }
         .cardStyle(padding: 18, radius: 24)
-        .padding(.horizontal, 20)
+        .padding(.horizontal, embedded ? 0 : 20)
         .sheet(item: $detailStorm) { storm in
             StormDetailSheet(storm: storm)
                 .presentationDetents([.medium])

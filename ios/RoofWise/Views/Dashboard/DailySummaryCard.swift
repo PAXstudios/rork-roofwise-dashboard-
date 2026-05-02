@@ -2,6 +2,7 @@ import SwiftUI
 
 struct DailySummaryCard: View {
     @Environment(CustomerStore.self) private var store
+    var embedded: Bool = false
 
     private var metrics: SalesMetrics { SalesMetrics.compute(from: store.customers) }
 
@@ -93,7 +94,7 @@ struct DailySummaryCard: View {
             .background(Theme.emberSoft.opacity(0.7), in: .rect(cornerRadius: 14))
         }
         .cardStyle(padding: 18, radius: 24)
-        .padding(.horizontal, 20)
+        .padding(.horizontal, embedded ? 0 : 20)
     }
 
     private func bullet(icon: String, tint: Color, text: String) -> some View {
