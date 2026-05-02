@@ -1,13 +1,14 @@
 import SwiftUI
 
 enum AppTab: Int, CaseIterable {
-    case home, leads, map, plan
+    case home, leads, map, plan, training
     var title: String {
         switch self {
         case .home: return "Home"
         case .leads: return "Leads"
         case .map: return "Map"
         case .plan: return "Plan"
+        case .training: return "Train"
         }
     }
     var icon: String {
@@ -16,6 +17,7 @@ enum AppTab: Int, CaseIterable {
         case .leads: return "person.2.fill"
         case .map: return "map.fill"
         case .plan: return "calendar"
+        case .training: return "graduationcap.fill"
         }
     }
 }
@@ -37,6 +39,7 @@ struct RootView: View {
                 case .leads: LeadsView()
                 case .map: MapHubView()
                 case .plan: PlanView()
+                case .training: TrainingView()
                 }
             }
             .safeAreaPadding(.bottom, 96)
@@ -82,8 +85,9 @@ struct BottomTabBar: View {
             plusButton
             tabItem(.map)
             tabItem(.plan)
+            tabItem(.training)
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, 8)
         .padding(.top, 12)
         .padding(.bottom, 14)
         .background(
@@ -103,9 +107,9 @@ struct BottomTabBar: View {
         } label: {
             VStack(spacing: 4) {
                 Image(systemName: t.icon)
-                    .font(.system(size: 19, weight: .semibold))
+                    .font(.system(size: 17, weight: .semibold))
                 Text(t.title)
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: 9.5, weight: .semibold))
             }
             .foregroundStyle(tab == t ? Theme.ember : Theme.inkFaint)
             .frame(maxWidth: .infinity)
