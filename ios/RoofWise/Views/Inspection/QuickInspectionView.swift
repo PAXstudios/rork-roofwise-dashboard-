@@ -69,11 +69,15 @@ struct QuickInspectionView: View {
             SlopePickerSheet(selected: $currentSlope)
                 .presentationDetents([.medium, .large])
         }
-        .sheet(item: $previewPhoto) { photo in
-            PhotoPreviewSheet(photo: photo) { remove in
-                if remove { capturedPhotos.removeAll { $0.id == photo.id } }
-                previewPhoto = nil
-            }
+        .fullScreenCover(item: $previewPhoto) { photo in
+            PhotoDamageOverlayView(
+                photo: photo,
+                onClose: { previewPhoto = nil },
+                onDelete: {
+                    capturedPhotos.removeAll { $0.id == photo.id }
+                    previewPhoto = nil
+                }
+            )
         }
         .fullScreenCover(item: $claimPacket) { packet in
             ClaimPacketView(packet: packet,
@@ -755,11 +759,13 @@ struct QuickInspectionView: View {
                 var results: [String: InspectionFinding] = [:]
                 for i in capturedPhotos.indices {
                     let photo = capturedPhotos[i]
-                    let findings = await GeminiAnalysisService.analyze(image: photo.image,
-                                                                       slope: photo.slope,
-                                                                       mode: photo.captureMode,
-                                                                       squaresCovered: photo.squaresCovered)
+                    let result = await GeminiAnalysisService.analyzeFull(image: photo.image,
+                                                                          slope: photo.slope,
+                                                                          mode: photo.captureMode,
+                                                                          squaresCovered: photo.squaresCovered)
+                    let findings = result.findings
                     capturedPhotos[i].findings = findings
+                    capturedPhotos[i].damageMarkers = result.markers
                     capturedPhotos[i].analyzed = true
                     for f in findings {
                         if let existing = results[f.label] {

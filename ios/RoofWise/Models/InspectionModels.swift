@@ -121,6 +121,86 @@ struct StructuralInput: Identifiable {
     let icon: String
 }
 
+// MARK: - AI Damage Markers (overlay on photos)
+
+enum DamageMarkerType: String, CaseIterable {
+    case hailStrike = "hail_strike"
+    case crack = "crack"
+    case granuleLoss = "granule_loss"
+    case missingShingle = "missing_shingle"
+    case windCrease = "wind_crease"
+    case blister = "blister"
+    case flashing = "flashing"
+    case algae = "algae"
+    case other = "other"
+
+    var display: String {
+        switch self {
+        case .hailStrike: return "Hail Strike"
+        case .crack: return "Crack"
+        case .granuleLoss: return "Granule Loss"
+        case .missingShingle: return "Missing Shingle"
+        case .windCrease: return "Wind Crease"
+        case .blister: return "Blister"
+        case .flashing: return "Flashing"
+        case .algae: return "Algae / Moss"
+        case .other: return "Damage"
+        }
+    }
+
+    var pluralDisplay: String {
+        switch self {
+        case .hailStrike: return "hail strikes"
+        case .crack: return "cracks"
+        case .granuleLoss: return "granule loss spots"
+        case .missingShingle: return "missing shingles"
+        case .windCrease: return "wind creases"
+        case .blister: return "blisters"
+        case .flashing: return "flashing issues"
+        case .algae: return "algae patches"
+        case .other: return "damage points"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .hailStrike: return "circle.hexagongrid.fill"
+        case .crack: return "bolt.horizontal.fill"
+        case .granuleLoss: return "circle.dotted"
+        case .missingShingle: return "square.dashed"
+        case .windCrease: return "wind"
+        case .blister: return "circle.grid.cross.fill"
+        case .flashing: return "square.stack.3d.up.slash.fill"
+        case .algae: return "leaf.fill"
+        case .other: return "exclamationmark.triangle.fill"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .hailStrike: return Theme.crimson
+        case .crack: return Theme.ember
+        case .granuleLoss: return Theme.amber
+        case .missingShingle: return Theme.crimson
+        case .windCrease: return Theme.ember
+        case .blister: return Theme.amber
+        case .flashing: return Theme.ember
+        case .algae: return Theme.mint
+        case .other: return Theme.amber
+        }
+    }
+}
+
+struct DamageMarker: Identifiable {
+    let id = UUID()
+    let x: CGFloat       // 0-1 normalized
+    let y: CGFloat       // 0-1 normalized
+    let radius: CGFloat  // 0-1 normalized (relative to min image dimension)
+    let type: DamageMarkerType
+    let severity: FindingSeverity
+    let note: String
+}
+
 struct DetectedHit: Identifiable {
     let id = UUID()
     let x: CGFloat   // 0-1
@@ -183,6 +263,23 @@ enum InspectionMock {
         .init(key: "age_of_roof", label: "Age", value: "11 yrs", icon: "calendar"),
         .init(key: "material_type", label: "Material", value: "Architectural Asphalt", icon: "square.grid.3x3.fill"),
         .init(key: "pitch", label: "Pitch", value: "7/12", icon: "arrow.up.right")
+    ]
+
+    static let damageMarkers: [DamageMarker] = [
+        .init(x: 0.22, y: 0.32, radius: 0.04, type: .hailStrike, severity: .severe, note: "Mat fracture, granules displaced"),
+        .init(x: 0.34, y: 0.28, radius: 0.035, type: .hailStrike, severity: .moderate, note: "Bruise, soft to touch"),
+        .init(x: 0.45, y: 0.40, radius: 0.045, type: .hailStrike, severity: .severe, note: "Penetrating impact"),
+        .init(x: 0.58, y: 0.36, radius: 0.03, type: .hailStrike, severity: .minor, note: "Granule scuff"),
+        .init(x: 0.62, y: 0.52, radius: 0.05, type: .hailStrike, severity: .severe, note: "Mat exposed"),
+        .init(x: 0.30, y: 0.55, radius: 0.035, type: .hailStrike, severity: .moderate, note: "Bruising on tab"),
+        .init(x: 0.72, y: 0.45, radius: 0.04, type: .hailStrike, severity: .severe, note: "Multiple impacts"),
+        .init(x: 0.50, y: 0.62, radius: 0.035, type: .hailStrike, severity: .moderate, note: "Hail bruise"),
+        .init(x: 0.40, y: 0.70, radius: 0.045, type: .hailStrike, severity: .severe, note: "Mat fracture"),
+        .init(x: 0.66, y: 0.66, radius: 0.03, type: .hailStrike, severity: .minor, note: "Granule loss spot"),
+        .init(x: 0.20, y: 0.48, radius: 0.05, type: .crack, severity: .moderate, note: "Hairline split through tab"),
+        .init(x: 0.78, y: 0.58, radius: 0.045, type: .crack, severity: .minor, note: "Surface crack"),
+        .init(x: 0.15, y: 0.20, radius: 0.06, type: .granuleLoss, severity: .severe, note: "Bare patch"),
+        .init(x: 0.85, y: 0.30, radius: 0.05, type: .windCrease, severity: .moderate, note: "Crease at nail line")
     ]
 
     static let hits: [DetectedHit] = [

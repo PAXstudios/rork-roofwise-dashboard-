@@ -12,17 +12,32 @@ enum GeminiAnalysisService {
 
     /// Analyze a captured roof photo and return structured findings.
     /// Falls back to mock findings if API key is unset or the request fails.
+    struct AnalysisResult {
+        let findings: [InspectionFinding]
+        let markers: [DamageMarker]
+    }
+
+    /// Convenience for legacy callers that only need findings.
     static func analyze(image: UIImage,
                         slope: SlopeType,
                         mode: CaptureMode = .square,
                         squaresCovered: Int = 0) async -> [InspectionFinding] {
+        await analyzeFull(image: image, slope: slope, mode: mode, squaresCovered: squaresCovered).findings
+    }
+
+    /// Analyze a captured roof photo and return findings + per-pixel damage markers.
+    static func analyzeFull(image: UIImage,
+                            slope: SlopeType,
+                            mode: CaptureMode = .square,
+                            squaresCovered: Int = 0) async -> AnalysisResult {
         let key = apiKey
         guard !key.isEmpty,
               key != "GEMINI_API_KEY",
               let url = URL(string: "\(endpoint)?key=\(key)"),
               let jpeg = image.jpegData(compressionQuality: 0.7) else {
             try? await Task.sleep(for: .milliseconds(800))
-            return mockFindings(for: slope)
+            return AnalysisResult(findings: mockFindings(for: slope),
+                                  markers: InspectionMock.damageMarkers)
         }
 
         let coverageNote: String = {
@@ -66,6 +81,24 @@ enum GeminiAnalysisService {
           ]
         }
         Include ALL 10 damage categories. Be conservative - only mark severe if clearly visible.
+
+        Then ALSO return precise pixel-region markers for every visible damage point
+        (each hail strike, crack, missing shingle, blister, etc.) so we can overlay
+        circles on the photo. Coordinates MUST be normalized 0-1 (x from left, y from top)
+        relative to the image. Radius is normalized 0-1 (relative to min image dimension).
+        Add this top-level field to the JSON:
+        "damage_markers": [
+          {
+            "type": "hail_strike|crack|granule_loss|missing_shingle|wind_crease|blister|flashing|algae|other",
+            "x": 0.0-1.0,
+            "y": 0.0-1.0,
+            "radius": 0.0-1.0,
+            "severity": "minor|moderate|severe",
+            "note": "<short evidence>"
+          }
+        ]
+        Mark EVERY visible hail strike individually (not just one for the whole photo).
+        Aim for accuracy: if you see 12 hail strikes, return 12 markers. If none, return [].
         """
 
         let body: [String: Any] = [
@@ -97,10 +130,11 @@ enum GeminiAnalysisService {
         }
 
         try? await Task.sleep(for: .milliseconds(400))
-        return mockFindings(for: slope)
+        return AnalysisResult(findings: mockFindings(for: slope),
+                              markers: InspectionMock.damageMarkers)
     }
 
-    private static func parseResponse(_ data: Data) -> [InspectionFinding]? {
+    private static func parseResponse(_ data: Data) -> AnalysisResult? {
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let candidates = root["candidates"] as? [[String: Any]],
               let content = candidates.first?["content"] as? [String: Any],
@@ -120,7 +154,34 @@ enum GeminiAnalysisService {
         for dict in raw {
             if let finding = findingFromDict(dict) { results.append(finding) }
         }
-        return results
+
+        var markers: [DamageMarker] = []
+        if let rawMarkers = payload["damage_markers"] as? [[String: Any]] {
+            for dict in rawMarkers {
+                if let m = markerFromDict(dict) { markers.append(m) }
+            }
+        }
+        return AnalysisResult(findings: results, markers: markers)
+    }
+
+    private static func markerFromDict(_ dict: [String: Any]) -> DamageMarker? {
+        let typeRaw = (dict["type"] as? String) ?? "other"
+        let type = DamageMarkerType(rawValue: typeRaw) ?? .other
+        guard let xVal = (dict["x"] as? Double) ?? (dict["x"] as? NSNumber)?.doubleValue,
+              let yVal = (dict["y"] as? Double) ?? (dict["y"] as? NSNumber)?.doubleValue else {
+            return nil
+        }
+        let radius = ((dict["radius"] as? Double) ?? (dict["radius"] as? NSNumber)?.doubleValue) ?? 0.04
+        let severityRaw = (dict["severity"] as? String ?? "moderate").capitalized
+        let severity = FindingSeverity(rawValue: severityRaw) ?? .moderate
+        let note = dict["note"] as? String ?? type.display
+        let clamp: (Double) -> CGFloat = { CGFloat(max(0, min(1, $0))) }
+        return DamageMarker(x: clamp(xVal),
+                            y: clamp(yVal),
+                            radius: clamp(radius),
+                            type: type,
+                            severity: severity,
+                            note: note)
     }
 
     private static func shingleTypeFinding(from dict: [String: Any]) -> InspectionFinding? {

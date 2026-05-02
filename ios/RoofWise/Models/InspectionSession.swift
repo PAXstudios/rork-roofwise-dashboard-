@@ -30,6 +30,7 @@ struct CapturedPhoto: Identifiable {
     var squaresCovered: Int = 0
     let timestamp: Date = Date()
     var findings: [InspectionFinding] = []
+    var damageMarkers: [DamageMarker] = []
     var analyzed: Bool = false
 }
 
