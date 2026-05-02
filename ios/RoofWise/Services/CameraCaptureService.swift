@@ -111,7 +111,7 @@ final class CameraCaptureService: NSObject {
     }
 }
 
-extension CameraCaptureService: @preconcurrency AVCapturePhotoCaptureDelegate {
+extension CameraCaptureService: AVCapturePhotoCaptureDelegate {
     nonisolated func photoOutput(_ output: AVCapturePhotoOutput,
                                  didFinishProcessingPhoto photo: AVCapturePhoto,
                                  error: Error?) {

@@ -6,7 +6,7 @@ import SwiftUI
 /// API key is read from `Config.EXPO_PUBLIC_GEMINI_API_KEY` (env var).
 enum GeminiAnalysisService {
     /// Reads the key from the auto-generated Config (env var EXPO_PUBLIC_GEMINI_API_KEY).
-    static var apiKey: String { Config.EXPO_PUBLIC_GEMINI_API_KEY }
+    static var apiKey: String { Config.allValues["EXPO_PUBLIC_GEMINI_API_KEY"] ?? "" }
 
     static let endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
 
@@ -83,7 +83,11 @@ enum GeminiAnalysisService {
             return nil
         }
 
-        return raw.compactMap(findingFromDict)
+        var results: [InspectionFinding] = []
+        for dict in raw {
+            if let finding = findingFromDict(dict) { results.append(finding) }
+        }
+        return results
     }
 
     private static func findingFromDict(_ dict: [String: Any]) -> InspectionFinding? {
