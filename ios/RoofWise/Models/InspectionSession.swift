@@ -79,7 +79,56 @@ struct ClaimPacket: Identifiable {
     let summary: String
     let roofCovering: String?
     let damagedTilesPercent: Double?
+    let thresholdRule: String?
+    let hitsPerSquare: Double?
     let generatedAt: Date = Date()
+}
+
+/// HAAG-style roof covering categories used to pick the correct
+/// damage threshold against a 100 sq ft test square.
+enum RoofCoveringCategory {
+    case asphaltComposition  // 3-tab + architectural laminate
+    case woodShakeShingle
+    case metalPanel
+    case concreteTile
+    case clayTile
+    case slate
+    case lowSlopeMembrane    // mod-bit / TPO / EPDM / built-up
+    case unknown
+
+    /// Returns (label, ruleText, threshold trigger) for display.
+    var ruleDescription: String {
+        switch self {
+        case .asphaltComposition:
+            return "Asphalt shingle: 8+ functional hail hits per 100 sq ft test square supports Replacement."
+        case .woodShakeShingle:
+            return "Wood shake/shingle: 8+ functional impacts per 100 sq ft test square supports Replacement."
+        case .metalPanel:
+            return "Metal panel: 8+ functional dents (denting that compromises seam, fastener, or coating) per 100 sq ft supports Replacement."
+        case .concreteTile:
+            return "Concrete tile: 10%+ of visible tiles damaged (cracked, broken, slipped, missing) supports Replacement."
+        case .clayTile:
+            return "Clay tile: 10%+ of visible tiles damaged supports Replacement."
+        case .slate:
+            return "Slate: 8%+ broken/cracked slates per slope supports Replacement."
+        case .lowSlopeMembrane:
+            return "Low-slope membrane (mod-bit / TPO / EPDM / BUR): any functional fracture or membrane breach supports Replacement of affected section."
+        case .unknown:
+            return "HAAG functional damage thresholds applied per 100 sq ft test square."
+        }
+    }
+
+    static func from(covering: String?) -> RoofCoveringCategory {
+        guard let c = covering?.lowercased() else { return .unknown }
+        if c.contains("concrete tile") { return .concreteTile }
+        if c.contains("clay") || c.contains("spanish") || c.contains("barrel") { return .clayTile }
+        if c.contains("slate") { return .slate }
+        if c.contains("wood") || c.contains("shake") || c.contains("cedar") { return .woodShakeShingle }
+        if c.contains("metal") || c.contains("standing seam") || c.contains("steel") || c.contains("aluminum") { return .metalPanel }
+        if c.contains("tpo") || c.contains("epdm") || c.contains("modified bitumen") || c.contains("mod-bit") || c.contains("built-up") || c.contains("bur") || c.contains("membrane") { return .lowSlopeMembrane }
+        if c.contains("asphalt") || c.contains("composition") || c.contains("3-tab") || c.contains("architectural") || c.contains("laminate") { return .asphaltComposition }
+        return .unknown
+    }
 }
 
 struct SlopePacketEntry: Identifiable {
@@ -156,22 +205,66 @@ enum HaagGrader {
             summary = "Combined peril event. Both hail and wind functional damage confirmed across multiple slopes. Full roof replacement is supportable per HAAG standards."
         }
 
-        // Roof-covering specific overrides (e.g. concrete tile uses tile-damage % rules).
+        // Roof-covering specific overrides — apply HAAG thresholds per 100 sq ft test square.
         let covering = detectedCovering(from: allFindings)
+        let category = RoofCoveringCategory.from(covering: covering)
         var finalRecommendation = grade.recommendedAction
         var finalSummary = summary
         var damagedTilesPercent: Double? = nil
+        var hitsPerSquare: Double? = nil
 
-        if let covering, covering.contains("concrete tile") {
+        switch category {
+        case .concreteTile, .clayTile:
             let pct = estimatedDamagedTilesPercent(photos: photos)
             damagedTilesPercent = pct
             if pct >= 10 {
                 finalRecommendation = "Replacement"
                 finalSummary = String(
-                    format: "Concrete tile roof: %.1f%% of visible tiles show damage (cracked, broken, slipped, or missing). Per concrete-tile criteria, damage at or above 10%% supports full Replacement rather than spot repair.",
-                    pct
+                    format: "%@ roof: %.1f%% of visible tiles damaged (cracked, broken, slipped, or missing). %@",
+                    category == .concreteTile ? "Concrete tile" : "Clay tile",
+                    pct,
+                    category.ruleDescription
                 )
             }
+        case .slate:
+            let pct = estimatedDamagedTilesPercent(photos: photos)
+            damagedTilesPercent = pct
+            if pct >= 8 {
+                finalRecommendation = "Replacement"
+                finalSummary = String(
+                    format: "Slate roof: %.1f%% of visible slates broken or cracked. %@",
+                    pct,
+                    category.ruleDescription
+                )
+            }
+        case .asphaltComposition, .woodShakeShingle, .metalPanel:
+            let hits = estimatedHitsPerSquare(photos: photos)
+            hitsPerSquare = hits
+            if hits >= 8 {
+                finalRecommendation = "Replacement"
+                let coveringLabel: String = {
+                    switch category {
+                    case .asphaltComposition: return "Asphalt shingle"
+                    case .woodShakeShingle: return "Wood shake/shingle"
+                    case .metalPanel: return "Metal panel"
+                    default: return "Roof"
+                    }
+                }()
+                finalSummary = String(
+                    format: "%@ roof: %.1f functional hits per 100 sq ft test square. %@",
+                    coveringLabel,
+                    hits,
+                    category.ruleDescription
+                )
+            }
+        case .lowSlopeMembrane:
+            let breach = allFindings.contains { $0.detected && ($0.severity == .moderate || $0.severity == .severe) && ($0.label == "cracking_splitting" || $0.label == "missing_shingles" || $0.label == "bruising") }
+            if breach {
+                finalRecommendation = "Replacement"
+                finalSummary = "Low-slope membrane shows functional fracture / breach of the watertight layer. \(category.ruleDescription)"
+            }
+        case .unknown:
+            break
         }
 
         return ClaimPacket(grade: grade,
@@ -181,7 +274,46 @@ enum HaagGrader {
                            slopeFindings: entries,
                            summary: finalSummary,
                            roofCovering: covering,
-                           damagedTilesPercent: damagedTilesPercent)
+                           damagedTilesPercent: damagedTilesPercent,
+                           thresholdRule: category == .unknown ? nil : category.ruleDescription,
+                           hitsPerSquare: hitsPerSquare)
+    }
+
+    /// Estimates HAAG-style functional hits per 100 sq ft test square.
+    /// Treats each square-mode photo as one 100 sq ft test square (scaled by squaresCovered),
+    /// counts moderate/severe hail+wind markers and findings as hits, then returns the
+    /// per-square average across all test squares photographed.
+    private static func estimatedHitsPerSquare(photos: [CapturedPhoto]) -> Double {
+        var totalSquares: Double = 0
+        var totalHits: Double = 0
+        for photo in photos {
+            let squares: Double = {
+                switch photo.captureMode {
+                case .square: return Double(max(1, photo.squaresCovered))
+                case .singleShingle: return 0.1   // one shingle ≈ 1/10 of a test square
+                }
+            }()
+            totalSquares += squares
+
+            let markerHits = photo.damageMarkers.filter {
+                ($0.type == .hailStrike || $0.type == .windCrease || $0.type == .crack || $0.type == .missingShingle) &&
+                ($0.severity == .moderate || $0.severity == .severe)
+            }.count
+
+            let findingHits: Int = {
+                if markerHits > 0 { return 0 }
+                let labels: Set<String> = ["bruising", "cracking_splitting", "wind_creasing", "missing_shingles"]
+                var n = 0
+                for f in photo.findings where f.detected && labels.contains(f.label) {
+                    n += severityWeight(f.severity)
+                }
+                return n
+            }()
+
+            totalHits += Double(markerHits + findingHits)
+        }
+        guard totalSquares > 0 else { return 0 }
+        return totalHits / totalSquares
     }
 
     private static func isFunctional(_ finding: InspectionFinding?) -> Bool {
