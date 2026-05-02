@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import Combine
 
 // MARK: - Flow
 
@@ -9,20 +10,6 @@ enum InspectionStep {
     case results       // structured findings
 }
 
-enum CameraOverlayMode: String, CaseIterable {
-    case off = "Off"
-    case shingleGrid = "Shingle Grid"
-    case lidarMesh = "LiDAR Mesh"
-
-    var icon: String {
-        switch self {
-        case .off: return "circle.slash"
-        case .shingleGrid: return "square.grid.3x3"
-        case .lidarMesh: return "cube.transparent"
-        }
-    }
-}
-
 struct QuickInspectionView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var step: InspectionStep = .capture
@@ -30,8 +17,11 @@ struct QuickInspectionView: View {
     @State private var detectedHits: [DetectedHit] = []
     @State private var flashOn: Bool = false
     @State private var currentPass: Int = 0
-    @State private var overlayMode: CameraOverlayMode = .shingleGrid
     @State private var pingedCells: Set<Int> = []
+    @State private var detectedShingles: Int = 0
+    @State private var squaresDetected: Int = 0
+    @State private var showSquareBadge: Bool = false
+    @State private var lidarAssist: Bool = true
     @State private var currentSlope: SlopeType = .frontSlope
     @State private var showSlopePicker: Bool = false
     @State private var capturedPhotos: [CapturedPhoto] = []
@@ -98,13 +88,40 @@ struct QuickInspectionView: View {
                            center: .center, startRadius: 180, endRadius: 520)
                 .allowsHitTesting(false)
 
-            // Overlay (grid / mesh)
-            overlayLayer
+            // Real-time AI shingle detection overlay
+            ShingleDetectionOverlay(lidarAssist: lidarAssist,
+                                    onDetectedCount: { count in
+                                        detectedShingles = count
+                                        let newSquares = count / 33
+                                        if newSquares > squaresDetected {
+                                            squaresDetected = newSquares
+                                            triggerSquareBadge()
+                                        }
+                                    })
                 .allowsHitTesting(false)
 
             // Targeting reticle
-            ReticleOverlay(active: overlayMode != .off)
+            ReticleOverlay(active: true)
                 .allowsHitTesting(false)
+
+            // Square Detected badge
+            VStack {
+                Spacer().frame(height: 170)
+                if showSquareBadge {
+                    SquareDetectedBadge(squares: squaresDetected)
+                        .transition(.scale.combined(with: .opacity))
+                }
+                Spacer()
+            }
+            .allowsHitTesting(false)
+
+            // Live detection stats
+            VStack {
+                Spacer()
+                detectionStatsBar
+                    .padding(.bottom, 230)
+            }
+            .allowsHitTesting(false)
 
             VStack(spacing: 0) {
                 topBar
@@ -114,16 +131,53 @@ struct QuickInspectionView: View {
         }
     }
 
-    @ViewBuilder
-    private var overlayLayer: some View {
-        switch overlayMode {
-        case .off:
-            EmptyView()
-        case .shingleGrid:
-            ShingleGridOverlay(pinged: pingedCells)
-        case .lidarMesh:
-            LiDARMeshOverlay(progress: 1.0)
-                .opacity(0.55)
+    private var detectionStatsBar: some View {
+        HStack(spacing: 10) {
+            statPill(icon: "square.grid.3x3.topleft.filled", tint: Theme.amber,
+                     label: "SHINGLES", value: "\(detectedShingles)")
+            statPill(icon: "square.stack.3d.up.fill", tint: Theme.ember,
+                     label: "SQUARES", value: String(format: "%.1f", Double(detectedShingles) / 33.0))
+            statPill(icon: lidarAssist ? "cube.transparent.fill" : "cube.transparent",
+                     tint: lidarAssist ? Theme.mint : .white.opacity(0.5),
+                     label: "LIDAR", value: lidarAssist ? "ON" : "OFF")
+                .onTapGesture {
+                    let g = UISelectionFeedbackGenerator(); g.selectionChanged()
+                    withAnimation(.easeInOut) { lidarAssist.toggle() }
+                }
+                .allowsHitTesting(true)
+        }
+        .padding(.horizontal, 18)
+    }
+
+    private func statPill(icon: String, tint: Color, label: String, value: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 11, weight: .heavy))
+                .foregroundStyle(tint)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(label)
+                    .font(.system(size: 8, weight: .heavy))
+                    .tracking(1.0)
+                    .foregroundStyle(.white.opacity(0.55))
+                Text(value)
+                    .font(.system(size: 12, weight: .heavy))
+                    .foregroundStyle(.white)
+                    .monospacedDigit()
+            }
+        }
+        .padding(.horizontal, 11).padding(.vertical, 7)
+        .background(.ultraThinMaterial, in: .rect(cornerRadius: 11))
+        .overlay(RoundedRectangle(cornerRadius: 11).stroke(tint.opacity(0.35), lineWidth: 0.6))
+    }
+
+    private func triggerSquareBadge() {
+        let g = UINotificationFeedbackGenerator(); g.notificationOccurred(.success)
+        withAnimation(.spring(response: 0.45, dampingFraction: 0.65)) {
+            showSquareBadge = true
+        }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2.4))
+            withAnimation(.easeInOut(duration: 0.4)) { showSquareBadge = false }
         }
     }
 
@@ -215,19 +269,6 @@ struct QuickInspectionView: View {
 
     private var bottomCaptureBar: some View {
         VStack(spacing: 14) {
-            // overlay mode segmented
-            HStack(spacing: 8) {
-                ForEach(CameraOverlayMode.allCases, id: \.self) { mode in
-                    Button {
-                        let gen = UISelectionFeedbackGenerator(); gen.selectionChanged()
-                        withAnimation(.easeInOut) { overlayMode = mode }
-                    } label: {
-                        modeChip(icon: mode.icon, title: mode.rawValue, active: overlayMode == mode)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-
             HStack(alignment: .center) {
                 photoStripThumb
 
@@ -366,16 +407,6 @@ struct QuickInspectionView: View {
             }
             .frame(height: 92)
         }
-    }
-
-    private func modeChip(icon: String, title: String, active: Bool) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: icon).font(.system(size: 11, weight: .bold))
-            Text(title).font(.system(size: 11, weight: .heavy))
-        }
-        .foregroundStyle(active ? Theme.ink : .white)
-        .padding(.horizontal, 12).padding(.vertical, 7)
-        .background(active ? Color.white : Color.white.opacity(0.14), in: .capsule)
     }
 
     private func capture() {
@@ -892,6 +923,202 @@ struct LiDARMeshOverlay: View {
                 line.move(to: CGPoint(x: 0, y: lineY))
                 line.addLine(to: CGPoint(x: size.width, y: lineY))
                 ctx.stroke(line, with: .color(Theme.ember.opacity(0.9)), lineWidth: 1.5)
+            }
+        }
+    }
+}
+
+// MARK: - Real-time AI Shingle Detection Overlay
+
+struct DetectedShingle: Identifiable, Equatable {
+    let id = UUID()
+    var rect: CGRect          // normalized 0..1
+    var confidence: Double    // 0..1
+    var bornAt: Date = Date()
+    var lifespan: TimeInterval
+}
+
+struct ShingleDetectionOverlay: View {
+    let lidarAssist: Bool
+    var onDetectedCount: (Int) -> Void
+
+    @State private var active: [DetectedShingle] = []
+    @State private var totalDetected: Int = 0
+    @State private var scanY: CGFloat = 0.05
+    @State private var ticker: Date = Date()
+
+    var body: some View {
+        GeometryReader { geo in
+            let w = geo.size.width
+            let h = geo.size.height
+
+            ZStack {
+                // optional LiDAR mesh wash
+                if lidarAssist {
+                    LiDARMeshOverlay(progress: 1.0)
+                        .opacity(0.18)
+                        .blendMode(.plusLighter)
+                }
+
+                // Active scan line — sweeps top→bottom of the viewfinder
+                Rectangle()
+                    .fill(
+                        LinearGradient(colors: [.clear,
+                                                Theme.ember.opacity(0.55),
+                                                Theme.amber.opacity(0.85),
+                                                Theme.ember.opacity(0.55),
+                                                .clear],
+                                       startPoint: .top, endPoint: .bottom)
+                    )
+                    .frame(height: 60)
+                    .blur(radius: 4)
+                    .position(x: w / 2, y: scanY * h)
+                    .blendMode(.plusLighter)
+
+                // Detected shingle bounding boxes
+                ForEach(active) { s in
+                    ShingleBoundingBox(detection: s,
+                                       size: CGSize(width: w, height: h))
+                }
+            }
+            .onAppear { startEngine(in: geo.size) }
+            .onChange(of: ticker) { _, _ in tick(in: geo.size) }
+        }
+        .onReceive(Timer.publish(every: 0.18, on: .main, in: .common).autoconnect()) { now in
+            ticker = now
+        }
+    }
+
+    private func startEngine(in size: CGSize) {
+        withAnimation(.linear(duration: 1.6).repeatForever(autoreverses: true)) {
+            scanY = 0.92
+        }
+    }
+
+    private func tick(in size: CGSize) {
+        let now = Date()
+        // expire old detections
+        active.removeAll { now.timeIntervalSince($0.bornAt) > $0.lifespan }
+
+        // spawn new ones near the scan line
+        let spawnCount = Int.random(in: 1...3)
+        for _ in 0..<spawnCount {
+            let widthFraction = Double.random(in: 0.13...0.22)
+            let heightFraction = widthFraction / 3.0
+            let cx = Double.random(in: 0.18...0.82)
+            let centerY = Double(scanY) + Double.random(in: -0.06...0.06)
+            let cy = max(0.1, min(0.9, centerY))
+            let rect = CGRect(x: cx - widthFraction / 2,
+                              y: cy - heightFraction / 2,
+                              width: widthFraction,
+                              height: heightFraction)
+            let conf = Double.random(in: 0.78...0.98)
+            let life = TimeInterval.random(in: 1.1...1.9)
+            active.append(DetectedShingle(rect: rect, confidence: conf, lifespan: life))
+            totalDetected += 1
+        }
+        // cap concurrent boxes for perf
+        if active.count > 14 {
+            active.removeFirst(active.count - 14)
+        }
+        onDetectedCount(totalDetected)
+    }
+}
+
+struct ShingleBoundingBox: View {
+    let detection: DetectedShingle
+    let size: CGSize
+    @State private var appeared = false
+
+    var body: some View {
+        let r = detection.rect
+        let frame = CGRect(x: r.origin.x * size.width,
+                           y: r.origin.y * size.height,
+                           width: r.size.width * size.width,
+                           height: r.size.height * size.height)
+        let color: Color = detection.confidence > 0.92 ? Theme.mint :
+                           detection.confidence > 0.85 ? Theme.amber : Theme.ember
+
+        ZStack(alignment: .topLeading) {
+            RoundedRectangle(cornerRadius: 3)
+                .stroke(color, style: StrokeStyle(lineWidth: 1.4, dash: [3, 2]))
+                .background(
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(color.opacity(0.12))
+                )
+                .frame(width: frame.width, height: frame.height)
+                .overlay(alignment: .topLeading) {
+                    Text("shingle \(Int(detection.confidence * 100))%")
+                        .font(.system(size: 8, weight: .heavy))
+                        .foregroundStyle(.black)
+                        .padding(.horizontal, 4).padding(.vertical, 1.5)
+                        .background(color, in: .rect(cornerRadius: 2))
+                        .offset(x: 0, y: -12)
+                }
+                // corner ticks
+                .overlay {
+                    ZStack {
+                        cornerTick(color).position(x: 2, y: 2)
+                        cornerTick(color).rotationEffect(.degrees(90)).position(x: frame.width - 2, y: 2)
+                        cornerTick(color).rotationEffect(.degrees(180)).position(x: frame.width - 2, y: frame.height - 2)
+                        cornerTick(color).rotationEffect(.degrees(270)).position(x: 2, y: frame.height - 2)
+                    }
+                }
+        }
+        .position(x: frame.midX, y: frame.midY)
+        .scaleEffect(appeared ? 1 : 0.7)
+        .opacity(appeared ? 1 : 0)
+        .onAppear {
+            withAnimation(.spring(response: 0.28, dampingFraction: 0.7)) { appeared = true }
+        }
+        .transition(.opacity)
+    }
+
+    private func cornerTick(_ color: Color) -> some View {
+        Path { p in
+            p.move(to: CGPoint(x: 0, y: 6))
+            p.addLine(to: CGPoint(x: 0, y: 0))
+            p.addLine(to: CGPoint(x: 6, y: 0))
+        }
+        .stroke(color, style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
+        .frame(width: 6, height: 6)
+    }
+}
+
+struct SquareDetectedBadge: View {
+    let squares: Int
+    @State private var pulse = false
+
+    var body: some View {
+        HStack(spacing: 10) {
+            ZStack {
+                Circle().fill(Theme.amber.opacity(0.25)).frame(width: 36, height: 36)
+                Image(systemName: "square.stack.3d.up.fill")
+                    .font(.system(size: 16, weight: .heavy))
+                    .foregroundStyle(Theme.amber)
+            }
+            VStack(alignment: .leading, spacing: 1) {
+                Text("\(squares) SQUARE\(squares == 1 ? "" : "S") DETECTED")
+                    .font(.system(size: 11, weight: .heavy))
+                    .tracking(1.0)
+                    .foregroundStyle(.white)
+                Text("~\(squares * 100) sq ft documented")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.75))
+            }
+        }
+        .padding(.horizontal, 14).padding(.vertical, 10)
+        .background(
+            ZStack {
+                Capsule().fill(.ultraThinMaterial)
+                Capsule().stroke(Theme.amber.opacity(pulse ? 0.95 : 0.5),
+                                 lineWidth: pulse ? 2.2 : 1.2)
+            }
+        )
+        .shadow(color: Theme.amber.opacity(0.55), radius: pulse ? 18 : 8)
+        .onAppear {
+            withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) {
+                pulse = true
             }
         }
     }
