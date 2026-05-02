@@ -10,11 +10,11 @@ struct HomeCardsCarousel: View {
     var onOpenTraining: () -> Void = {}
 
     private enum Page: Int, CaseIterable, Identifiable, Hashable {
-        case alert, sales, daily, storm, lesson, tasks
+        case lesson, alert, sales, daily, storm, tasks
         var id: Int { rawValue }
     }
 
-    @State private var currentPage: Page? = .alert
+    @State private var currentPage: Page? = .lesson
 
     private let sideInset: CGFloat = 20
     private let peek: CGFloat = 18
@@ -27,6 +27,10 @@ struct HomeCardsCarousel: View {
 
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: spacing) {
+                        TodaysLessonCard(onOpenTraining: onOpenTraining, embedded: true)
+                            .frame(width: cardWidth)
+                            .id(Page.lesson)
+
                         StormAlertCard(embedded: true)
                             .frame(width: cardWidth)
                             .id(Page.alert)
@@ -42,10 +46,6 @@ struct HomeCardsCarousel: View {
                         StormHistoryMapCard(embedded: true)
                             .frame(width: cardWidth)
                             .id(Page.storm)
-
-                        TodaysLessonCard(onOpenTraining: onOpenTraining, embedded: true)
-                            .frame(width: cardWidth)
-                            .id(Page.lesson)
 
                         TasksAndActivityCard(embedded: true)
                             .frame(width: cardWidth)
@@ -69,7 +69,7 @@ struct HomeCardsCarousel: View {
     }
 
     private var cardHeight: CGFloat {
-        switch currentPage ?? .alert {
+        switch currentPage ?? .lesson {
         case .alert: return 280
         case .sales: return 430
         case .daily: return 380
@@ -83,8 +83,8 @@ struct HomeCardsCarousel: View {
         HStack(spacing: 6) {
             ForEach(Page.allCases) { page in
                 Capsule()
-                    .fill(page == (currentPage ?? .alert) ? Theme.ink : Theme.hairline)
-                    .frame(width: page == (currentPage ?? .alert) ? 18 : 6, height: 6)
+                    .fill(page == (currentPage ?? .lesson) ? Theme.ink : Theme.hairline)
+                    .frame(width: page == (currentPage ?? .lesson) ? 18 : 6, height: 6)
                     .animation(.spring(duration: 0.3), value: currentPage)
             }
         }
