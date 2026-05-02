@@ -159,6 +159,17 @@ struct QuickInspectionView: View {
             }
             .allowsHitTesting(false)
 
+            // Phone position guide (bubble level + pitch tilt bar + hint)
+            HStack {
+                Spacer()
+                PhonePositionGuide(pitchDegrees: motion.pitchDegrees,
+                                   rollDegrees: motion.rollDegrees,
+                                   quality: motion.tiltQuality,
+                                   hint: motion.tiltHint)
+                    .padding(.trailing, 14)
+            }
+            .allowsHitTesting(false)
+
             VStack(spacing: 0) {
                 topBar
                 Spacer()
