@@ -1,12 +1,32 @@
 import SwiftUI
 import UIKit
 
+enum CaptureMode: String, CaseIterable, Identifiable {
+    case singleShingle = "Single Shingle"
+    case square = "10x10 Square"
+
+    var id: String { rawValue }
+    var icon: String {
+        switch self {
+        case .singleShingle: return "square.dashed"
+        case .square: return "square.grid.3x3.topleft.filled"
+        }
+    }
+    var shortLabel: String {
+        switch self {
+        case .singleShingle: return "Shingle"
+        case .square: return "Square"
+        }
+    }
+}
+
 struct CapturedPhoto: Identifiable {
     let id = UUID()
     let image: UIImage
     let slope: SlopeType
     let pitchDegrees: Double
     let elevationFeet: Double
+    var captureMode: CaptureMode = .square
     let timestamp: Date = Date()
     var findings: [InspectionFinding] = []
     var analyzed: Bool = false

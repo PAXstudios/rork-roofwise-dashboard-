@@ -12,7 +12,9 @@ enum GeminiAnalysisService {
 
     /// Analyze a captured roof photo and return structured findings.
     /// Falls back to mock findings if API key is unset or the request fails.
-    static func analyze(image: UIImage, slope: SlopeType) async -> [InspectionFinding] {
+    static func analyze(image: UIImage,
+                        slope: SlopeType,
+                        mode: CaptureMode = .square) async -> [InspectionFinding] {
         let key = apiKey
         guard !key.isEmpty,
               key != "GEMINI_API_KEY",
@@ -22,8 +24,17 @@ enum GeminiAnalysisService {
             return mockFindings(for: slope)
         }
 
+        let intro: String = {
+            switch mode {
+            case .singleShingle:
+                return "Analyze this shingle on \(slope.rawValue). Focus on the single shingle in frame and report damage to that specific shingle."
+            case .square:
+                return "Analyze this photo of \(slope.rawValue) (a ~10x10 ft / 100 sq ft roofing square) and identify roof damage across the area."
+            }
+        }()
+
         let prompt = """
-        You are a HAAG-certified forensic roofing inspector. Analyze this photo of \(slope.rawValue) and identify roof damage.
+        You are a HAAG-certified forensic roofing inspector. \(intro)
         Return STRICT JSON only, no markdown, with this schema:
         {
           "findings": [

@@ -20,6 +20,7 @@ struct QuickInspectionView: View {
     @State private var showSquareBadge: Bool = false
     @State private var currentSlope: SlopeType = .frontSlope
     @State private var showSlopePicker: Bool = false
+    @State private var captureMode: CaptureMode = .square
     @State private var capturedPhotos: [CapturedPhoto] = []
     @State private var previewPhoto: CapturedPhoto?
     @State private var lastFindings: [InspectionFinding] = []
@@ -94,19 +95,21 @@ struct QuickInspectionView: View {
                 .allowsHitTesting(false)
 
             // Real-time AI shingle detection (Vision: VNDetectRectanglesRequest)
-            ShingleDetectionOverlay(detections: camera.detectionRects,
-                                    confidences: camera.detectionConfidences,
-                                    squareProgress: camera.currentSquareProgress)
+            ShingleDetectionOverlay(detections: filteredDetections,
+                                    confidences: filteredConfidences,
+                                    squareProgress: camera.currentSquareProgress,
+                                    showSquareProgress: captureMode == .square,
+                                    singleShingleMode: captureMode == .singleShingle)
                 .allowsHitTesting(false)
 
             // Targeting reticle
             ReticleOverlay(active: true)
                 .allowsHitTesting(false)
 
-            // Square Detected badge
+            // Square Detected badge (square mode only)
             VStack {
                 Spacer().frame(height: 170)
-                if showSquareBadge {
+                if showSquareBadge && captureMode == .square {
                     SquareDetectedBadge(squares: camera.squaresCovered)
                         .transition(.scale.combined(with: .opacity))
                 }
@@ -132,14 +135,61 @@ struct QuickInspectionView: View {
 
     private var detectionStatsBar: some View {
         HStack(spacing: 10) {
-            statPill(icon: "square.grid.3x3.topleft.filled", tint: Theme.amber,
-                     label: "SHINGLES", value: "\(camera.totalUniqueShingles)")
-            statPill(icon: "square.stack.3d.up.fill", tint: Theme.ember,
-                     label: "SQUARES", value: "\(camera.squaresCovered)")
-            statPill(icon: "viewfinder", tint: Theme.mint,
-                     label: "LIVE", value: "\(camera.detectionRects.count)")
+            if captureMode == .square {
+                statPill(icon: "square.grid.3x3.topleft.filled", tint: Theme.amber,
+                         label: "SHINGLES", value: "\(camera.totalUniqueShingles)")
+                statPill(icon: "square.stack.3d.up.fill", tint: Theme.ember,
+                         label: "SQUARES", value: "\(camera.squaresCovered)")
+                statPill(icon: "viewfinder", tint: Theme.mint,
+                         label: "LIVE", value: "\(camera.detectionRects.count)")
+            } else {
+                statPill(icon: "square.dashed", tint: Theme.amber,
+                         label: "MODE", value: "SHINGLE")
+                statPill(icon: "viewfinder", tint: Theme.mint,
+                         label: "LOCK", value: filteredDetections.isEmpty ? "—" : "YES")
+                if let conf = filteredConfidences.first {
+                    statPill(icon: "checkmark.seal.fill", tint: Theme.ember,
+                             label: "CONF", value: "\(Int(conf * 100))%")
+                }
+            }
         }
         .padding(.horizontal, 18)
+    }
+
+    /// In single-shingle mode show only the largest, highest-confidence rect.
+    private var filteredDetections: [CGRect] {
+        guard captureMode == .singleShingle else { return camera.detectionRects }
+        return primaryDetection.map { [$0.rect] } ?? []
+    }
+
+    private var filteredConfidences: [Double] {
+        guard captureMode == .singleShingle else { return camera.detectionConfidences }
+        return primaryDetection.map { [$0.conf] } ?? []
+    }
+
+    private var primaryDetection: (rect: CGRect, conf: Double)? {
+        let rects = camera.detectionRects
+        let confs = camera.detectionConfidences
+        guard !rects.isEmpty else { return nil }
+        // Pick the rect closest to the reticle center, weighted by confidence.
+        let center = CGPoint(x: 0.5, y: 0.5)
+        var bestIdx = 0
+        var bestScore = -Double.infinity
+        for i in rects.indices {
+            let r = rects[i]
+            let dx = r.midX - center.x
+            let dy = r.midY - center.y
+            let dist = sqrt(Double(dx * dx + dy * dy))
+            let area = Double(r.width * r.height)
+            let conf = i < confs.count ? confs[i] : 0.7
+            let score = conf * 1.2 + area * 2.5 - dist * 1.4
+            if score > bestScore {
+                bestScore = score
+                bestIdx = i
+            }
+        }
+        let conf = bestIdx < confs.count ? confs[bestIdx] : 0.85
+        return (rects[bestIdx], conf)
     }
 
     private func statPill(icon: String, tint: Color, label: String, value: String) -> some View {
@@ -199,9 +249,51 @@ struct QuickInspectionView: View {
             }
 
             slopeDropdown
+
+            captureModeToggle
         }
         .padding(.horizontal, 16)
         .padding(.top, 56)
+    }
+
+    private var captureModeToggle: some View {
+        HStack(spacing: 6) {
+            ForEach(CaptureMode.allCases) { mode in
+                Button {
+                    let g = UISelectionFeedbackGenerator(); g.selectionChanged()
+                    withAnimation(.spring(response: 0.32, dampingFraction: 0.8)) {
+                        captureMode = mode
+                    }
+                    if mode == .singleShingle {
+                        camera.resetCoverage()
+                    }
+                } label: {
+                    HStack(spacing: 7) {
+                        Image(systemName: mode.icon)
+                            .font(.system(size: 11, weight: .heavy))
+                        Text(mode.rawValue.uppercased())
+                            .font(.system(size: 11, weight: .heavy))
+                            .tracking(0.8)
+                    }
+                    .foregroundStyle(captureMode == mode ? .black : .white.opacity(0.75))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                    .background {
+                        if captureMode == mode {
+                            Capsule().fill(
+                                LinearGradient(colors: [Theme.amber, Theme.ember],
+                                               startPoint: .leading, endPoint: .trailing)
+                            )
+                            .shadow(color: Theme.amber.opacity(0.5), radius: 8, y: 2)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(4)
+        .background(.ultraThinMaterial, in: .capsule)
+        .overlay(Capsule().stroke(.white.opacity(0.12), lineWidth: 0.6))
     }
 
     private var pitchElevationBadge: some View {
@@ -407,10 +499,12 @@ struct QuickInspectionView: View {
         let slope = currentSlope
         let pitch = motion.pitchDegrees
         let elev = motion.elevationFeet
+        let mode = captureMode
         Task { @MainActor in
             let img = await camera.capture(slope: slope, pitchDegrees: pitch, elevationFeet: elev)
             let captured = CapturedPhoto(image: img, slope: slope,
-                                         pitchDegrees: pitch, elevationFeet: elev)
+                                         pitchDegrees: pitch, elevationFeet: elev,
+                                         captureMode: mode)
             withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
                 capturedPhotos.append(captured)
             }
@@ -443,7 +537,8 @@ struct QuickInspectionView: View {
                 for i in capturedPhotos.indices {
                     let photo = capturedPhotos[i]
                     let findings = await GeminiAnalysisService.analyze(image: photo.image,
-                                                                       slope: photo.slope)
+                                                                       slope: photo.slope,
+                                                                       mode: photo.captureMode)
                     capturedPhotos[i].findings = findings
                     capturedPhotos[i].analyzed = true
                     for f in findings {
@@ -866,24 +961,31 @@ struct ShingleDetectionOverlay: View {
     let detections: [CGRect]
     let confidences: [Double]
     let squareProgress: Double
+    var showSquareProgress: Bool = true
+    var singleShingleMode: Bool = false
 
     var body: some View {
         GeometryReader { geo in
             ZStack {
                 ForEach(Array(detections.enumerated()), id: \.offset) { idx, rect in
                     let conf = idx < confidences.count ? confidences[idx] : 0.85
-                    ShingleBoundingBox(rect: rect, confidence: conf, size: geo.size)
+                    ShingleBoundingBox(rect: rect,
+                                       confidence: conf,
+                                       size: geo.size,
+                                       emphasized: singleShingleMode)
                 }
 
-                // Coverage progress ring toward the next 100 sq ft square
-                VStack {
-                    Spacer()
-                    HStack {
+                if showSquareProgress {
+                    // Coverage progress ring toward the next 100 sq ft square
+                    VStack {
                         Spacer()
-                        SquareCoverageProgress(progress: squareProgress)
-                            .frame(width: 56, height: 56)
-                            .padding(.trailing, 18)
-                            .padding(.bottom, 12)
+                        HStack {
+                            Spacer()
+                            SquareCoverageProgress(progress: squareProgress)
+                                .frame(width: 56, height: 56)
+                                .padding(.trailing, 18)
+                                .padding(.bottom, 12)
+                        }
                     }
                 }
             }
@@ -896,6 +998,7 @@ struct ShingleBoundingBox: View {
     let rect: CGRect          // normalized 0..1, top-left origin
     let confidence: Double
     let size: CGSize
+    var emphasized: Bool = false
 
     var body: some View {
         let frame = CGRect(x: rect.origin.x * size.width,
@@ -906,7 +1009,7 @@ struct ShingleBoundingBox: View {
                            confidence > 0.80 ? Theme.amber : Theme.ember
 
         RoundedRectangle(cornerRadius: 2)
-            .stroke(color, lineWidth: 1.2)
+            .stroke(color, lineWidth: emphasized ? 2.4 : 1.2)
             .background(
                 RoundedRectangle(cornerRadius: 2)
                     .fill(color.opacity(0.10))
