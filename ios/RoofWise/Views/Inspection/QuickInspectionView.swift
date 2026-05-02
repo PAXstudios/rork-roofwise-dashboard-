@@ -701,6 +701,10 @@ struct QuickInspectionView: View {
                                     .padding(.bottom, 5)
                             }
                             .frame(width: 86, height: 86)
+                            .overlay(alignment: .topLeading) {
+                                CaptureModeTag(mode: photo.captureMode)
+                                    .padding(5)
+                            }
                             .overlay(
                                 RoundedRectangle(cornerRadius: 10)
                                     .stroke(.white.opacity(0.25), lineWidth: 0.8)
@@ -957,6 +961,40 @@ struct QuickInspectionView: View {
             }
             Spacer(minLength: 0)
         }
+    }
+}
+
+// MARK: - Capture Mode Tag
+
+struct CaptureModeTag: View {
+    let mode: CaptureMode
+
+    private var tint: Color {
+        switch mode {
+        case .singleShingle: return Theme.amber
+        case .square: return Theme.ember
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 3) {
+            Image(systemName: mode.icon)
+                .font(.system(size: 7, weight: .heavy))
+            Text(mode.shortLabel.uppercased())
+                .font(.system(size: 7, weight: .heavy))
+                .tracking(0.6)
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 5)
+        .padding(.vertical, 3)
+        .background(
+            Capsule().fill(
+                LinearGradient(colors: [tint, tint.opacity(0.78)],
+                               startPoint: .topLeading, endPoint: .bottomTrailing)
+            )
+        )
+        .overlay(Capsule().stroke(.white.opacity(0.55), lineWidth: 0.6))
+        .shadow(color: .black.opacity(0.35), radius: 3, y: 1)
     }
 }
 

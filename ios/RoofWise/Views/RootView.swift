@@ -24,6 +24,7 @@ struct RootView: View {
     @State private var tab: AppTab = .home
     @State private var showQuickAction = false
     @State private var showInspection = false
+    @State private var showMileage = false
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -47,12 +48,21 @@ struct RootView: View {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
                     showInspection = true
                 }
+            }, onOpenMileage: {
+                showQuickAction = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                    showMileage = true
+                }
             })
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
         .fullScreenCover(isPresented: $showInspection) {
             QuickInspectionView()
+        }
+        .sheet(isPresented: $showMileage) {
+            MileageTrackerView()
+                .presentationDragIndicator(.visible)
         }
     }
 }
@@ -126,13 +136,15 @@ struct BottomTabBar: View {
 struct QuickActionSheet: View {
     @Environment(\.dismiss) private var dismiss
     var onStartInspection: () -> Void = {}
+    var onOpenMileage: () -> Void = {}
     private let actions: [(String, String, Color)] = [
         ("New Lead", "person.crop.circle.badge.plus", Theme.sky),
         ("Start Inspection", "binoculars.fill", Theme.ember),
         ("Capture Damage Photo", "camera.viewfinder", Theme.amber),
+        ("Track Mileage", "car.fill", Theme.mint),
         ("File Storm Claim", "cloud.bolt.rain.fill", Theme.crimson),
-        ("Schedule Crew", "hammer.fill", Theme.mint),
-        ("New Estimate", "doc.text.fill", Theme.inkSoft)
+        ("Schedule Crew", "hammer.fill", Theme.inkSoft),
+        ("New Estimate", "doc.text.fill", Theme.amber)
     ]
 
     var body: some View {
@@ -152,6 +164,8 @@ struct QuickActionSheet: View {
                         Button {
                             if item.0 == "Start Inspection" || item.0 == "Capture Damage Photo" {
                                 onStartInspection()
+                            } else if item.0 == "Track Mileage" {
+                                onOpenMileage()
                             } else {
                                 dismiss()
                             }
