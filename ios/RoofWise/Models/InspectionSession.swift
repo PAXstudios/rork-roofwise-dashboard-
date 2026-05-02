@@ -27,6 +27,7 @@ struct CapturedPhoto: Identifiable {
     let pitchDegrees: Double
     let elevationFeet: Double
     var captureMode: CaptureMode = .square
+    var squaresCovered: Int = 0
     let timestamp: Date = Date()
     var findings: [InspectionFinding] = []
     var analyzed: Bool = false

@@ -35,6 +35,10 @@ struct QuickInspectionView: View {
     @State private var motion = MotionElevationService()
     @State private var camera = CameraCaptureService()
 
+    private var totalSquaresDocumented: Int {
+        max(camera.squaresCovered, capturedPhotos.map(\.squaresCovered).max() ?? 0)
+    }
+
     private let scanPasses: [(label: String, icon: String)] = [
         ("Detecting hail", "circle.hexagongrid.fill"),
         ("Analyzing granules", "circle.dotted"),
@@ -99,6 +103,7 @@ struct QuickInspectionView: View {
         let pitch = motion.pitchDegrees
         let elev = motion.elevationFeet
         let mode = captureMode
+        let squares = camera.squaresCovered
         isImportingLibrary = true
         Task { @MainActor in
             var imported: [CapturedPhoto] = []
@@ -107,7 +112,8 @@ struct QuickInspectionView: View {
                    let img = UIImage(data: data) {
                     imported.append(CapturedPhoto(image: img, slope: slope,
                                                   pitchDegrees: pitch, elevationFeet: elev,
-                                                  captureMode: mode))
+                                                  captureMode: mode,
+                                                  squaresCovered: squares))
                 }
             }
             withAnimation(.spring(response: 0.4, dampingFraction: 0.78)) {
@@ -586,8 +592,8 @@ struct QuickInspectionView: View {
             photoStrip
 
             Text(capturedPhotos.isEmpty
-                 ? "Aim at the \(currentSlope.shortName.lowercased()). Capture multiple angles for HAAG-grade documentation."
-                 : "\(capturedPhotos.count) photo\(capturedPhotos.count == 1 ? "" : "s") · tap Done to analyze with AI.")
+                 ? "Aim at the \(currentSlope.shortName.lowercased()). Capture anytime — full square not required."
+                 : "\(capturedPhotos.count) photo\(capturedPhotos.count == 1 ? "" : "s") · \(totalSquaresDocumented) sq documented · tap Done to analyze.")
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(.white.opacity(0.7))
                 .multilineTextAlignment(.center)
@@ -711,11 +717,13 @@ struct QuickInspectionView: View {
         let pitch = motion.pitchDegrees
         let elev = motion.elevationFeet
         let mode = captureMode
+        let squares = camera.squaresCovered
         Task { @MainActor in
             let img = await camera.capture(slope: slope, pitchDegrees: pitch, elevationFeet: elev)
             let captured = CapturedPhoto(image: img, slope: slope,
                                          pitchDegrees: pitch, elevationFeet: elev,
-                                         captureMode: mode)
+                                         captureMode: mode,
+                                         squaresCovered: squares)
             withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
                 capturedPhotos.append(captured)
             }
@@ -749,7 +757,8 @@ struct QuickInspectionView: View {
                     let photo = capturedPhotos[i]
                     let findings = await GeminiAnalysisService.analyze(image: photo.image,
                                                                        slope: photo.slope,
-                                                                       mode: photo.captureMode)
+                                                                       mode: photo.captureMode,
+                                                                       squaresCovered: photo.squaresCovered)
                     capturedPhotos[i].findings = findings
                     capturedPhotos[i].analyzed = true
                     for f in findings {

@@ -14,7 +14,8 @@ enum GeminiAnalysisService {
     /// Falls back to mock findings if API key is unset or the request fails.
     static func analyze(image: UIImage,
                         slope: SlopeType,
-                        mode: CaptureMode = .square) async -> [InspectionFinding] {
+                        mode: CaptureMode = .square,
+                        squaresCovered: Int = 0) async -> [InspectionFinding] {
         let key = apiKey
         guard !key.isEmpty,
               key != "GEMINI_API_KEY",
@@ -24,12 +25,20 @@ enum GeminiAnalysisService {
             return mockFindings(for: slope)
         }
 
+        let coverageNote: String = {
+            switch squaresCovered {
+            case 0: return " Note: less than 1 full 10x10 roofing square was documented in this capture; report findings only for the visible area."
+            case 1: return " Note: approximately 1 roofing square (100 sq ft) of coverage was documented."
+            default: return " Note: approximately \(squaresCovered) roofing squares (~\(squaresCovered * 100) sq ft) of coverage were documented."
+            }
+        }()
+
         let intro: String = {
             switch mode {
             case .singleShingle:
-                return "Analyze this shingle on \(slope.rawValue). Focus on the single shingle in frame and report damage to that specific shingle."
+                return "Analyze this shingle on \(slope.rawValue). Focus on the single shingle in frame and report damage to that specific shingle." + coverageNote
             case .square:
-                return "Analyze this photo of \(slope.rawValue) (a ~10x10 ft / 100 sq ft roofing square) and identify roof damage across the area."
+                return "Analyze this photo of \(slope.rawValue) (a ~10x10 ft / 100 sq ft roofing square) and identify roof damage across the area." + coverageNote
             }
         }()
 
