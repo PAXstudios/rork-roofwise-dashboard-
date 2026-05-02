@@ -18,6 +18,7 @@ struct PhotoDamageOverlayView: View {
     @State private var showAllMarkers: Bool = true
     @State private var pulse: Bool = false
     @State private var isRetrying: Bool = false
+    @State private var showInfo: Bool = false
 
     private var grouped: [(type: DamageMarkerType, items: [DamageMarker])] {
         let dict = Dictionary(grouping: photo.damageMarkers, by: \.type)
@@ -72,6 +73,11 @@ struct PhotoDamageOverlayView: View {
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
+        }
+        .sheet(isPresented: $showInfo) {
+            photoInfoSheet
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
         }
         .onAppear {
             withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) {
@@ -129,6 +135,18 @@ struct PhotoDamageOverlayView: View {
             } label: {
                 Image(systemName: showLegend ? "list.bullet.below.rectangle" : "list.bullet")
                     .font(.system(size: 13, weight: .heavy))
+                    .foregroundStyle(.white)
+                    .frame(width: 38, height: 38)
+                    .background(.black.opacity(0.55), in: .circle)
+                    .overlay(Circle().stroke(.white.opacity(0.15), lineWidth: 0.5))
+            }
+
+            Button {
+                let g = UIImpactFeedbackGenerator(style: .light); g.impactOccurred()
+                showInfo = true
+            } label: {
+                Image(systemName: "info.circle.fill")
+                    .font(.system(size: 14, weight: .heavy))
                     .foregroundStyle(.white)
                     .frame(width: 38, height: 38)
                     .background(.black.opacity(0.55), in: .circle)
@@ -245,6 +263,34 @@ struct PhotoDamageOverlayView: View {
 
     private var legendCard: some View {
         VStack(alignment: .leading, spacing: 12) {
+            // Photo metadata strip — slope, shingle type, # shingles
+            HStack(spacing: 8) {
+                metaChip(icon: photo.slope.icon, tint: Theme.ember,
+                         label: photo.slope.shortName)
+                if let type = photo.shingleType {
+                    metaChip(icon: "square.stack.3d.down.right.fill",
+                             tint: Theme.sky, label: type)
+                }
+                metaChip(icon: "square.grid.3x3.fill",
+                         tint: Theme.amber,
+                         label: "~\(photo.estimatedShingleCount) shingle\(photo.estimatedShingleCount == 1 ? "" : "s")")
+                Spacer(minLength: 0)
+                Button {
+                    showInfo = true
+                } label: {
+                    HStack(spacing: 4) {
+                        Text("More")
+                            .font(.system(size: 10, weight: .heavy))
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 9, weight: .heavy))
+                    }
+                    .foregroundStyle(.white.opacity(0.85))
+                    .padding(.horizontal, 8).padding(.vertical, 5)
+                    .background(.white.opacity(0.12), in: .capsule)
+                }
+                .buttonStyle(.plain)
+            }
+
             HStack(spacing: 8) {
                 Image(systemName: "scope")
                     .font(.system(size: 11, weight: .heavy))
@@ -301,6 +347,210 @@ struct PhotoDamageOverlayView: View {
         .background(.ultraThinMaterial, in: .rect(cornerRadius: 18))
         .overlay(RoundedRectangle(cornerRadius: 18).stroke(.white.opacity(0.1), lineWidth: 0.6))
         .environment(\.colorScheme, .dark)
+    }
+
+    private func metaChip(icon: String, tint: Color, label: String) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: icon)
+                .font(.system(size: 10, weight: .heavy))
+                .foregroundStyle(tint)
+            Text(label)
+                .font(.system(size: 10, weight: .heavy))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 8).padding(.vertical, 5)
+        .background(.white.opacity(0.12), in: .capsule)
+        .overlay(Capsule().stroke(tint.opacity(0.4), lineWidth: 0.6))
+    }
+
+    // MARK: - Photo info sheet (shingle type, count, captured details, findings)
+
+    private var photoInfoSheet: some View {
+        NavigationStack {
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 14) {
+                    // Header card
+                    HStack(spacing: 12) {
+                        Image(uiImage: photo.image)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 72, height: 72)
+                            .clipShape(.rect(cornerRadius: 12))
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(photo.slope.rawValue)
+                                .font(.system(size: 16, weight: .heavy))
+                                .foregroundStyle(Theme.ink)
+                            Text(photo.timestamp.formatted(date: .abbreviated, time: .shortened))
+                                .font(.system(size: 11))
+                                .foregroundStyle(Theme.inkSoft)
+                            HStack(spacing: 6) {
+                                Image(systemName: photo.captureMode.icon)
+                                    .font(.system(size: 9, weight: .heavy))
+                                Text(photo.captureMode.rawValue)
+                                    .font(.system(size: 10, weight: .heavy))
+                            }
+                            .foregroundStyle(Theme.ember)
+                            .padding(.horizontal, 7).padding(.vertical, 3)
+                            .background(Theme.emberSoft, in: .capsule)
+                        }
+                        Spacer()
+                    }
+                    .padding(14)
+                    .background(Theme.card, in: .rect(cornerRadius: 18))
+                    .overlay(RoundedRectangle(cornerRadius: 18).stroke(Theme.hairline, lineWidth: 0.6))
+
+                    // Stats grid
+                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 10),
+                                        GridItem(.flexible(), spacing: 10)], spacing: 10) {
+                        infoStat(icon: "square.stack.3d.down.right.fill",
+                                 tint: Theme.sky,
+                                 label: "Shingle Type",
+                                 value: photo.shingleType ?? "Pending AI")
+                        infoStat(icon: "square.grid.3x3.fill",
+                                 tint: Theme.amber,
+                                 label: "Shingles in Frame",
+                                 value: "~\(photo.estimatedShingleCount)")
+                        infoStat(icon: "angle",
+                                 tint: Theme.ember,
+                                 label: "Pitch",
+                                 value: String(format: "%.0f°", photo.pitchDegrees))
+                        infoStat(icon: "mountain.2.fill",
+                                 tint: Theme.mint,
+                                 label: "Elevation",
+                                 value: "\(Int(photo.elevationFeet)) ft")
+                        infoStat(icon: "scope",
+                                 tint: Theme.crimson,
+                                 label: "AI Markers",
+                                 value: "\(photo.damageMarkers.count)")
+                        infoStat(icon: "square.dashed.inset.filled",
+                                 tint: Theme.ember,
+                                 label: "Test Squares",
+                                 value: "\(photo.squaresCovered)")
+                    }
+
+                    if let typeNote = photo.shingleTypeNote, !typeNote.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("AI EVIDENCE")
+                                .font(.system(size: 10, weight: .heavy))
+                                .tracking(1.2)
+                                .foregroundStyle(Theme.inkFaint)
+                            Text(typeNote)
+                                .font(.system(size: 12))
+                                .foregroundStyle(Theme.inkSoft)
+                                .lineSpacing(2)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(14)
+                        .background(Theme.card, in: .rect(cornerRadius: 16))
+                        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Theme.hairline, lineWidth: 0.6))
+                    }
+
+                    // Findings list
+                    if !photo.topDetectedFindings.isEmpty {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("DETECTED ON THIS PHOTO")
+                                .font(.system(size: 10, weight: .heavy))
+                                .tracking(1.2)
+                                .foregroundStyle(Theme.inkFaint)
+                            VStack(spacing: 0) {
+                                ForEach(Array(photo.topDetectedFindings.enumerated()), id: \.element.id) { idx, f in
+                                    findingRow(f)
+                                    if idx < photo.topDetectedFindings.count - 1 {
+                                        Rectangle().fill(Theme.hairline).frame(height: 0.6)
+                                    }
+                                }
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(14)
+                        .background(Theme.card, in: .rect(cornerRadius: 16))
+                        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Theme.hairline, lineWidth: 0.6))
+                    }
+
+                    if onDelete != nil {
+                        Button {
+                            onDelete?()
+                        } label: {
+                            Label("Delete Photo", systemImage: "trash.fill")
+                                .font(.system(size: 13, weight: .heavy))
+                                .foregroundStyle(Theme.crimson)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .background(Color(red: 1.0, green: 0.94, blue: 0.94), in: .rect(cornerRadius: 12))
+                                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.crimson.opacity(0.3), lineWidth: 0.6))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    Color.clear.frame(height: 12)
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 14)
+            }
+            .background(Theme.canvas)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text("Photo Details")
+                        .font(.system(size: 14, weight: .heavy))
+                        .foregroundStyle(Theme.ink)
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { showInfo = false }
+                        .font(.system(size: 14, weight: .heavy))
+                        .foregroundStyle(Theme.ember)
+                }
+            }
+        }
+    }
+
+    private func infoStat(icon: String, tint: Color, label: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 12, weight: .heavy))
+                .foregroundStyle(tint)
+            Text(label.uppercased())
+                .font(.system(size: 9, weight: .heavy))
+                .tracking(1)
+                .foregroundStyle(Theme.inkFaint)
+            Text(value)
+                .font(.system(size: 14, weight: .heavy))
+                .foregroundStyle(Theme.ink)
+                .lineLimit(2)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(Theme.card, in: .rect(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.hairline, lineWidth: 0.6))
+    }
+
+    private func findingRow(_ f: InspectionFinding) -> some View {
+        HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10).fill(f.tint.opacity(0.14))
+                Image(systemName: f.icon)
+                    .font(.system(size: 13, weight: .heavy))
+                    .foregroundStyle(f.tint)
+            }
+            .frame(width: 34, height: 34)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(f.display)
+                    .font(.system(size: 13, weight: .heavy))
+                    .foregroundStyle(Theme.ink)
+                Text(f.value)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.inkSoft)
+                    .lineLimit(2)
+            }
+            Spacer(minLength: 6)
+            Text(f.severity.rawValue.uppercased())
+                .font(.system(size: 9, weight: .heavy))
+                .tracking(0.8)
+                .foregroundStyle(.white)
+                .padding(.horizontal, 6).padding(.vertical, 3)
+                .background(f.severity.color, in: .capsule)
+        }
+        .padding(.vertical, 8)
     }
 
     private func severitySummary(_ markers: [DamageMarker]) -> String {

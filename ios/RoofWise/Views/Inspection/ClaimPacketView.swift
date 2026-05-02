@@ -10,6 +10,8 @@ struct ClaimPacketView: View {
     @State private var showShareSheet: Bool = false
     @State private var pdfURL: URL?
     @State private var isGeneratingPDF: Bool = false
+    @State private var slopeBeingViewed: SlopeType? = nil
+    @State private var photoBeingViewed: CapturedPhoto? = nil
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
@@ -32,6 +34,25 @@ struct ClaimPacketView: View {
                 ShareSheet(items: [url])
                     .presentationDetents([.medium, .large])
             }
+        }
+        .sheet(item: $slopeBeingViewed) { slope in
+            SlopePhotosSheet(
+                slope: slope,
+                photos: photos.filter { $0.slope == slope },
+                onSelect: { picked in
+                    photoBeingViewed = picked
+                    slopeBeingViewed = nil
+                },
+                onClose: { slopeBeingViewed = nil }
+            )
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+        }
+        .fullScreenCover(item: $photoBeingViewed) { photo in
+            PhotoDamageOverlayView(
+                photo: photo,
+                onClose: { photoBeingViewed = nil }
+            )
         }
     }
 
@@ -225,7 +246,14 @@ struct ClaimPacketView: View {
             } else {
                 VStack(spacing: 0) {
                     ForEach(Array(packet.slopeFindings.enumerated()), id: \.element.id) { idx, entry in
-                        slopeRow(entry)
+                        Button {
+                            let g = UIImpactFeedbackGenerator(style: .light); g.impactOccurred()
+                            slopeBeingViewed = entry.slope
+                        } label: {
+                            slopeRow(entry)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(photos.filter { $0.slope == entry.slope }.isEmpty)
                         if idx < packet.slopeFindings.count - 1 {
                             Rectangle().fill(Theme.hairline).frame(height: 0.6)
                         }
@@ -240,7 +268,9 @@ struct ClaimPacketView: View {
     }
 
     private func slopeRow(_ entry: SlopePacketEntry) -> some View {
-        HStack(alignment: .top, spacing: 12) {
+        let slopePhotos = photos.filter { $0.slope == entry.slope }
+        let hasPhotos = !slopePhotos.isEmpty
+        return HStack(alignment: .top, spacing: 12) {
             ZStack {
                 RoundedRectangle(cornerRadius: 10).fill(Theme.emberSoft)
                 Image(systemName: entry.slope.icon)
@@ -257,6 +287,11 @@ struct ClaimPacketView: View {
                     Text("\(entry.photoCount) photo\(entry.photoCount == 1 ? "" : "s")")
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(Theme.inkFaint)
+                    if hasPhotos {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 10, weight: .heavy))
+                            .foregroundStyle(Theme.inkFaint)
+                    }
                 }
                 if entry.topFindings.isEmpty {
                     Text("No defects detected")

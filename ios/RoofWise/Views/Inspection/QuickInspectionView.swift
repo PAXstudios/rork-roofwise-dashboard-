@@ -1669,6 +1669,8 @@ private struct ResultsView: View {
     @State private var showCustomerPicker: Bool = false
     @State private var skippedHomeownerShare: Bool = false
     @State private var sentHomeownerShareChannel: HomeownerShareChannel? = nil
+    @State private var slopeBeingViewed: SlopeType? = nil
+    @State private var photoBeingViewed: CapturedPhoto? = nil
     @AppStorage("roofwise.homeowner.lastShareChannel") private var lastShareChannelRaw: String = HomeownerShareChannel.messages.rawValue
 
     private var lastShareChannel: HomeownerShareChannel {
@@ -1714,6 +1716,7 @@ private struct ResultsView: View {
                 damageScoreCard
                 claimWorthinessBanner
                 hitMapCard
+                photosBySlopeCard
                 findingsCard
                 structuralCard
                 recommendationCard
@@ -1745,6 +1748,25 @@ private struct ResultsView: View {
                 .presentationDetents([.large])
                 .presentationDragIndicator(.hidden)
             }
+        }
+        .sheet(item: $slopeBeingViewed) { slope in
+            SlopePhotosSheet(
+                slope: slope,
+                photos: photos.filter { $0.slope == slope },
+                onSelect: { picked in
+                    photoBeingViewed = picked
+                    slopeBeingViewed = nil
+                },
+                onClose: { slopeBeingViewed = nil }
+            )
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+        }
+        .fullScreenCover(item: $photoBeingViewed) { photo in
+            PhotoDamageOverlayView(
+                photo: photo,
+                onClose: { photoBeingViewed = nil }
+            )
         }
         .sheet(isPresented: $showCustomerPicker) {
             LinkCustomerSheet(store: customerStore) { picked in
@@ -2105,6 +2127,119 @@ private struct ResultsView: View {
                 .lineLimit(2)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var slopesWithPhotos: [(slope: SlopeType, items: [CapturedPhoto])] {
+        let dict = Dictionary(grouping: photos, by: \.slope)
+        return SlopeType.allCases.compactMap { s in
+            guard let items = dict[s], !items.isEmpty else { return nil }
+            return (s, items)
+        }
+    }
+
+    @ViewBuilder
+    private var photosBySlopeCard: some View {
+        if !photos.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .firstTextBaseline) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Photos by Slope")
+                            .font(.system(size: 14, weight: .heavy))
+                            .foregroundStyle(Theme.ink)
+                        Text("Tap a slope to review every photo with AI damage overlay")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Theme.inkSoft)
+                    }
+                    Spacer()
+                    Text("\(photos.count) total")
+                        .font(.system(size: 11, weight: .heavy))
+                        .foregroundStyle(Theme.ember)
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(Theme.emberSoft, in: .capsule)
+                }
+                VStack(spacing: 8) {
+                    ForEach(slopesWithPhotos, id: \.slope) { entry in
+                        slopePhotosRow(entry.slope, photos: entry.items)
+                    }
+                }
+            }
+            .padding(16)
+            .background(Theme.card, in: .rect(cornerRadius: 20))
+            .overlay(RoundedRectangle(cornerRadius: 20).stroke(Theme.hairline, lineWidth: 0.6))
+        }
+    }
+
+    private func slopePhotosRow(_ slope: SlopeType, photos: [CapturedPhoto]) -> some View {
+        let totalMarkers = photos.reduce(0) { $0 + $1.damageMarkers.count }
+        let worst: FindingSeverity = photos
+            .map(\.worstSeverity)
+            .max(by: { $0.rank < $1.rank }) ?? .none
+        let typeName = photos.compactMap(\.shingleType).first
+        return Button {
+            let g = UIImpactFeedbackGenerator(style: .light); g.impactOccurred()
+            slopeBeingViewed = slope
+        } label: {
+            HStack(spacing: 10) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10).fill(Theme.emberSoft)
+                    Image(systemName: slope.icon)
+                        .font(.system(size: 13, weight: .heavy))
+                        .foregroundStyle(Theme.ember)
+                }
+                .frame(width: 38, height: 38)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(slope.shortName)
+                        .font(.system(size: 13, weight: .heavy))
+                        .foregroundStyle(Theme.ink)
+                    HStack(spacing: 6) {
+                        Text("\(photos.count) photo\(photos.count == 1 ? "" : "s")")
+                            .font(.system(size: 10))
+                            .foregroundStyle(Theme.inkSoft)
+                        Circle().fill(Theme.inkFaint.opacity(0.5)).frame(width: 2, height: 2)
+                        Text("\(totalMarkers) marker\(totalMarkers == 1 ? "" : "s")")
+                            .font(.system(size: 10))
+                            .foregroundStyle(Theme.inkSoft)
+                        if let typeName {
+                            Circle().fill(Theme.inkFaint.opacity(0.5)).frame(width: 2, height: 2)
+                            Text(typeName)
+                                .font(.system(size: 10))
+                                .foregroundStyle(Theme.inkSoft)
+                                .lineLimit(1)
+                        }
+                    }
+                }
+                Spacer(minLength: 6)
+                // Stacked thumbnails preview
+                HStack(spacing: -10) {
+                    ForEach(photos.prefix(3)) { p in
+                        Image(uiImage: p.image)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 30, height: 30)
+                            .clipShape(.circle)
+                            .overlay(Circle().stroke(Theme.card, lineWidth: 2))
+                    }
+                    if photos.count > 3 {
+                        Text("+\(photos.count - 3)")
+                            .font(.system(size: 9, weight: .heavy))
+                            .foregroundStyle(Theme.ink)
+                            .frame(width: 30, height: 30)
+                            .background(Theme.canvas, in: .circle)
+                            .overlay(Circle().stroke(Theme.card, lineWidth: 2))
+                    }
+                }
+                if worst != .none {
+                    Circle().fill(worst.color).frame(width: 8, height: 8)
+                }
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .heavy))
+                    .foregroundStyle(Theme.inkFaint)
+            }
+            .padding(10)
+            .background(Theme.canvas, in: .rect(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.hairline, lineWidth: 0.6))
+        }
+        .buttonStyle(.plain)
     }
 
     private var hitMapCard: some View {

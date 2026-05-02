@@ -32,6 +32,61 @@ struct CapturedPhoto: Identifiable {
     var findings: [InspectionFinding] = []
     var damageMarkers: [DamageMarker] = []
     var analyzed: Bool = false
+
+    // MARK: - Pertinent info derived from analysis
+
+    /// Pretty shingle / roof covering name pulled from the AI's `shingle_type` finding.
+    /// Returns `nil` if Gemini didn't classify the surface.
+    var shingleType: String? {
+        guard let f = findings.first(where: { $0.label == "shingle_type" }) else { return nil }
+        let raw = f.value.split(separator: "\u{2014}").first.map(String.init) ?? f.value
+        return raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Short evidence note from the AI about why this shingle type was chosen.
+    var shingleTypeNote: String? {
+        guard let f = findings.first(where: { $0.label == "shingle_type" }) else { return nil }
+        let parts = f.value.split(separator: "\u{2014}", maxSplits: 1).map(String.init)
+        guard parts.count == 2 else { return nil }
+        return parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Estimated number of shingles visible in the photo. Approximation based on
+    /// capture mode: a single-shingle photo shows ~1 tab; a 100 sq ft test square
+    /// in asphalt covers roughly 30 shingle tabs.
+    var estimatedShingleCount: Int {
+        switch captureMode {
+        case .singleShingle:
+            return 1
+        case .square:
+            let squares = max(1, squaresCovered)
+            return squares * 30
+        }
+    }
+
+    /// Damage markers grouped by type, in display order.
+    var markersByType: [(type: DamageMarkerType, items: [DamageMarker])] {
+        let dict = Dictionary(grouping: damageMarkers, by: \.type)
+        return DamageMarkerType.allCases.compactMap { type in
+            guard let items = dict[type], !items.isEmpty else { return nil }
+            return (type, items)
+        }
+    }
+
+    /// Top detected (true) findings, severity-weighted, excluding the shingle_type meta finding.
+    var topDetectedFindings: [InspectionFinding] {
+        findings
+            .filter { $0.detected && $0.label != "shingle_type" }
+            .sorted { lhs, rhs in
+                if lhs.severity.rank != rhs.severity.rank { return lhs.severity.rank > rhs.severity.rank }
+                return lhs.confidence > rhs.confidence
+            }
+    }
+
+    /// Worst severity damage finding for this photo, if any.
+    var worstSeverity: FindingSeverity {
+        topDetectedFindings.first?.severity ?? .none
+    }
 }
 
 // MARK: - HAAG Standards
