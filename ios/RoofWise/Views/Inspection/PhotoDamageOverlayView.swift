@@ -34,6 +34,14 @@ struct PhotoDamageOverlayView: View {
         !photo.analyzed || photo.findings.contains { $0.label == "ai_unavailable" }
     }
 
+    /// True when the photo has never been analyzed (fresh capture) versus
+    /// a prior attempt that explicitly failed. Drives the banner copy/CTA.
+    private var notYetAnalyzed: Bool {
+        !photo.analyzed
+            && photo.damageMarkers.isEmpty
+            && !photo.findings.contains { $0.label == "ai_unavailable" }
+    }
+
     private var failureMessage: String? {
         photo.findings.first { $0.label == "ai_unavailable" }?.value
     }
@@ -202,16 +210,21 @@ struct PhotoDamageOverlayView: View {
     private var retryBanner: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                Image(systemName: "exclamationmark.triangle.fill")
+                Image(systemName: notYetAnalyzed ? "sparkles" : "exclamationmark.triangle.fill")
                     .font(.system(size: 12, weight: .heavy))
                     .foregroundStyle(Theme.ember)
-                Text("AI ANALYSIS FAILED")
+                Text(notYetAnalyzed ? "AI ANALYSIS PENDING" : "AI ANALYSIS FAILED")
                     .font(.system(size: 10, weight: .heavy))
                     .tracking(1.4)
                     .foregroundStyle(.white)
                 Spacer()
             }
-            if let msg = failureMessage, !msg.isEmpty {
+            if notYetAnalyzed {
+                Text("Run Gemini Vision on this photo to detect hail strikes, wind damage, granule loss, and overlay markers directly on the image.")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.85))
+                    .lineSpacing(2)
+            } else if let msg = failureMessage, !msg.isEmpty {
                 Text(msg)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.85))
@@ -237,10 +250,12 @@ struct PhotoDamageOverlayView: View {
                             .tint(.white)
                             .scaleEffect(0.8)
                     } else {
-                        Image(systemName: "arrow.clockwise")
+                        Image(systemName: notYetAnalyzed ? "sparkles" : "arrow.clockwise")
                             .font(.system(size: 13, weight: .heavy))
                     }
-                    Text(isRetrying ? "Re-analyzing…" : "Retry AI Analysis")
+                    Text(isRetrying
+                         ? (notYetAnalyzed ? "Analyzing with Gemini…" : "Re-analyzing…")
+                         : (notYetAnalyzed ? "Analyze with AI" : "Retry AI Analysis"))
                         .font(.system(size: 13, weight: .heavy))
                 }
                 .foregroundStyle(.white)
