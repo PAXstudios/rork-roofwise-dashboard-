@@ -1,6 +1,7 @@
 import SwiftUI
 import UIKit
 import Combine
+import PhotosUI
 
 // MARK: - Flow
 
@@ -23,6 +24,8 @@ struct QuickInspectionView: View {
     @State private var captureMode: CaptureMode = .square
     @State private var capturedPhotos: [CapturedPhoto] = []
     @State private var previewPhoto: CapturedPhoto?
+    @State private var libraryPickerItems: [PhotosPickerItem] = []
+    @State private var isImportingLibrary: Bool = false
     @State private var lastFindings: [InspectionFinding] = []
     @State private var claimPacket: ClaimPacket?
     @State private var motion = MotionElevationService()
@@ -80,6 +83,37 @@ struct QuickInspectionView: View {
         }
         .onChange(of: camera.squaresCovered) { oldValue, newValue in
             if newValue > oldValue { triggerSquareBadge() }
+        }
+        .onChange(of: libraryPickerItems) { _, newItems in
+            guard !newItems.isEmpty else { return }
+            importLibraryPhotos(newItems)
+        }
+    }
+
+    private func importLibraryPhotos(_ items: [PhotosPickerItem]) {
+        let slope = currentSlope
+        let pitch = motion.pitchDegrees
+        let elev = motion.elevationFeet
+        let mode = captureMode
+        isImportingLibrary = true
+        Task { @MainActor in
+            var imported: [CapturedPhoto] = []
+            for item in items {
+                if let data = try? await item.loadTransferable(type: Data.self),
+                   let img = UIImage(data: data) {
+                    imported.append(CapturedPhoto(image: img, slope: slope,
+                                                  pitchDegrees: pitch, elevationFeet: elev,
+                                                  captureMode: mode))
+                }
+            }
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.78)) {
+                capturedPhotos.append(contentsOf: imported)
+            }
+            if !imported.isEmpty {
+                let g = UIImpactFeedbackGenerator(style: .medium); g.impactOccurred()
+            }
+            libraryPickerItems = []
+            isImportingLibrary = false
         }
     }
 
@@ -426,31 +460,68 @@ struct QuickInspectionView: View {
     @ViewBuilder
     private var photoStripThumb: some View {
         if let last = capturedPhotos.last {
-            Button {
-                previewPhoto = last
-            } label: {
-                Image(uiImage: last.image)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: 60, height: 60)
-                    .clipShape(.rect(cornerRadius: 12))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(.white.opacity(0.7), lineWidth: 1.5)
-                    )
+            HStack(spacing: 8) {
+                Button {
+                    previewPhoto = last
+                } label: {
+                    Image(uiImage: last.image)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 60, height: 60)
+                        .clipShape(.rect(cornerRadius: 12))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(.white.opacity(0.7), lineWidth: 1.5)
+                        )
+                }
+                .buttonStyle(.plain)
+
+                libraryPickerButton(compact: true)
             }
-            .buttonStyle(.plain)
         } else {
-            VStack(spacing: 4) {
-                Image(systemName: "photo.on.rectangle.angled")
-                    .font(.system(size: 16, weight: .bold))
-                Text("Library")
-                    .font(.system(size: 10, weight: .heavy))
-            }
-            .foregroundStyle(.white.opacity(0.5))
-            .frame(width: 60, height: 60)
-            .background(.ultraThinMaterial, in: .circle)
+            libraryPickerButton(compact: false)
         }
+    }
+
+    @ViewBuilder
+    private func libraryPickerButton(compact: Bool) -> some View {
+        PhotosPicker(selection: $libraryPickerItems,
+                     maxSelectionCount: 0,
+                     selectionBehavior: .ordered,
+                     matching: .images,
+                     preferredItemEncoding: .compatible) {
+            if compact {
+                ZStack {
+                    Circle().fill(.ultraThinMaterial)
+                    if isImportingLibrary {
+                        ProgressView().tint(.white)
+                    } else {
+                        Image(systemName: "plus.rectangle.on.rectangle")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(.white.opacity(0.9))
+                    }
+                }
+                .frame(width: 44, height: 44)
+                .overlay(Circle().stroke(.white.opacity(0.25), lineWidth: 0.8))
+            } else {
+                VStack(spacing: 4) {
+                    if isImportingLibrary {
+                        ProgressView().tint(.white)
+                    } else {
+                        Image(systemName: "photo.on.rectangle.angled")
+                            .font(.system(size: 16, weight: .bold))
+                        Text("Library")
+                            .font(.system(size: 10, weight: .heavy))
+                    }
+                }
+                .foregroundStyle(.white.opacity(0.7))
+                .frame(width: 60, height: 60)
+                .background(.ultraThinMaterial, in: .circle)
+                .overlay(Circle().stroke(.white.opacity(0.18), lineWidth: 0.8))
+            }
+        }
+        .buttonStyle(.plain)
+        .disabled(isImportingLibrary)
     }
 
     @ViewBuilder
