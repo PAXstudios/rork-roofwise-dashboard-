@@ -507,8 +507,6 @@ private struct ARInspectionStage: View {
                 : "Aim at a flat roof slope and tap to anchor a 10' × 10' test square."
         case .measure:
             return "Tap two damage pins to measure the real-world distance between them."
-        @unknown default:
-            return ""
         }
     }
 
@@ -709,6 +707,13 @@ private struct ARScanResultsSheet: View {
 
 // MARK: - Coordinator
 
+/// Owns the pitch-sampling Timer in a non-isolated container so the
+/// `@MainActor` coordinator's deinit doesn't have to touch main-isolated state.
+final class PitchTimerHolder: @unchecked Sendable {
+    var timer: Timer?
+    deinit { timer?.invalidate() }
+}
+
 @MainActor
 @Observable
 final class ARInspectionCoordinator: NSObject {
@@ -729,7 +734,7 @@ final class ARInspectionCoordinator: NSObject {
     private var squareTransform: simd_float4x4?
     private var lastChalkPoint: SIMD3<Float>?
     private var currentChalkAnchor: AnchorEntity?
-    nonisolated(unsafe) private var pitchSampleTimer: Timer?
+    private let timerHolder = PitchTimerHolder()
     private var sessionDelegateProxy: SessionDelegateProxy?
 
     // Tool state (set by container.updateUIView)
@@ -813,7 +818,7 @@ final class ARInspectionCoordinator: NSObject {
         arView.addGestureRecognizer(longPress)
 
         // Pitch sampling — read center-screen surface tilt twice per second
-        pitchSampleTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+        timerHolder.timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.samplePitch() }
         }
 
@@ -821,8 +826,7 @@ final class ARInspectionCoordinator: NSObject {
     }
 
     deinit {
-        // Timer.invalidate is thread-safe; property is nonisolated(unsafe) so deinit can read it.
-        pitchSampleTimer?.invalidate()
+        // PitchTimerHolder owns the Timer and invalidates it on its own deinit.
     }
 
     // MARK: Heatmap
