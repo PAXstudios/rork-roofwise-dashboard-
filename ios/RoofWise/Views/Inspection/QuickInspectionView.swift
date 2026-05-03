@@ -220,15 +220,26 @@ struct QuickInspectionView: View {
                     .transition(.opacity)
             }
 
-            // Real-time AI shingle detection (Vision: VNDetectRectanglesRequest)
+            // Roof-gated live shingle overlay + Gemini damage dots.
             if showShingleDetect {
-                ShingleDetectionOverlay(detections: filteredDetections,
-                                        confidences: filteredConfidences,
-                                        squareProgress: camera.currentSquareProgress,
-                                        showSquareProgress: captureMode == .square,
-                                        singleShingleMode: captureMode == .singleShingle)
-                    .allowsHitTesting(false)
-                    .transition(.opacity)
+                if camera.roofDetected {
+                    ShingleDetectionOverlay(detections: filteredDetections,
+                                            confidences: filteredConfidences,
+                                            squareProgress: camera.currentSquareProgress,
+                                            showSquareProgress: captureMode == .square,
+                                            singleShingleMode: captureMode == .singleShingle,
+                                            liveDamageMarkers: camera.liveDamageMarkers)
+                        .allowsHitTesting(false)
+                        .transition(.opacity)
+                } else {
+                    Text("Point camera at roof")
+                        .font(.system(size: 15, weight: .heavy))
+                        .foregroundStyle(.white.opacity(0.58))
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(.black.opacity(0.28), in: .capsule)
+                        .allowsHitTesting(false)
+                }
             }
 
             // Targeting reticle
@@ -1668,17 +1679,20 @@ struct ShingleDetectionOverlay: View {
     let squareProgress: Double
     var showSquareProgress: Bool = true
     var singleShingleMode: Bool = false
+    var liveDamageMarkers: [DamageMarker] = []
 
     var body: some View {
         GeometryReader { geo in
             ZStack {
                 ForEach(Array(detections.enumerated()), id: \.offset) { idx, rect in
                     let conf = idx < confidences.count ? confidences[idx] : 0.85
-                    ShingleBoundingBox(rect: rect,
-                                       confidence: conf,
-                                       size: geo.size,
-                                       emphasized: singleShingleMode)
+                    StableShingleGrid(region: rect,
+                                      confidence: conf,
+                                      size: geo.size,
+                                      emphasized: singleShingleMode)
                 }
+
+                LiveDamageMarkerLayer(markers: liveDamageMarkers, size: geo.size)
 
                 if showSquareProgress {
                     // Coverage progress ring toward the next 100 sq ft square
@@ -1694,52 +1708,82 @@ struct ShingleDetectionOverlay: View {
                     }
                 }
             }
-            .animation(.easeOut(duration: 0.12), value: detections.count)
+            .animation(.easeOut(duration: 0.18), value: detections.count)
+            .animation(.easeOut(duration: 0.18), value: liveDamageMarkers.count)
         }
     }
 }
 
-struct ShingleBoundingBox: View {
-    let rect: CGRect          // normalized 0..1, top-left origin
+struct StableShingleGrid: View {
+    let region: CGRect          // normalized 0..1, top-left origin
     let confidence: Double
     let size: CGSize
     var emphasized: Bool = false
 
     var body: some View {
-        let frame = CGRect(x: rect.origin.x * size.width,
-                           y: rect.origin.y * size.height,
-                           width: rect.size.width * size.width,
-                           height: rect.size.height * size.height)
+        let frame = CGRect(x: region.origin.x * size.width,
+                           y: region.origin.y * size.height,
+                           width: region.size.width * size.width,
+                           height: region.size.height * size.height)
         let color: Color = confidence > 0.92 ? Theme.mint :
                            confidence > 0.80 ? Theme.amber : Theme.ember
+        let columns = frame.width > frame.height ? 4 : 3
+        let rows = 3
+        let gap: CGFloat = 5
+        let cellWidth = max(24, (frame.width - CGFloat(columns - 1) * gap) / CGFloat(columns))
+        let cellHeight = cellWidth / 1.1
+        let totalHeight = CGFloat(rows) * cellHeight + CGFloat(rows - 1) * gap
+        let startY = max(0, (frame.height - totalHeight) / 2)
 
-        RoundedRectangle(cornerRadius: 2)
-            .stroke(color, lineWidth: emphasized ? 2.4 : 1.2)
-            .background(
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(color.opacity(0.10))
-            )
-            .frame(width: max(2, frame.width), height: max(2, frame.height))
-            .overlay {
-                ZStack {
-                    cornerTick(color).position(x: 2, y: 2)
-                    cornerTick(color).rotationEffect(.degrees(90)).position(x: frame.width - 2, y: 2)
-                    cornerTick(color).rotationEffect(.degrees(180)).position(x: frame.width - 2, y: frame.height - 2)
-                    cornerTick(color).rotationEffect(.degrees(270)).position(x: 2, y: frame.height - 2)
+        ZStack(alignment: .topLeading) {
+            RoundedRectangle(cornerRadius: 4)
+                .stroke(color.opacity(0.78), lineWidth: emphasized ? 2.2 : 1.2)
+                .background(RoundedRectangle(cornerRadius: 4).fill(color.opacity(0.07)))
+
+            ForEach(0..<rows, id: \.self) { row in
+                ForEach(0..<columns, id: \.self) { col in
+                    RoundedRectangle(cornerRadius: 3)
+                        .stroke(color.opacity(0.88), lineWidth: 1.1)
+                        .background(RoundedRectangle(cornerRadius: 3).fill(color.opacity(0.08)))
+                        .frame(width: cellWidth, height: cellHeight)
+                        .position(x: CGFloat(col) * (cellWidth + gap) + cellWidth / 2,
+                                  y: startY + CGFloat(row) * (cellHeight + gap) + cellHeight / 2)
                 }
             }
-            .shadow(color: color.opacity(0.45), radius: 4)
-            .position(x: frame.midX, y: frame.midY)
-    }
-
-    private func cornerTick(_ color: Color) -> some View {
-        Path { p in
-            p.move(to: CGPoint(x: 0, y: 5))
-            p.addLine(to: CGPoint(x: 0, y: 0))
-            p.addLine(to: CGPoint(x: 5, y: 0))
         }
-        .stroke(color, style: StrokeStyle(lineWidth: 1.4, lineCap: .round))
-        .frame(width: 5, height: 5)
+        .frame(width: max(2, frame.width), height: max(2, frame.height))
+        .shadow(color: color.opacity(0.35), radius: 4)
+        .position(x: frame.midX, y: frame.midY)
+    }
+}
+
+private struct LiveDamageMarkerLayer: View {
+    let markers: [DamageMarker]
+    let size: CGSize
+    @State private var pulse: Bool = false
+
+    var body: some View {
+        ZStack {
+            ForEach(markers) { marker in
+                let markerSize: CGFloat = max(12, min(26, marker.radius * min(size.width, size.height) * 1.5))
+                Circle()
+                    .fill(marker.type.color.opacity(0.75))
+                    .frame(width: markerSize, height: markerSize)
+                    .overlay(Circle().stroke(.white.opacity(0.75), lineWidth: 1))
+                    .overlay(
+                        Circle()
+                            .stroke(marker.type.color.opacity(pulse ? 0.0 : 0.42), lineWidth: 2)
+                            .frame(width: markerSize * 2.0, height: markerSize * 2.0)
+                            .scaleEffect(pulse ? 1.2 : 0.75)
+                    )
+                    .position(x: marker.x * size.width, y: marker.y * size.height)
+            }
+        }
+        .onAppear {
+            withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) {
+                pulse = true
+            }
+        }
     }
 }
 

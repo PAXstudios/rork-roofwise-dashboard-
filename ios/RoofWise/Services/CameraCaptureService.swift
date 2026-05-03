@@ -21,11 +21,26 @@ final class CameraCaptureService: NSObject {
 
     // MARK: - Live detection state
 
-    /// Current frame's detected shingles in UIKit-normalized coords (0..1, top-left origin).
+    /// Current frame's detected roof/shingle region in UIKit-normalized coords (0..1, top-left origin).
+    /// Empty until Vision confidently sees roofing material.
     var detectionRects: [CGRect] = []
 
     /// Per-detection confidence (0..1), parallel to `detectionRects`.
     var detectionConfidences: [Double] = []
+
+    /// True only when Vision classification sees roof/shingle/tile/roofing material at >= 0.6 confidence.
+    var roofDetected: Bool = false
+
+    /// Most recent camera frame, used for lightweight live Gemini damage analysis.
+    var latestFrame: UIImage?
+
+    /// Live damage markers returned by Gemini for the current camera feed.
+    var liveDamageMarkers: [DamageMarker] = []
+
+    private var lastVisionRun: Date = .distantPast
+    private var lastLiveDamageRun: Date = .distantPast
+    private var isLiveDamageAnalyzing: Bool = false
+    private let ciContext = CIContext()
 
     /// Cumulative count of unique shingles spotted across the session.
     var totalUniqueShingles: Int = 0
@@ -182,6 +197,8 @@ final class CameraCaptureService: NSObject {
         currentSquareProgress = 0
         detectionRects = []
         detectionConfidences = []
+        roofDetected = false
+        liveDamageMarkers = []
     }
 
     // MARK: - Mock detection (cloud simulator)
@@ -196,24 +213,12 @@ final class CameraCaptureService: NSObject {
     }
 
     private func tickMock() {
-        var rects: [CGRect] = []
-        var confs: [Double] = []
-        let baseY = CGFloat.random(in: 0.28...0.72)
-        let rowH: CGFloat = CGFloat.random(in: 0.058...0.072)
-        let cellW: CGFloat = CGFloat.random(in: 0.16...0.20)
-        for row in -1...1 {
-            let y = baseY + CGFloat(row) * rowH
-            let stagger: CGFloat = (abs(row) % 2 == 0) ? 0 : cellW / 2
-            let count = Int.random(in: 2...4)
-            let startX = CGFloat.random(in: 0.06...0.18) + stagger
-            for c in 0..<count {
-                let x = startX + CGFloat(c) * (cellW + 0.006) + CGFloat.random(in: -0.004...0.004)
-                guard x > 0.02, x + cellW < 0.98, y > 0.05, y + rowH < 0.95 else { continue }
-                rects.append(CGRect(x: x, y: y, width: cellW, height: rowH))
-                confs.append(Double.random(in: 0.78...0.97))
-            }
-        }
-        applyDetections(rects, confidences: confs)
+        // No simulated roof detection. The live overlay stays hidden by default
+        // until a real camera frame is classified as roofing material.
+        roofDetected = false
+        detectionRects = []
+        detectionConfidences = []
+        liveDamageMarkers = []
     }
 
     // MARK: - Synthesized placeholder photo
@@ -284,40 +289,113 @@ extension CameraCaptureService: AVCaptureVideoDataOutputSampleBufferDelegate {
                                    from connection: AVCaptureConnection) {
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
 
-        let request = VNDetectRectanglesRequest()
-        // Roof shingles are wide, low-aspect rectangles.
-        request.minimumAspectRatio = 0.18
-        request.maximumAspectRatio = 0.48
-        request.minimumSize = 0.04
-        request.maximumObservations = 24
-        request.minimumConfidence = 0.55
-        request.quadratureTolerance = 25
+        let now = Date()
+        let shouldRunVision = now.timeIntervalSince(lastVisionRun) >= 0.5
+        guard shouldRunVision else { return }
+        lastVisionRun = now
+
+        let classifyRequest = VNClassifyImageRequest()
+
+        let rectangleRequest = VNDetectRectanglesRequest()
+        rectangleRequest.minimumAspectRatio = 0.75
+        rectangleRequest.maximumAspectRatio = 1.35
+        rectangleRequest.minimumSize = 0.08
+        rectangleRequest.maximumObservations = 12
+        rectangleRequest.minimumConfidence = 0.55
+        rectangleRequest.quadratureTolerance = 25
 
         let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer,
                                             orientation: .right,
                                             options: [:])
-        try? handler.perform([request])
+        try? handler.perform([classifyRequest, rectangleRequest])
 
-        let observations = (request.results as [VNRectangleObservation]?) ?? []
-        // Convert from Vision's bottom-left normalized space into UIKit top-left.
+        let roofClassifications = (classifyRequest.results ?? []).filter { observation in
+            Self.isRoofLabel(observation.identifier) && observation.confidence >= 0.6
+        }
+        let isRoof = !roofClassifications.isEmpty
+        let classificationConfidence = Double(roofClassifications.map(\.confidence).max() ?? 0)
+
+        let observations = (rectangleRequest.results as [VNRectangleObservation]?) ?? []
         var rects: [CGRect] = []
         var confs: [Double] = []
-        rects.reserveCapacity(observations.count)
-        confs.reserveCapacity(observations.count)
-        for obs in observations {
-            let r = obs.boundingBox
-            let flipped = CGRect(x: r.minX,
-                                 y: 1 - r.maxY,
-                                 width: r.width,
-                                 height: r.height)
-            rects.append(flipped)
-            confs.append(Double(obs.confidence))
+        if isRoof {
+            for obs in observations {
+                let r = obs.boundingBox
+                let flipped = CGRect(x: r.minX,
+                                     y: 1 - r.maxY,
+                                     width: r.width,
+                                     height: r.height)
+                rects.append(Self.shingleRegionGridRect(from: flipped))
+                confs.append(max(Double(obs.confidence), classificationConfidence))
+            }
+            if rects.isEmpty {
+                rects = [CGRect(x: 0.16, y: 0.26, width: 0.68, height: 0.42)]
+                confs = [classificationConfidence]
+            }
         }
 
-        let finalRects = rects
-        let finalConfs = confs
+        let frameImage = Self.image(from: pixelBuffer, context: ciContext)
         Task { @MainActor in
-            self.applyDetections(finalRects, confidences: finalConfs)
+            self.roofDetected = isRoof
+            self.latestFrame = frameImage
+            if isRoof {
+                self.applyDetections(rects, confidences: confs)
+                self.runLiveDamageAnalysisIfNeeded(now: now)
+            } else {
+                self.detectionRects = []
+                self.detectionConfidences = []
+                self.liveDamageMarkers = []
+            }
+        }
+    }
+
+    nonisolated private static func isRoofLabel(_ label: String) -> Bool {
+        let lowered = label.lowercased()
+        return lowered.contains("roof")
+            || lowered.contains("shingle")
+            || lowered.contains("tile roof")
+            || lowered.contains("roofing")
+            || lowered.contains("asphalt")
+            || lowered.contains("slate")
+            || lowered.contains("metal panel")
+            || lowered.contains("standing seam")
+    }
+
+    nonisolated private static func shingleRegionGridRect(from rect: CGRect) -> CGRect {
+        let minWidth: CGFloat = 0.34
+        let minHeight: CGFloat = 0.30
+        let width = max(rect.width, minWidth)
+        let height = max(rect.height, minHeight)
+        let x = max(0.04, min(0.96 - width, rect.midX - width / 2))
+        let y = max(0.14, min(0.86 - height, rect.midY - height / 2))
+        return CGRect(x: x, y: y, width: width, height: height)
+    }
+
+    nonisolated private static func image(from pixelBuffer: CVPixelBuffer, context: CIContext) -> UIImage? {
+        let ciImage = CIImage(cvPixelBuffer: pixelBuffer).oriented(.right)
+        guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else { return nil }
+        return UIImage(cgImage: cgImage)
+    }
+}
+
+private extension CameraCaptureService {
+    func runLiveDamageAnalysisIfNeeded(now: Date) {
+        guard now.timeIntervalSince(lastLiveDamageRun) >= 3.0,
+              !isLiveDamageAnalyzing,
+              roofDetected,
+              let image = latestFrame else { return }
+        lastLiveDamageRun = now
+        isLiveDamageAnalyzing = true
+        Task { @MainActor in
+            let result = await GeminiAnalysisService.analyzeLiveDamage(image: image)
+            if roofDetected, !result.noRoofDetected, !result.failed {
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    liveDamageMarkers = result.markers
+                }
+            } else {
+                liveDamageMarkers = []
+            }
+            isLiveDamageAnalyzing = false
         }
     }
 }

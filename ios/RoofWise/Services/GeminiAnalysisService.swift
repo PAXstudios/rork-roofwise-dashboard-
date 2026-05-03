@@ -36,6 +36,80 @@ enum GeminiAnalysisService {
         await analyzeFull(image: image, slope: slope, mode: mode, squaresCovered: squaresCovered).findings
     }
 
+    /// Lightweight live camera damage check. Reuses the same parsing pipeline, but
+    /// prompts Gemini to return only roof-gated damage markers for the current frame.
+    static func analyzeLiveDamage(image: UIImage) async -> AnalysisResult {
+        let key = apiKey
+        guard !key.isEmpty,
+              key != "GEMINI_API_KEY",
+              let url = URL(string: "\(endpoint)?key=\(key)") else {
+            return AnalysisResult(findings: [], markers: [], failed: true)
+        }
+
+        let prepared = resizeForUpload(image, maxEdge: 768)
+        guard let jpeg = prepared.jpegData(compressionQuality: 0.72) else {
+            return AnalysisResult(findings: [], markers: [], failed: true)
+        }
+
+        let prompt = """
+        You are inspecting a live camera frame from a roof inspection app.
+        Return STRICT JSON only with this schema:
+        {
+          "analyzed": true|false,
+          "findings": [
+            { "label": "no_roof_detected", "detected": false, "severity": "none", "confidence": 0-100, "note": "No roof or shingles visible in this photo" }
+          ],
+          "damage_markers": [
+            {
+              "type": "hail_strike|crack|missing_shingle|wind_crease|granule_loss|other",
+              "x": 0.0-1.0,
+              "y": 0.0-1.0,
+              "width": 0.0-1.0,
+              "height": 0.0-1.0,
+              "radius": 0.0-1.0,
+              "severity": "minor|moderate|severe",
+              "confidence": 0-100,
+              "note": "short visible pixel evidence"
+            }
+          ]
+        }
+
+        CRITICAL: If the image does NOT clearly show a roof surface, asphalt shingles, tile, metal panels, or any roofing material — for example if it shows grass, sky, ground, indoors, a person, a vehicle, or any non-roof scene — you MUST set analyzed=false, return an empty damage_markers array, and add a finding with label="no_roof_detected" and note="No roof or shingles visible in this photo". Do not fabricate damage findings on non-roof images.
+
+        Mark only visible damage locations. Do NOT generate random or evenly spaced markers. If no damage is clearly visible, return "damage_markers": []. Coordinates are normalized from top-left.
+        """
+
+        let body: [String: Any] = [
+            "contents": [[
+                "parts": [
+                    ["text": prompt],
+                    ["inline_data": ["mime_type": "image/jpeg", "data": jpeg.base64EncodedString()]]
+                ]
+            ]],
+            "generationConfig": [
+                "responseMimeType": "application/json",
+                "temperature": 0.05,
+                "topP": 0.9
+            ]
+        ]
+
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.timeoutInterval = 20
+        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
+        do {
+            let (data, response) = try await URLSession.shared.data(for: req)
+            if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+                return AnalysisResult(findings: [], markers: [], failed: true)
+            }
+            return parseResponse(data) ?? AnalysisResult(findings: [], markers: [], failed: true)
+        } catch {
+            return AnalysisResult(findings: [], markers: [], failed: true)
+        }
+    }
+
     /// Analyze a captured roof photo and return findings + per-pixel damage markers.
     /// On API failure returns `failed: true` with EMPTY markers (no fake mock data
     /// gets painted onto real photos).
