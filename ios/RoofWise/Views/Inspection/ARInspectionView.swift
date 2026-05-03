@@ -670,6 +670,15 @@ final class ARInspectionCoordinator: NSObject {
     private(set) var meshAnchors: [UUID: ARMeshAnchor] = [:]
     private(set) var roofPlaneAnchors: [UUID: ARPlaneAnchor] = [:]
 
+    // RealityKit shingle grid entities anchored to detected roof planes.
+    private var planeGridAnchors: [UUID: AnchorEntity] = [:]
+
+    // Measure-tool state
+    var measureFirstMarkerID: UUID?
+    private var measureAnchor: AnchorEntity?
+    private var measureHighlightAnchor: AnchorEntity?
+    var lastMeasurementText: String?
+
     // MARK: ARView setup
 
     func makeARView() -> ARView {
@@ -792,6 +801,8 @@ final class ARInspectionCoordinator: NSObject {
             startChalkStrokeIfNeeded()
             addChalkPoint(at: point)
             finalizeChalkStroke()
+        case .measure:
+            handleMeasureTap(at: point)
         }
     }
 
@@ -1167,11 +1178,15 @@ final class ARInspectionCoordinator: NSObject {
                       p.classification.isValidRoofSurface {
                 roofPlaneAnchors[p.identifier] = p
                 if !planeDetected { planeDetected = true }
+                rebuildShingleGrid(for: p)
             }
         }
         for anchor in removed {
             meshAnchors.removeValue(forKey: anchor.identifier)
             roofPlaneAnchors.removeValue(forKey: anchor.identifier)
+            if let grid = planeGridAnchors.removeValue(forKey: anchor.identifier) {
+                grid.removeFromParent()
+            }
         }
         recomputeLiDARMetrics()
     }
@@ -1196,6 +1211,226 @@ final class ARInspectionCoordinator: NSObject {
             meshAnchors: Array(meshAnchors.values),
             markers: markers
         )
+    }
+
+    // MARK: RealityKit shingle grid (3D, conforms to detected plane)
+
+    /// One real 3-tab asphalt shingle tab is ~13.25" wide x 12" tall.
+    /// In meters: 0.337 x 0.305 (width:height = 1.1:1).
+    private static let shingleCellWidth: Float = 0.337
+    private static let shingleCellHeight: Float = 0.305
+
+    private func rebuildShingleGrid(for plane: ARPlaneAnchor) {
+        guard let arView else { return }
+        // Tear down previous grid for this plane (extent may have grown).
+        if let old = planeGridAnchors.removeValue(forKey: plane.identifier) {
+            old.removeFromParent()
+        }
+
+        let width = plane.planeExtent.width
+        let height = plane.planeExtent.height
+        guard width > 0.05, height > 0.05 else { return }
+
+        let anchorEntity = AnchorEntity(anchor: plane)
+        let grid = makeShingleGridEntity(width: width, height: height)
+        // Position the grid at the plane's centroid (in plane-local coords).
+        grid.position = plane.center
+        // ARPlaneExtent supplies a Y-axis rotation for newer ARKit. Apply it
+        // so the grid aligns with the detected dominant edge of the plane.
+        let yaw = plane.planeExtent.rotationOnYAxis
+        if abs(yaw) > 1e-4 {
+            grid.orientation = simd_quatf(angle: yaw, axis: SIMD3<Float>(0, 1, 0))
+        }
+        anchorEntity.addChild(grid)
+        arView.scene.addAnchor(anchorEntity)
+        planeGridAnchors[plane.identifier] = anchorEntity
+    }
+
+    private func makeShingleGridEntity(width: Float, height: Float) -> Entity {
+        let root = Entity()
+        // Teal/cyan to match the existing 2D shingle UI.
+        let teal = UIColor(Theme.mint)
+
+        // Semi-transparent fill (opacity 0.15)
+        var fillMaterial = UnlitMaterial(color: teal.withAlphaComponent(0.15))
+        fillMaterial.blending = .transparent(opacity: .init(floatLiteral: 0.15))
+        let fill = ModelEntity(
+            mesh: .generatePlane(width: width, depth: height),
+            materials: [fillMaterial]
+        )
+        fill.position.y = 0.001 // tiny lift to avoid z-fighting with the plane
+        root.addChild(fill)
+
+        // Stroke material — slightly stronger teal for the grid lines.
+        let strokeMaterial = UnlitMaterial(color: teal.withAlphaComponent(0.85))
+        let lineThickness: Float = 0.004
+        let halfW = width / 2
+        let halfH = height / 2
+
+        // Compute grid divisions so cells stay close to a real shingle tab.
+        let columns = max(1, Int((width / Self.shingleCellWidth).rounded()))
+        let rows = max(1, Int((height / Self.shingleCellHeight).rounded()))
+        let cellW = width / Float(columns)
+        let cellH = height / Float(rows)
+
+        // Vertical lines (along Z axis)
+        for i in 0...columns {
+            let x = -halfW + Float(i) * cellW
+            let line = ModelEntity(
+                mesh: .generateBox(size: SIMD3<Float>(lineThickness, lineThickness, height)),
+                materials: [strokeMaterial]
+            )
+            line.position = SIMD3<Float>(x, 0.0015, 0)
+            root.addChild(line)
+        }
+        // Horizontal lines (along X axis)
+        for j in 0...rows {
+            let z = -halfH + Float(j) * cellH
+            let line = ModelEntity(
+                mesh: .generateBox(size: SIMD3<Float>(width, lineThickness, lineThickness)),
+                materials: [strokeMaterial]
+            )
+            line.position = SIMD3<Float>(0, 0.0015, z)
+            root.addChild(line)
+        }
+        return root
+    }
+
+    // MARK: Measure mode (tap two damage anchors)
+
+    private func handleMeasureTap(at viewPoint: CGPoint) {
+        guard let arView else { return }
+        // Raycast to a world point near the tap, then find the nearest
+        // existing damage marker within 0.5m (so taps anywhere on a pin
+        // count, not just dead-center).
+        guard let result = arView.raycast(from: viewPoint,
+                                          allowing: .estimatedPlane,
+                                          alignment: .any).first else {
+            let g = UINotificationFeedbackGenerator(); g.notificationOccurred(.warning)
+            return
+        }
+        let p = SIMD3<Float>(result.worldTransform.columns.3.x,
+                             result.worldTransform.columns.3.y,
+                             result.worldTransform.columns.3.z)
+        var best: (UUID, Float)? = nil
+        for m in markers {
+            let d = simd_distance(m.position, p)
+            if d < 0.5, best == nil || d < best!.1 {
+                best = (m.id, d)
+            }
+        }
+        guard let pickedID = best?.0,
+              let picked = markers.first(where: { $0.id == pickedID }) else {
+            let g = UINotificationFeedbackGenerator(); g.notificationOccurred(.warning)
+            return
+        }
+
+        if let firstID = measureFirstMarkerID, firstID != pickedID,
+           let first = markers.first(where: { $0.id == firstID }) {
+            drawMeasurement(from: first.position, to: picked.position)
+            measureFirstMarkerID = nil
+            measureHighlightAnchor?.removeFromParent()
+            measureHighlightAnchor = nil
+            let g = UINotificationFeedbackGenerator(); g.notificationOccurred(.success)
+        } else {
+            // First tap — clear any old measurement and highlight pick #1.
+            measureAnchor?.removeFromParent()
+            measureAnchor = nil
+            lastMeasurementText = nil
+            measureFirstMarkerID = pickedID
+            highlightFirstMeasurePick(at: picked.position)
+            let g = UISelectionFeedbackGenerator(); g.selectionChanged()
+        }
+    }
+
+    private func highlightFirstMeasurePick(at position: SIMD3<Float>) {
+        guard let arView else { return }
+        measureHighlightAnchor?.removeFromParent()
+        let anchor = AnchorEntity(world: position)
+        let ring = ModelEntity(
+            mesh: .generateCylinder(height: 0.001, radius: 0.06),
+            materials: [UnlitMaterial(color: UIColor(Theme.mint).withAlphaComponent(0.7))]
+        )
+        anchor.addChild(ring)
+        arView.scene.addAnchor(anchor)
+        measureHighlightAnchor = anchor
+    }
+
+    private func drawMeasurement(from a: SIMD3<Float>, to b: SIMD3<Float>) {
+        guard let arView else { return }
+        measureAnchor?.removeFromParent()
+
+        let anchor = AnchorEntity(world: .init(repeating: 0))
+        let mid = (a + b) / 2
+        let length = simd_distance(a, b)
+        let mintColor = UIColor(Theme.mint)
+
+        // Connecting cylinder between the two anchors
+        let segment = ModelEntity(
+            mesh: .generateCylinder(height: max(length, 0.001), radius: 0.005),
+            materials: [UnlitMaterial(color: mintColor)]
+        )
+        segment.position = mid
+        let dir = b - a
+        if simd_length(dir) > 1e-5 {
+            let n = simd_normalize(dir)
+            let up = SIMD3<Float>(0, 1, 0)
+            let dotV = simd_dot(up, n)
+            if dotV < 0.9999 && dotV > -0.9999 {
+                let axis = simd_normalize(simd_cross(up, n))
+                segment.orientation = simd_quatf(angle: acos(dotV), axis: axis)
+            } else if dotV < 0 {
+                segment.orientation = simd_quatf(angle: .pi, axis: SIMD3<Float>(1, 0, 0))
+            }
+        }
+        anchor.addChild(segment)
+
+        // End caps so the line reads as a measurement, not a stick.
+        for endpoint in [a, b] {
+            let cap = ModelEntity(
+                mesh: .generateSphere(radius: 0.012),
+                materials: [UnlitMaterial(color: mintColor)]
+            )
+            cap.position = endpoint
+            anchor.addChild(cap)
+        }
+
+        // Floating distance label in feet & inches
+        let label = formatFeetInches(meters: Double(length))
+        lastMeasurementText = label
+        let text = ModelEntity(
+            mesh: .generateText(label,
+                                extrusionDepth: 0.002,
+                                font: .systemFont(ofSize: 0.07, weight: .heavy),
+                                containerFrame: .zero,
+                                alignment: .center,
+                                lineBreakMode: .byTruncatingTail),
+            materials: [UnlitMaterial(color: UIColor(Theme.amber))]
+        )
+        // Center the generated text mesh on its anchor point.
+        let textBounds = text.visualBounds(relativeTo: nil)
+        text.position = mid + SIMD3<Float>(0, 0.08, 0) - textBounds.center
+        // Small backing plate so the label is readable on busy roofs.
+        let plate = ModelEntity(
+            mesh: .generatePlane(width: textBounds.extents.x + 0.04,
+                                 height: textBounds.extents.y + 0.02,
+                                 cornerRadius: 0.01),
+            materials: [UnlitMaterial(color: UIColor.black.withAlphaComponent(0.55))]
+        )
+        plate.position = mid + SIMD3<Float>(0, 0.08, -0.001)
+        anchor.addChild(plate)
+        anchor.addChild(text)
+
+        arView.scene.addAnchor(anchor)
+        measureAnchor = anchor
+    }
+
+    private func formatFeetInches(meters: Double) -> String {
+        let totalInches = meters * 39.3700787
+        var feet = Int(totalInches) / 12
+        var inches = Int(totalInches.rounded()) - feet * 12
+        if inches == 12 { feet += 1; inches = 0 }
+        return "\(feet)' \(inches)\""
     }
 }
 

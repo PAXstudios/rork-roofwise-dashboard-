@@ -56,6 +56,7 @@ enum ARTool: String, CaseIterable, Identifiable {
     case marker
     case chalk
     case placeSquare
+    case measure
 
     var id: String { rawValue }
 
@@ -64,6 +65,7 @@ enum ARTool: String, CaseIterable, Identifiable {
         case .marker:      return "mappin.and.ellipse"
         case .chalk:       return "scribble.variable"
         case .placeSquare: return "square.dashed.inset.filled"
+        case .measure:     return "ruler"
         }
     }
 
@@ -72,6 +74,7 @@ enum ARTool: String, CaseIterable, Identifiable {
         case .marker:      return "Pin"
         case .chalk:       return "Chalk"
         case .placeSquare: return "10×10"
+        case .measure:     return "Measure"
         }
     }
 }
