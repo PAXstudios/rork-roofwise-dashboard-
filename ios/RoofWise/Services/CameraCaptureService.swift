@@ -37,6 +37,14 @@ final class CameraCaptureService: NSObject {
     /// Live damage markers returned by Gemini for the current camera feed.
     var liveDamageMarkers: [DamageMarker] = []
 
+    /// Roof material classified by Gemini on the most recent live frame, if any.
+    var liveShingleType: String?
+    var liveShingleTypeConfidence: Int = 0
+
+    /// Preview layer used to map normalized image-space marker coordinates to
+    /// preview-layer-space (aspectFill cropping). Set by `CameraProxyView`.
+    weak var previewLayer: AVCaptureVideoPreviewLayer?
+
     private var lastVisionRun: Date = .distantPast
     private var lastLiveDamageRun: Date = .distantPast
     private var isLiveDamageAnalyzing: Bool = false
@@ -62,6 +70,10 @@ final class CameraCaptureService: NSObject {
 
     /// Current zoom factor (1, 2, 3...). Mock value used when running in the cloud simulator.
     var zoomFactor: CGFloat = 1.0
+
+    func attachPreviewLayer(_ layer: AVCaptureVideoPreviewLayer) {
+        previewLayer = layer
+    }
 
     func setZoom(_ factor: CGFloat) {
         zoomFactor = factor
@@ -387,15 +399,49 @@ private extension CameraCaptureService {
         lastLiveDamageRun = now
         isLiveDamageAnalyzing = true
         Task { @MainActor in
-            let result = await GeminiAnalysisService.analyzeLiveDamage(image: image)
+            // Use the real full analysis pipeline so live dots come from the same
+            // Gemini call (and prompt) as captured-photo analysis.
+            let result = await GeminiAnalysisService.analyzeFull(image: image,
+                                                                  slope: .frontSlope,
+                                                                  mode: .square,
+                                                                  squaresCovered: 0)
             if roofDetected, !result.noRoofDetected, !result.failed {
+                let mapped = mapMarkersToPreviewSpace(result.markers, frameSize: image.size)
                 withAnimation(.easeInOut(duration: 0.25)) {
-                    liveDamageMarkers = result.markers
+                    liveDamageMarkers = mapped
+                }
+                if let t = result.shingleType {
+                    liveShingleType = t
+                    liveShingleTypeConfidence = result.shingleTypeConfidence
                 }
             } else {
                 liveDamageMarkers = []
             }
             isLiveDamageAnalyzing = false
+        }
+    }
+
+    /// Convert normalized image-space markers (top-left origin, in the captured
+    /// frame) into normalized preview-layer space, accounting for the preview's
+    /// `.resizeAspectFill` cropping. Falls back to the original markers if the
+    /// preview layer isn't attached or sized.
+    func mapMarkersToPreviewSpace(_ markers: [DamageMarker], frameSize: CGSize) -> [DamageMarker] {
+        guard let layer = previewLayer,
+              layer.bounds.width > 0, layer.bounds.height > 0,
+              frameSize.width > 0, frameSize.height > 0 else {
+            return markers
+        }
+        let bounds = layer.bounds
+        return markers.map { m in
+            // AVCaptureVideoPreviewLayer uses normalized device coordinates with
+            // top-left origin in the active capture orientation.
+            let device = CGPoint(x: m.x, y: m.y)
+            let pt = layer.layerPointConverted(fromCaptureDevicePoint: device)
+            let nx = max(0, min(1, pt.x / bounds.width))
+            let ny = max(0, min(1, pt.y / bounds.height))
+            return DamageMarker(x: nx, y: ny, radius: m.radius,
+                                type: m.type, severity: m.severity,
+                                note: m.note, confidence: m.confidence)
         }
     }
 }

@@ -6,10 +6,13 @@ import AVFoundation
 /// Rork-friendly placeholder for the cloud simulator.
 struct CameraProxyView: View {
     var session: AVCaptureSession? = nil
+    /// Optional capture service to receive the preview layer for coordinate mapping.
+    var onPreviewLayer: ((AVCaptureVideoPreviewLayer) -> Void)? = nil
 
     var body: some View {
         if Self.hasRearCamera {
-            ActualCameraView(session: session ?? AVCaptureSession())
+            ActualCameraView(session: session ?? AVCaptureSession(),
+                             onPreviewLayer: onPreviewLayer)
         } else {
             CameraPlaceholderView()
         }
@@ -91,11 +94,13 @@ struct CameraPlaceholderView: View {
 
 struct ActualCameraView: UIViewRepresentable {
     let session: AVCaptureSession
+    var onPreviewLayer: ((AVCaptureVideoPreviewLayer) -> Void)? = nil
 
     func makeUIView(context: Context) -> PreviewUIView {
         let view = PreviewUIView()
         view.previewLayer.videoGravity = .resizeAspectFill
         view.previewLayer.session = session
+        onPreviewLayer?(view.previewLayer)
         return view
     }
 
@@ -103,6 +108,7 @@ struct ActualCameraView: UIViewRepresentable {
         if uiView.previewLayer.session !== session {
             uiView.previewLayer.session = session
         }
+        onPreviewLayer?(uiView.previewLayer)
     }
 
     final class PreviewUIView: UIView {

@@ -26,6 +26,14 @@ enum GeminiAnalysisService {
         /// should treat this as "nothing to analyze" and avoid surfacing fake
         /// damage findings.
         var noRoofDetected: Bool = false
+        /// Roof material / covering classified by Gemini (e.g. "3-tab asphalt",
+        /// "architectural asphalt", "metal standing seam"). `nil` when the model
+        /// did not classify the surface.
+        var shingleType: String? = nil
+        /// Confidence (0-100) for `shingleType`.
+        var shingleTypeConfidence: Int = 0
+        /// AI evidence note for the shingle type classification.
+        var shingleTypeNote: String? = nil
     }
 
     /// Convenience for legacy callers that only need findings.
@@ -56,6 +64,12 @@ enum GeminiAnalysisService {
         Return STRICT JSON only with this schema:
         {
           "analyzed": true|false,
+          "shingle_type": {
+            "type": "3-tab asphalt|architectural asphalt|luxury asphalt|wood shake|wood shingle|metal standing seam|metal shingle|clay tile|concrete tile|slate|synthetic slate|composite|rolled roofing|TPO|EPDM|unknown",
+            "confidence": 0-100,
+            "note": "short visual evidence"
+          },
+          "shingle_type_confidence": 0-100,
           "findings": [
             { "label": "no_roof_detected", "detected": false, "severity": "none", "confidence": 0-100, "note": "No roof or shingles visible in this photo" }
           ],
@@ -73,6 +87,10 @@ enum GeminiAnalysisService {
             }
           ]
         }
+
+        Coordinates x, y, width, height are NORMALIZED [0.0, 1.0] with TOP-LEFT origin
+        (x increases rightward, y increases downward). (x, y) is the CENTER of the
+        bounding box; width/height are the bbox size as fractions of the image.
 
         CRITICAL: If the image does NOT clearly show a roof surface, asphalt shingles, tile, metal panels, or any roofing material — for example if it shows grass, sky, ground, indoors, a person, a vehicle, or any non-roof scene — you MUST set analyzed=false, return an empty damage_markers array, and add a finding with label="no_roof_detected" and note="No roof or shingles visible in this photo". Do not fabricate damage findings on non-roof images.
 
@@ -232,6 +250,7 @@ enum GeminiAnalysisService {
             "confidence": 0-100,
             "note": "<short visual evidence: tab shape, exposure, profile, material cues>"
           },
+          "shingle_type_confidence": <0-100, mirrors shingle_type.confidence for convenience>,
           "shingleScaleEstimate": {
             "pixelsPerInch": <number, estimated pixels-per-inch in this photo based on the visible shingle features (tab width ~12in for 3-tab, exposure ~5-5.625in for architectural, granule size ~1mm). 0 if you cannot estimate.>,
             "confidence": 0-100,
@@ -409,9 +428,27 @@ enum GeminiAnalysisService {
         }
 
         var results: [InspectionFinding] = []
-        if let typeDict = payload["shingle_type"] as? [String: Any],
-           let typeFinding = shingleTypeFinding(from: typeDict) {
-            results.append(typeFinding)
+        var shingleTypeName: String? = nil
+        var shingleTypeConfidence: Int = 0
+        var shingleTypeNote: String? = nil
+        if let typeDict = payload["shingle_type"] as? [String: Any] {
+            let rawType = (typeDict["type"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if !rawType.isEmpty {
+                shingleTypeName = rawType.split(separator: " ").map { $0.prefix(1).uppercased() + $0.dropFirst() }.joined(separator: " ")
+                shingleTypeConfidence = max(0, min(100, (typeDict["confidence"] as? Int)
+                    ?? (typeDict["confidence"] as? NSNumber)?.intValue ?? 0))
+                let note = (typeDict["note"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                shingleTypeNote = note.isEmpty ? nil : note
+            }
+            if let typeFinding = shingleTypeFinding(from: typeDict) {
+                results.append(typeFinding)
+            }
+        }
+        // Top-level shingle_type_confidence override, if Gemini provided it.
+        if let topConf = (payload["shingle_type_confidence"] as? Int)
+            ?? (payload["shingle_type_confidence"] as? NSNumber)?.intValue,
+           topConf > shingleTypeConfidence {
+            shingleTypeConfidence = max(0, min(100, topConf))
         }
         var noRoofFlag = false
         if let analyzed = payload["analyzed"] as? Bool, analyzed == false {
@@ -450,7 +487,10 @@ enum GeminiAnalysisService {
         return AnalysisResult(findings: results,
                               markers: markers,
                               failed: false,
-                              noRoofDetected: noRoofFlag)
+                              noRoofDetected: noRoofFlag,
+                              shingleType: shingleTypeName,
+                              shingleTypeConfidence: shingleTypeConfidence,
+                              shingleTypeNote: shingleTypeNote)
     }
 
     /// Strip ```json ... ``` or ``` ... ``` fences if Gemini wraps despite responseMimeType.

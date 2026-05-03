@@ -198,7 +198,8 @@ struct QuickInspectionView: View {
 
     private var captureView: some View {
         ZStack {
-            CameraProxyView(session: camera.session)
+            CameraProxyView(session: camera.session,
+                            onPreviewLayer: { layer in camera.attachPreviewLayer(layer) })
 
             // Subtle vignette
             RadialGradient(colors: [.clear, .black.opacity(0.55)],
