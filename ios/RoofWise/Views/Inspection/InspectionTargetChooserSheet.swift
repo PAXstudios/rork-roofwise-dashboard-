@@ -49,6 +49,21 @@ struct InspectionTargetChooserSheet: View {
                     ) {
                         showExistingPicker = true
                     }
+
+                    optionCard(
+                        icon: "tray.and.arrow.down.fill",
+                        tint: Theme.amber,
+                        title: "Save Without Customer",
+                        subtitle: "Capture now, attach a property later.",
+                        badge: "LATER"
+                    ) {
+                        store.createUnassignedDraft()
+                        Task { @MainActor in
+                            try? await Task.sleep(for: .milliseconds(120))
+                            onProceed()
+                            dismiss()
+                        }
+                    }
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 8)

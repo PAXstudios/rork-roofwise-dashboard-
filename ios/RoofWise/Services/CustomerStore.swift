@@ -62,6 +62,26 @@ final class CustomerStore {
         if makeActive { activeCustomerID = customer.id }
     }
 
+    /// Creates a lightweight placeholder customer for an inspection where the
+    /// user wants to capture photos first and assign a real property later.
+    /// Returns the new customer's id (and sets it as active).
+    @discardableResult
+    func createUnassignedDraft() -> UUID {
+        let f = DateFormatter()
+        f.dateFormat = "MMM d, h:mm a"
+        let stamp = f.string(from: Date())
+        let draft = Customer(
+            ownerName: "Unassigned Inspection",
+            address: "Add property \u{2022} \(stamp)",
+            stage: .inspectionScheduled,
+            stormTagged: false,
+            estimatedValue: ""
+        )
+        customers.append(draft)
+        activeCustomerID = draft.id
+        return draft.id
+    }
+
     func update(_ customer: Customer) {
         guard let i = customers.firstIndex(where: { $0.id == customer.id }) else { return }
         customers[i] = customer
