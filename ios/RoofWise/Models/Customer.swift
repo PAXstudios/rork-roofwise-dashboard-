@@ -111,4 +111,8 @@ struct Customer: Identifiable {
     var initials: String {
         ownerName.split(separator: " ").compactMap { $0.first }.prefix(2).map(String.init).joined()
     }
+
+    var isUnassignedDraft: Bool {
+        ownerName == "Unassigned Inspection" && address.hasPrefix("Add property")
+    }
 }

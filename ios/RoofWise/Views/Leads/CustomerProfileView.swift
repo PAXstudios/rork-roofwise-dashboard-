@@ -27,6 +27,9 @@ struct CustomerProfileView: View {
         ScrollView {
             VStack(spacing: 14) {
                 header
+                if customer.isUnassignedDraft {
+                    assignPropertyPrompt
+                }
                 shareHomeownerButton
                 practiceCoachButton
                 coachTipCard
@@ -182,6 +185,39 @@ struct CustomerProfileView: View {
         .padding(.horizontal, 14)
         .background(Theme.card, in: .rect(cornerRadius: 22))
         .overlay(RoundedRectangle(cornerRadius: 22).stroke(Theme.hairline, lineWidth: 0.6))
+    }
+
+    // MARK: Assign Property
+
+    private var assignPropertyPrompt: some View {
+        Button { startEditing() } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "house.and.flag.fill")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 38, height: 38)
+                    .background(Theme.amber, in: .rect(cornerRadius: 12))
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Assign Property")
+                        .font(.system(size: 14, weight: .heavy))
+                        .foregroundStyle(Theme.ink)
+                    Text("Add the customer name and address for these saved photos.")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Theme.inkSoft)
+                        .multilineTextAlignment(.leading)
+                }
+
+                Spacer()
+                Image(systemName: "square.and.pencil")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(Theme.amber)
+            }
+            .padding(14)
+            .background(Theme.amber.opacity(0.12), in: .rect(cornerRadius: 18))
+            .overlay(RoundedRectangle(cornerRadius: 18).stroke(Theme.amber.opacity(0.35), lineWidth: 0.8))
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: Share with Homeowner
