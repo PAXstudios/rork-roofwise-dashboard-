@@ -1,39 +1,26 @@
-# AR Roof Inspection Mode — LiDAR heatmap, 3D markers, pitch & virtual chalking
+# Add LiDAR mesh, ARKit planes, and persistent 3D damage anchors to RoofWise
 
-## What you'll be able to do
+## What the inspection gets
 
-Tap a new **AR Mode** toggle inside the live camera of Quick Inspection. If your iPhone has LiDAR, the camera turns into a 3D inspection scanner of the roof. If it doesn't, you'll see a friendly "LiDAR-equipped iPhone Pro required" message and stay in regular camera mode.
+- **Real roof measurements on LiDAR iPhones/iPads**: Captures the actual 3D shape of the roof using the device's LiDAR scanner. The square footage shown in the report comes from the real scanned surface (not a guess), and the roof pitch is read straight from the scanned surface angle (not the gyroscope).
+- **Smart surface detection**: The app only shows the shingle grid overlay on real surfaces it has confirmed are roof, wall, or angled floor — no more floating overlays in empty space.
+- **Damage pinned in 3D space**: Every damage spot the AI finds gets a colored sphere placed at its real-world location on the roof — red for hail, orange for wind, yellow for cracks, purple for missing shingles. The spheres glow with a gentle pulse and stay locked in place as you walk around or move the phone.
+- **3D AR Report export**: A new "Export 3D Report" button on the results screen saves the scanned roof and all damage spheres as a 3D file, then opens it in Apple's built-in AR viewer so it can be shared, viewed, or shown to a customer/adjuster in full augmented reality.
+- **Graceful fallback for older devices**: On iPhones without LiDAR, the existing camera + AI flow keeps working exactly as it does today. A small subtitle says "LiDAR not available — using camera mode" so the user knows what to expect.
 
-### Features in AR Mode
-- **Tap-to-place 3D damage markers** — tap any spot on the roof to drop a colored 3D pin (Hail / Wind-Lifted / Crease / Granule Loss / Other). Markers stay locked to the exact shingle as you walk around.
-- **Virtual 10×10 ft test square** — point at a roof slope, tap "Place Test Square," and a glowing 10' × 10' grid anchors onto the surface for HAAG-compliant hit counting.
-- **Automatic pitch & slope readout** — a floating label shows live roof pitch (e.g. "6:12") as you aim at a slope, computed from the detected plane and device motion.
-- **LiDAR pitting heatmap** — a translucent heat map overlays the roof surface, highlighting depressed/pitted areas in red/orange where shingles have been physically dented.
-- **Virtual chalking** — drag your finger to draw circles around suspected hits, just like real chalk, but non-destructive.
-- **"Scan Now" Gemini analysis** — tap a button to capture the current AR frame + camera transform, send to Gemini, and unproject every returned damage coordinate back into 3D space as permanent world-anchored markers.
-- **Real-time damage overlay** — Gemini findings appear as floating callouts on the actual shingles in 3D, not flat 2D dots.
-- **Save to inspection** — markers, chalk strokes, pitch reading, and an AR snapshot photo are saved to the current inspection record. HAAG hit count is auto-derived from marker count inside the 10×10 square.
+## How it looks
 
-## Design & feel
+- The live camera view gains a quiet, subtle mesh shimmer over detected roof surfaces when LiDAR is active, fading in only after a real surface is found.
+- Damage spheres are small (about the size of a marble in real-world scale), softly emissive, and gently pulse so they read as "live data" without feeling busy.
+- The "Export 3D Report" button sits in the results screen alongside existing actions, styled to match the current results card.
+- The 3D viewer is Apple's native QuickLook AR — same gesture set users already know (pinch, rotate, place in room).
 
-- **Entry**: Subtle "AR" pill button in the camera HUD (top-right, ember-orange when active). Smooth crossfade between regular camera and AR mode.
-- **Markers**: Floating 3D pins with a pulsing ring at base, color-coded (hail = ember orange, wind = electric blue, crease = amber, granule = teal). Each marker shows a small label that always faces the camera.
-- **Test square**: Translucent white grid lines on a faintly tinted plane, with corner brackets and a "10' × 10'" label floating above one corner.
-- **Heatmap**: Soft, gradient-blended overlay (cool blue = flat → red = deep pit), only drawn on detected roof mesh, fades at edges so it never feels clinical.
-- **Pitch label**: Glassy floating capsule near top-center: large pitch number, small "rise:run" subtitle, gentle bob animation.
-- **Chalk**: Bright yellow stroke that fades in with a chalky texture, can be undone with a swipe.
-- **Bottom HUD**: Compact toolbar — Marker mode / Chalk mode / Place Square / Scan with Gemini / Save. Springy haptics on each tap.
-- **Empty state**: "Aim at a roof slope to begin" hint with an animated reticle until a plane is detected.
+## Screens touched
 
-## Screens
+- **Quick Inspection (capture screen)**: Gains LiDAR-aware overlay; only renders shingle grid on detected roof/wall/floor planes; shows live damage spheres anchored in 3D.
+- **Inspection Results screen**: Gains an "Export 3D Report" button that opens the scanned roof + damage spheres in Apple's AR QuickLook.
+- **Non-LiDAR devices**: Show a subtle "LiDAR not available — using camera mode" subtitle on the capture screen; everything else unchanged.
 
-- **Quick Inspection (existing)** — gains an AR toggle in the camera HUD. On non-LiDAR devices, the toggle is disabled with a tooltip explaining the requirement.
-- **AR Inspection Overlay (new, in-place)** — full-screen ARKit/RealityKit experience layered over the current capture flow, with HUD, tool palette, pitch readout, and Gemini scan button.
-- **AR Results Drawer (new, slides up from bottom)** — after a Gemini scan, shows the list of detected damages with thumbnails, "tap to focus" on each 3D marker, and a "Keep / Discard" decision per finding.
-- **Inspection Detail (existing)** — gains an "AR Snapshot" section: the final AR photo, marker list with 3D coordinates, pitch, and hit-count derived from the 10×10 square.
+## Scope
 
-## Things to note
-
-- Cloud simulator has no LiDAR, so AR mode will show the standard "Install via the Rork App on a Pro device" placeholder during preview. Real device testing required.
-- Gemini still does the visual damage detection — AR adds spatial anchoring, depth, and measurement on top.
-- The existing photo-based analysis flow stays intact and unchanged for users without LiDAR.
+Only the items above. No filter chips, no zoom controls, no manual marker tools, no other UI additions. Build will be verified to pass on simulator and device.

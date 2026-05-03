@@ -50,6 +50,9 @@ struct QuickInspectionView: View {
     @State private var analyzingPerPhotoSeconds: Double = 6.0  // initial estimate, updated from real timings
     @State private var motion = MotionElevationService()
     @State private var camera = CameraCaptureService()
+    // Latest USDZ baked from an AR snapshot (only on LiDAR devices). Surfaced
+    // in the results screen as the "Export 3D Report" button.
+    @State private var latestUSDZReportURL: URL?
 
     private var totalSquaresDocumented: Int {
         max(camera.squaresCovered, capturedPhotos.map(\.squaresCovered).max() ?? 0)
@@ -75,6 +78,7 @@ struct QuickInspectionView: View {
                             photoCount: capturedPhotos.count,
                             photos: capturedPhotos,
                             customer: customerStore.activeCustomer,
+                            usdzReportURL: latestUSDZReportURL,
                             onClose: { dismiss() },
                             onRescan: { resetToCapture() },
                             onCreateClaim: { generateClaimPacket() })
@@ -233,13 +237,21 @@ struct QuickInspectionView: View {
                         .allowsHitTesting(false)
                         .transition(.opacity)
                 } else {
-                    Text("Point camera at roof")
-                        .font(.system(size: 15, weight: .heavy))
-                        .foregroundStyle(.white.opacity(0.58))
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
-                        .background(.black.opacity(0.28), in: .capsule)
-                        .allowsHitTesting(false)
+                    VStack(spacing: 6) {
+                        Text("Point camera at roof")
+                            .font(.system(size: 15, weight: .heavy))
+                            .foregroundStyle(.white.opacity(0.58))
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .background(.black.opacity(0.28), in: .capsule)
+                        if !LiDARRoofService.hasLiDAR {
+                            Text("LiDAR not available — using camera mode")
+                                .font(.system(size: 10, weight: .semibold))
+                                .tracking(0.5)
+                                .foregroundStyle(.white.opacity(0.45))
+                        }
+                    }
+                    .allowsHitTesting(false)
                 }
             }
 
@@ -1157,6 +1169,9 @@ struct QuickInspectionView: View {
         photo.findings = arFindings
         photo.damageMarkers = damageMarkers
         photo.analyzed = true
+        if let usdz = snapshot.usdzReportURL {
+            latestUSDZReportURL = usdz
+        }
 
         withAnimation(.spring(response: 0.4, dampingFraction: 0.78)) {
             capturedPhotos.append(photo)
@@ -1890,12 +1905,14 @@ private struct ResultsView: View {
     let photoCount: Int
     let photos: [CapturedPhoto]
     let customer: Customer?
+    let usdzReportURL: URL?
     var onClose: () -> Void
     var onRescan: () -> Void
     var onCreateClaim: () -> Void
     @Environment(CustomerStore.self) private var customerStore
     @State private var showShareSheet: Bool = false
     @State private var pdfURL: URL?
+    @State private var showUSDZViewer: Bool = false
     @State private var isGeneratingPDF: Bool = false
     @State private var showHomeownerShare: Bool = false
     @State private var showCustomerPicker: Bool = false
@@ -1972,6 +1989,12 @@ private struct ResultsView: View {
             if let url = pdfURL {
                 ShareSheet(items: [url])
                     .presentationDetents([.medium, .large])
+            }
+        }
+        .fullScreenCover(isPresented: $showUSDZViewer) {
+            if let url = usdzReportURL {
+                USDZQuickLookView(url: url, onDismiss: { showUSDZViewer = false })
+                    .ignoresSafeArea()
             }
         }
         .sheet(isPresented: $showHomeownerShare) {
@@ -2808,6 +2831,29 @@ private struct ResultsView: View {
             }
             .buttonStyle(.plain)
             .disabled(isGeneratingPDF)
+
+            if usdzReportURL != nil {
+                Button {
+                    let g = UIImpactFeedbackGenerator(style: .medium); g.impactOccurred()
+                    showUSDZViewer = true
+                } label: {
+                    HStack {
+                        Image(systemName: "arkit")
+                        Text("Export 3D Report")
+                    }
+                    .font(.system(size: 14, weight: .heavy))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(
+                        LinearGradient(colors: [Theme.amber, Theme.ember],
+                                       startPoint: .topLeading, endPoint: .bottomTrailing),
+                        in: .rect(cornerRadius: 14)
+                    )
+                    .shadow(color: Theme.amber.opacity(0.35), radius: 10, y: 4)
+                }
+                .buttonStyle(.plain)
+            }
 
             HStack(spacing: 10) {
                 Button { onRescan() } label: {

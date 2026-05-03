@@ -39,6 +39,16 @@ struct ARInspectionSnapshot {
     let hitsInSquare: Int
     let squarePlaced: Bool
     let slope: SlopeType
+    /// Real roof surface area derived from the LiDAR mesh, when available.
+    /// `nil` on non-LiDAR devices — callers should fall back to their
+    /// previous square-footage estimate in that case.
+    var lidarRoofAreaSquareFeet: Double? = nil
+    /// Pitch read from the LiDAR mesh's surface normal. Replaces the
+    /// gyroscope estimate when available.
+    var lidarPitchDegrees: Double? = nil
+    /// USDZ file baked at save-time so the results screen can hand it to
+    /// QuickLook without restarting the AR session.
+    var usdzReportURL: URL? = nil
 }
 
 /// Tool the user has currently selected in the AR HUD.

@@ -21,7 +21,7 @@ struct ARInspectionView: View {
             #if targetEnvironment(simulator)
             ARDeviceRequiredPlaceholder(reason: .simulator, onClose: onClose)
             #else
-            if ARWorldTrackingConfiguration.supportsSceneReconstruction(.mesh) {
+            if LiDARRoofService.hasLiDAR {
                 ARInspectionStage(slope: slope, onSave: onSave, onClose: onClose)
             } else {
                 ARDeviceRequiredPlaceholder(reason: .noLidar, onClose: onClose)
@@ -664,6 +664,12 @@ final class ARInspectionCoordinator: NSObject {
     var activeTool: ARTool = .marker
     var activeDamageType: DamageMarkerType = .hailStrike
 
+    // LiDAR-derived metrics, recomputed as the mesh updates.
+    var lidarRoofAreaSquareFeet: Double = 0
+    var lidarPitchDegrees: Double? = nil
+    private(set) var meshAnchors: [UUID: ARMeshAnchor] = [:]
+    private(set) var roofPlaneAnchors: [UUID: ARPlaneAnchor] = [:]
+
     // MARK: ARView setup
 
     func makeARView() -> ARView {
@@ -673,7 +679,9 @@ final class ARInspectionCoordinator: NSObject {
         let config = ARWorldTrackingConfiguration()
         config.planeDetection = [.horizontal, .vertical]
         config.environmentTexturing = .automatic
-        if ARWorldTrackingConfiguration.supportsSceneReconstruction(.mesh) {
+        if ARWorldTrackingConfiguration.supportsSceneReconstruction(.meshWithClassification) {
+            config.sceneReconstruction = .meshWithClassification
+        } else if ARWorldTrackingConfiguration.supportsSceneReconstruction(.mesh) {
             config.sceneReconstruction = .mesh
         }
         if ARWorldTrackingConfiguration.supportsFrameSemantics(.smoothedSceneDepth) {
@@ -1068,6 +1076,14 @@ final class ARInspectionCoordinator: NSObject {
     func makeSnapshot(slope: SlopeType) async -> ARInspectionSnapshot {
         let image = await captureSnapshotImage() ?? UIImage()
         let smoothedAngleRad = pitchDegrees * .pi / 180
+        // Try to bake a USDZ alongside the snapshot so the results screen can
+        // hand it directly to QuickLook without re-running the AR session.
+        let usdz: URL? = {
+            guard !meshAnchors.isEmpty else { return nil }
+            return try? LiDARRoofService.exportUSDZ(
+                meshAnchors: Array(meshAnchors.values),
+                markers: markers)
+        }()
         return ARInspectionSnapshot(
             snapshotImage: image,
             markers: markers,
@@ -1076,7 +1092,10 @@ final class ARInspectionCoordinator: NSObject {
             pitchRatio: RoofPitch.ratio(forAngle: smoothedAngleRad),
             hitsInSquare: markersInSquare,
             squarePlaced: squarePlaced,
-            slope: slope
+            slope: slope,
+            lidarRoofAreaSquareFeet: lidarRoofAreaSquareFeet > 0 ? lidarRoofAreaSquareFeet : nil,
+            lidarPitchDegrees: lidarPitchDegrees,
+            usdzReportURL: usdz
         )
     }
 
@@ -1135,6 +1154,49 @@ final class ARInspectionCoordinator: NSObject {
     fileprivate func planeAnchorObserved() {
         if !planeDetected { planeDetected = true }
     }
+
+    // Called from the session delegate (main actor). Keeps our LiDAR anchor
+    // dictionaries in sync so we can compute area/pitch and export USDZ.
+    fileprivate func updateAnchors(added: [ARAnchor],
+                                   updated: [ARAnchor],
+                                   removed: [ARAnchor]) {
+        for anchor in added + updated {
+            if let m = anchor as? ARMeshAnchor {
+                meshAnchors[m.identifier] = m
+            } else if let p = anchor as? ARPlaneAnchor,
+                      p.classification.isValidRoofSurface {
+                roofPlaneAnchors[p.identifier] = p
+                if !planeDetected { planeDetected = true }
+            }
+        }
+        for anchor in removed {
+            meshAnchors.removeValue(forKey: anchor.identifier)
+            roofPlaneAnchors.removeValue(forKey: anchor.identifier)
+        }
+        recomputeLiDARMetrics()
+    }
+
+    private func recomputeLiDARMetrics() {
+        let anchors = Array(meshAnchors.values)
+        guard !anchors.isEmpty else { return }
+        let area = LiDARRoofService.roofSurfaceAreaSquareFeet(meshAnchors: anchors)
+        if area > 0 { lidarRoofAreaSquareFeet = area }
+        if let pitch = LiDARRoofService.roofPitchDegrees(meshAnchors: anchors) {
+            lidarPitchDegrees = pitch
+            // Replace the gyroscope-style smoothed pitch with the LiDAR value.
+            pitchDegrees = pitch
+            pitchRatioString = RoofPitch.ratio(forAngle: pitch * .pi / 180)
+        }
+    }
+
+    /// Exports the current LiDAR roof mesh + damage anchors as a USDZ file
+    /// at a temp URL the caller can hand to QuickLook.
+    func exportUSDZReport() throws -> URL {
+        try LiDARRoofService.exportUSDZ(
+            meshAnchors: Array(meshAnchors.values),
+            markers: markers
+        )
+    }
 }
 
 // MARK: - ARSession delegate proxy
@@ -1147,10 +1209,20 @@ private final class SessionDelegateProxy: NSObject, ARSessionDelegate {
     init(target: ARInspectionCoordinator) { self.target = target }
 
     nonisolated func session(_ session: ARSession, didAdd anchors: [ARAnchor]) {
-        let hasPlane = anchors.contains { $0 is ARPlaneAnchor || $0 is ARMeshAnchor }
-        guard hasPlane else { return }
         Task { @MainActor [weak self] in
-            self?.target?.planeAnchorObserved()
+            self?.target?.updateAnchors(added: anchors, updated: [], removed: [])
+        }
+    }
+
+    nonisolated func session(_ session: ARSession, didUpdate anchors: [ARAnchor]) {
+        Task { @MainActor [weak self] in
+            self?.target?.updateAnchors(added: [], updated: anchors, removed: [])
+        }
+    }
+
+    nonisolated func session(_ session: ARSession, didRemove anchors: [ARAnchor]) {
+        Task { @MainActor [weak self] in
+            self?.target?.updateAnchors(added: [], updated: [], removed: anchors)
         }
     }
 }
