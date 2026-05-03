@@ -7,6 +7,7 @@
 - **Damage pinned in 3D space**: Every damage spot the AI finds gets a colored sphere placed at its real-world location on the roof — red for hail, orange for wind, yellow for cracks, purple for missing shingles. The spheres glow with a gentle pulse and stay locked in place as you walk around or move the phone.
 - **3D AR Report export**: A new "Export 3D Report" button on the results screen saves the scanned roof and all damage spheres as a 3D file, then opens it in Apple's built-in AR viewer so it can be shared, viewed, or shown to a customer/adjuster in full augmented reality.
 - **Graceful fallback for older devices**: On iPhones without LiDAR, the existing camera + AI flow keeps working exactly as it does today. A small subtitle says "LiDAR not available — using camera mode" so the user knows what to expect.
+- **Inspector tap-to-mark damage**: The inspector can tap anywhere on the live camera preview to drop a manual damage marker (Hail, Wind, Crack, or Missing) with severity (Low/Medium/High) and an optional note. Manual markers render as colored dots with a 2pt white ring and a small pencil glyph so they read as inspector-placed (not AI). Long-press a manual marker to delete. Manual markers persist for the inspection session and surface in the results screen under an "Inspector-Marked" section, counted separately from AI auto-detections.
 
 ## How it looks
 
@@ -23,4 +24,4 @@
 
 ## Scope
 
-Only the items above. No filter chips, no zoom controls, no manual marker tools, no other UI additions. Build will be verified to pass on simulator and device.
+Only the items above. No filter chips, no zoom controls, no other UI additions beyond the inspector tap-to-mark flow. Build will be verified to pass on simulator and device.

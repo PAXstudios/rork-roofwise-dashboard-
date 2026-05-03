@@ -53,6 +53,11 @@ struct QuickInspectionView: View {
     // Latest USDZ baked from an AR snapshot (only on LiDAR devices). Surfaced
     // in the results screen as the "Export 3D Report" button.
     @State private var latestUSDZReportURL: URL?
+    // Inspector-placed manual damage markers (cleared when session ends).
+    @State private var manualMarkers: [ManualDamageMarker] = []
+    @State private var pendingMarkLocation: CGPoint? = nil
+    @State private var showMarkSheet: Bool = false
+    @State private var markerPendingDelete: ManualDamageMarker? = nil
 
     private var totalSquaresDocumented: Int {
         max(camera.squaresCovered, capturedPhotos.map(\.squaresCovered).max() ?? 0)
@@ -79,6 +84,7 @@ struct QuickInspectionView: View {
                             photos: capturedPhotos,
                             customer: customerStore.activeCustomer,
                             usdzReportURL: latestUSDZReportURL,
+                            manualMarkers: manualMarkers,
                             onClose: { dismiss() },
                             onRescan: { resetToCapture() },
                             onCreateClaim: { generateClaimPacket() })
@@ -123,6 +129,49 @@ struct QuickInspectionView: View {
                 onSave: { snapshot in importARSnapshot(snapshot) },
                 onClose: { showARMode = false }
             )
+        }
+        .sheet(isPresented: $showMarkSheet) {
+            if let loc = pendingMarkLocation {
+                MarkDamageSheet(
+                    tapNormalized: loc,
+                    onCancel: {
+                        pendingMarkLocation = nil
+                        showMarkSheet = false
+                    },
+                    onConfirm: { type, severity, note in
+                        let marker = ManualDamageMarker(
+                            x: Float(loc.x),
+                            y: Float(loc.y),
+                            type: type,
+                            severity: severity,
+                            note: note
+                        )
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.78)) {
+                            manualMarkers.append(marker)
+                        }
+                        pendingMarkLocation = nil
+                        showMarkSheet = false
+                    }
+                )
+                .presentationDetents([.fraction(0.55), .medium])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(Color(red: 0.08, green: 0.09, blue: 0.13))
+            }
+        }
+        .alert("Remove this marker?",
+               isPresented: Binding(get: { markerPendingDelete != nil },
+                                    set: { if !$0 { markerPendingDelete = nil } })) {
+            Button("Remove", role: .destructive) {
+                if let m = markerPendingDelete {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                        manualMarkers.removeAll { $0.id == m.id }
+                    }
+                }
+                markerPendingDelete = nil
+            }
+            Button("Cancel", role: .cancel) { markerPendingDelete = nil }
+        } message: {
+            Text("Inspector-marked damage will be deleted from this inspection.")
         }
         .fullScreenCover(item: $previewPhoto) { photo in
             PhotoDamageOverlayView(
@@ -254,6 +303,31 @@ struct QuickInspectionView: View {
                     .allowsHitTesting(false)
                 }
             }
+
+            // Tap-to-mark damage. A clear, tappable layer beneath the
+            // top/bottom UI. Buttons in the chrome render on top of this and
+            // intercept their own taps; manual marker pins are rendered above
+            // and capture long-press for deletion.
+            GeometryReader { geo in
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture { location in
+                        guard geo.size.width > 1, geo.size.height > 1 else { return }
+                        let nx = max(0, min(1, location.x / geo.size.width))
+                        let ny = max(0, min(1, location.y / geo.size.height))
+                        let g = UIImpactFeedbackGenerator(style: .light); g.impactOccurred()
+                        pendingMarkLocation = CGPoint(x: nx, y: ny)
+                        showMarkSheet = true
+                    }
+            }
+
+            // Inspector-placed (manual) damage markers — rendered above the
+            // tap layer so taps on the dot itself trigger long-press delete.
+            ManualMarkerOverlay(markers: manualMarkers,
+                                onLongPress: { marker in
+                                    let g = UIImpactFeedbackGenerator(style: .heavy); g.impactOccurred()
+                                    markerPendingDelete = marker
+                                })
 
             // Targeting reticle
             ReticleOverlay(active: true)
@@ -1186,6 +1260,7 @@ struct QuickInspectionView: View {
     private func resetToCapture() {
         detectedHits = []
         scanProgress = 0
+        manualMarkers = []
         withAnimation(.easeInOut) { step = .capture }
     }
 
@@ -1803,6 +1878,47 @@ private struct LiveDamageMarkerLayer: View {
     }
 }
 
+// MARK: - Manual Marker Overlay (Inspector-Placed)
+
+/// Renders inspector-placed `ManualDamageMarker`s on top of the live camera
+/// preview. Each marker shows the existing damage type color (matching the
+/// Gemini live dots), but with a 2pt WHITE ring + a small pencil glyph so the
+/// inspector can distinguish their own taps from the AI's auto-detections.
+/// No pulsing animation — only Gemini live markers pulse.
+private struct ManualMarkerOverlay: View {
+    let markers: [ManualDamageMarker]
+    var onLongPress: (ManualDamageMarker) -> Void
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack {
+                ForEach(markers) { marker in
+                    let size: CGFloat = 22
+                    ZStack {
+                        Circle()
+                            .fill(marker.type.color.opacity(0.78))
+                            .frame(width: size, height: size)
+                        Circle()
+                            .stroke(.white, lineWidth: 2)
+                            .frame(width: size, height: size)
+                        Image(systemName: "pencil")
+                            .font(.system(size: 9, weight: .heavy))
+                            .foregroundStyle(.white)
+                            .shadow(color: .black.opacity(0.5), radius: 1)
+                    }
+                    .shadow(color: marker.type.color.opacity(0.5), radius: 4)
+                    .contentShape(Circle())
+                    .position(x: CGFloat(marker.x) * geo.size.width,
+                              y: CGFloat(marker.y) * geo.size.height)
+                    .onLongPressGesture(minimumDuration: 0.5) {
+                        onLongPress(marker)
+                    }
+                }
+            }
+        }
+    }
+}
+
 private struct SquareCoverageProgress: View {
     let progress: Double
     var body: some View {
@@ -1906,6 +2022,7 @@ private struct ResultsView: View {
     let photos: [CapturedPhoto]
     let customer: Customer?
     let usdzReportURL: URL?
+    let manualMarkers: [ManualDamageMarker]
     var onClose: () -> Void
     var onRescan: () -> Void
     var onCreateClaim: () -> Void
@@ -1973,6 +2090,7 @@ private struct ResultsView: View {
                 damageScoreCard
                 claimWorthinessBanner
                 hitMapCard
+                inspectorMarkedCard
                 photosBySlopeCard
                 findingsCard
                 structuralCard
@@ -2577,6 +2695,91 @@ private struct ResultsView: View {
             .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.hairline, lineWidth: 0.6))
         }
         .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private var inspectorMarkedCard: some View {
+        if !manualMarkers.isEmpty {
+            let grouped: [(type: DamageMarkerType, items: [ManualDamageMarker])] = {
+                let dict = Dictionary(grouping: manualMarkers, by: \.type)
+                return DamageMarkerType.allCases.compactMap { t in
+                    guard let items = dict[t], !items.isEmpty else { return nil }
+                    return (t, items)
+                }
+            }()
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 8) {
+                    ZStack {
+                        Circle().fill(Theme.ember.opacity(0.18))
+                        Image(systemName: "pencil")
+                            .font(.system(size: 11, weight: .heavy))
+                            .foregroundStyle(Theme.ember)
+                    }
+                    .frame(width: 26, height: 26)
+                    Text("Inspector-Marked")
+                        .font(.system(size: 14, weight: .heavy))
+                        .foregroundStyle(Theme.ink)
+                    Spacer()
+                    Text("\(manualMarkers.count) marker\(manualMarkers.count == 1 ? "" : "s")")
+                        .font(.system(size: 11, weight: .heavy))
+                        .foregroundStyle(Theme.ember)
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(Theme.emberSoft, in: .capsule)
+                }
+                Text("Damage points placed by tapping the live camera. Counted separately from AI auto-detections.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.inkSoft)
+                    .lineSpacing(2)
+                VStack(spacing: 0) {
+                    ForEach(Array(grouped.enumerated()), id: \.offset) { idx, entry in
+                        HStack(spacing: 12) {
+                            ZStack {
+                                Circle().fill(entry.type.color.opacity(0.18))
+                                Image(systemName: entry.type.icon)
+                                    .font(.system(size: 12, weight: .heavy))
+                                    .foregroundStyle(entry.type.color)
+                                Image(systemName: "pencil.circle.fill")
+                                    .font(.system(size: 10, weight: .heavy))
+                                    .foregroundStyle(.white)
+                                    .background(Circle().fill(entry.type.color).frame(width: 12, height: 12))
+                                    .offset(x: 11, y: 11)
+                            }
+                            .frame(width: 32, height: 32)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("\(entry.items.count) \(entry.type.pluralDisplay)")
+                                    .font(.system(size: 13, weight: .heavy))
+                                    .foregroundStyle(Theme.ink)
+                                Text(severityCounts(entry.items))
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(Theme.inkSoft)
+                            }
+                            Spacer()
+                            Text("\(entry.items.count)")
+                                .font(.system(size: 13, weight: .heavy))
+                                .foregroundStyle(entry.type.color)
+                        }
+                        .padding(.vertical, 8)
+                        if idx < grouped.count - 1 {
+                            Rectangle().fill(Theme.hairline).frame(height: 0.6)
+                        }
+                    }
+                }
+            }
+            .padding(16)
+            .background(Theme.card, in: .rect(cornerRadius: 20))
+            .overlay(RoundedRectangle(cornerRadius: 20).stroke(Theme.ember.opacity(0.25), lineWidth: 0.8))
+        }
+    }
+
+    private func severityCounts(_ items: [ManualDamageMarker]) -> String {
+        let high = items.filter { $0.severity.lowercased() == "high" }.count
+        let med = items.filter { $0.severity.lowercased() == "medium" }.count
+        let low = items.filter { $0.severity.lowercased() == "low" }.count
+        var parts: [String] = []
+        if high > 0 { parts.append("\(high) high") }
+        if med > 0 { parts.append("\(med) medium") }
+        if low > 0 { parts.append("\(low) low") }
+        return parts.isEmpty ? "Inspector-placed" : parts.joined(separator: " · ")
     }
 
     private var hitMapCard: some View {
