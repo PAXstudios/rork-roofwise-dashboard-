@@ -505,6 +505,8 @@ private struct ARInspectionStage: View {
             return coordinator.squarePlaced
                 ? "10×10 square placed. Tap pins inside to count toward HAAG hit count."
                 : "Aim at a flat roof slope and tap to anchor a 10' × 10' test square."
+        case .measure:
+            return "Tap two damage pins to measure the real-world distance between them."
         }
     }
 
@@ -817,7 +819,9 @@ final class ARInspectionCoordinator: NSObject {
     }
 
     deinit {
-        pitchSampleTimer?.invalidate()
+        // Capture on main actor reference; Timer.invalidate is thread-safe enough for cleanup.
+        let timer = pitchSampleTimer
+        Task { @MainActor in timer?.invalidate() }
     }
 
     // MARK: Heatmap
