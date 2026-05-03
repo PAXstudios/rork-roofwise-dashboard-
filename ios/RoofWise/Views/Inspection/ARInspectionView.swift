@@ -507,6 +507,8 @@ private struct ARInspectionStage: View {
                 : "Aim at a flat roof slope and tap to anchor a 10' × 10' test square."
         case .measure:
             return "Tap two damage pins to measure the real-world distance between them."
+        @unknown default:
+            return ""
         }
     }
 
@@ -727,7 +729,7 @@ final class ARInspectionCoordinator: NSObject {
     private var squareTransform: simd_float4x4?
     private var lastChalkPoint: SIMD3<Float>?
     private var currentChalkAnchor: AnchorEntity?
-    private var pitchSampleTimer: Timer?
+    nonisolated(unsafe) private var pitchSampleTimer: Timer?
     private var sessionDelegateProxy: SessionDelegateProxy?
 
     // Tool state (set by container.updateUIView)
@@ -819,9 +821,8 @@ final class ARInspectionCoordinator: NSObject {
     }
 
     deinit {
-        // Capture on main actor reference; Timer.invalidate is thread-safe enough for cleanup.
-        let timer = pitchSampleTimer
-        Task { @MainActor in timer?.invalidate() }
+        // Timer.invalidate is thread-safe; property is nonisolated(unsafe) so deinit can read it.
+        pitchSampleTimer?.invalidate()
     }
 
     // MARK: Heatmap
