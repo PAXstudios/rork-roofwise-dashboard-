@@ -13,6 +13,7 @@ import Combine
 /// `CapturedPhoto` / claim-packet pipeline.
 struct ARInspectionView: View {
     let slope: SlopeType
+    @Binding var manualMarkers: [ManualDamageMarker]
     var onSave: (ARInspectionSnapshot) -> Void
     var onClose: () -> Void
 
@@ -22,7 +23,10 @@ struct ARInspectionView: View {
             ARDeviceRequiredPlaceholder(reason: .simulator, onClose: onClose)
             #else
             if LiDARRoofService.hasLiDAR {
-                ARInspectionStage(slope: slope, onSave: onSave, onClose: onClose)
+                ARInspectionStage(slope: slope,
+                                  manualMarkers: $manualMarkers,
+                                  onSave: onSave,
+                                  onClose: onClose)
             } else {
                 ARDeviceRequiredPlaceholder(reason: .noLidar, onClose: onClose)
             }
@@ -101,8 +105,17 @@ private struct ARDeviceRequiredPlaceholder: View {
 
 #if !targetEnvironment(simulator)
 
+/// One pending request to show the MarkDamageSheet on top of the AR scene.
+/// Created when the inspector taps the live AR feed in `.marker` mode.
+private struct ARPendingMark: Identifiable {
+    let id = UUID()
+    let normalized: CGPoint
+    let worldTransform: simd_float4x4
+}
+
 private struct ARInspectionStage: View {
     let slope: SlopeType
+    @Binding var manualMarkers: [ManualDamageMarker]
     var onSave: (ARInspectionSnapshot) -> Void
     var onClose: () -> Void
 
@@ -114,6 +127,8 @@ private struct ARInspectionStage: View {
     @State private var scanError: String?
     @State private var showResultsDrawer: Bool = false
     @State private var lastGeminiAdded: Int = 0
+    @State private var pendingMark: ARPendingMark? = nil
+    @State private var markerPendingDelete: ManualDamageMarker? = nil
 
     var body: some View {
         ZStack {
@@ -154,6 +169,59 @@ private struct ARInspectionStage: View {
                                onDismiss: { showResultsDrawer = false })
                 .presentationDetents([.medium])
                 .presentationDragIndicator(.visible)
+        }
+        .sheet(item: $pendingMark) { mark in
+            MarkDamageSheet(
+                tapNormalized: mark.normalized,
+                onCancel: { pendingMark = nil },
+                onConfirm: { type, severity, note in
+                    let pos = SIMD3<Float>(mark.worldTransform.columns.3.x,
+                                           mark.worldTransform.columns.3.y,
+                                           mark.worldTransform.columns.3.z)
+                    let marker = ManualDamageMarker(
+                        x: Float(mark.normalized.x),
+                        y: Float(mark.normalized.y),
+                        type: type,
+                        severity: severity,
+                        note: note,
+                        worldPosition: pos
+                    )
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.78)) {
+                        manualMarkers.append(marker)
+                    }
+                    coordinator.spawnManualMarkerEntity(marker)
+                    pendingMark = nil
+                }
+            )
+            .presentationDetents([.fraction(0.55), .medium])
+            .presentationDragIndicator(.visible)
+            .presentationBackground(Color(red: 0.08, green: 0.09, blue: 0.13))
+        }
+        .alert("Remove this marker?",
+               isPresented: Binding(get: { markerPendingDelete != nil },
+                                    set: { if !$0 { markerPendingDelete = nil } })) {
+            Button("Remove", role: .destructive) {
+                if let m = markerPendingDelete {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                        manualMarkers.removeAll { $0.id == m.id }
+                    }
+                    coordinator.removeManualMarkerEntity(id: m.id)
+                }
+                markerPendingDelete = nil
+            }
+            Button("Cancel", role: .cancel) { markerPendingDelete = nil }
+        } message: {
+            Text("Inspector-marked damage will be deleted from this inspection.")
+        }
+        .onAppear {
+            coordinator.onManualTapResolved = { norm, transform in
+                pendingMark = ARPendingMark(normalized: norm, worldTransform: transform)
+            }
+            coordinator.onLongPressManualMarker = { id in
+                if let m = manualMarkers.first(where: { $0.id == id }) {
+                    markerPendingDelete = m
+                }
+            }
         }
         .overlay {
             if isScanning {
@@ -675,9 +743,18 @@ final class ARInspectionCoordinator: NSObject {
 
     // Measure-tool state
     var measureFirstMarkerID: UUID?
+    private var measureFirstMarkerPosition: SIMD3<Float>?
     private var measureAnchor: AnchorEntity?
     private var measureHighlightAnchor: AnchorEntity?
     var lastMeasurementText: String?
+
+    // Manual (inspector-placed) damage markers anchored in 3D space.
+    private var manualMarkerEntities: [UUID: AnchorEntity] = [:]
+    private var manualMarkerPositions: [UUID: SIMD3<Float>] = [:]
+
+    // Callbacks set by the SwiftUI stage.
+    var onManualTapResolved: ((CGPoint, simd_float4x4) -> Void)?
+    var onLongPressManualMarker: ((UUID) -> Void)?
 
     // MARK: ARView setup
 
@@ -727,6 +804,9 @@ final class ARInspectionCoordinator: NSObject {
         let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
         pan.maximumNumberOfTouches = 1
         arView.addGestureRecognizer(pan)
+        let longPress = UILongPressGestureRecognizer(target: self, action: #selector(handleLongPress(_:)))
+        longPress.minimumPressDuration = 0.5
+        arView.addGestureRecognizer(longPress)
 
         // Pitch sampling — read center-screen surface tilt twice per second
         pitchSampleTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
@@ -793,7 +873,22 @@ final class ARInspectionCoordinator: NSObject {
 
         switch activeTool {
         case .marker:
-            placeMarker(at: point, type: activeDamageType, source: .userTap, note: "User-tagged \(activeDamageType.display)")
+            // Inspector tap-to-mark: raycast to get a 3D world position, then
+            // hand off to the SwiftUI MarkDamageSheet for type/severity/note.
+            guard let result = arView.raycast(from: point,
+                                              allowing: .estimatedPlane,
+                                              alignment: .any).first else {
+                let g = UINotificationFeedbackGenerator(); g.notificationOccurred(.warning)
+                return
+            }
+            let bounds = arView.bounds
+            guard bounds.width > 1, bounds.height > 1 else { return }
+            let norm = CGPoint(
+                x: max(0, min(1, point.x / bounds.width)),
+                y: max(0, min(1, point.y / bounds.height))
+            )
+            let g = UIImpactFeedbackGenerator(style: .light); g.impactOccurred()
+            onManualTapResolved?(norm, result.worldTransform)
         case .placeSquare:
             placeTestSquare(at: point)
         case .chalk:
@@ -803,6 +898,29 @@ final class ARInspectionCoordinator: NSObject {
             finalizeChalkStroke()
         case .measure:
             handleMeasureTap(at: point)
+        }
+    }
+
+    @objc private func handleLongPress(_ sender: UILongPressGestureRecognizer) {
+        guard sender.state == .began, let arView else { return }
+        // Long-press only deletes inspector-placed manual markers; ignore in
+        // chalk mode where the pan gesture owns the touch.
+        if activeTool == .chalk { return }
+        let point = sender.location(in: arView)
+        guard let result = arView.raycast(from: point,
+                                          allowing: .estimatedPlane,
+                                          alignment: .any).first else { return }
+        let p = SIMD3<Float>(result.worldTransform.columns.3.x,
+                             result.worldTransform.columns.3.y,
+                             result.worldTransform.columns.3.z)
+        var best: (UUID, Float)? = nil
+        for (id, pos) in manualMarkerPositions {
+            let d = simd_distance(pos, p)
+            if d < 0.4, best == nil || d < best!.1 { best = (id, d) }
+        }
+        if let pickedID = best?.0 {
+            let g = UIImpactFeedbackGenerator(style: .heavy); g.impactOccurred()
+            onLongPressManualMarker?(pickedID)
         }
     }
 
@@ -1302,7 +1420,8 @@ final class ARInspectionCoordinator: NSObject {
         guard let arView else { return }
         // Raycast to a world point near the tap, then find the nearest
         // existing damage marker within 0.5m (so taps anywhere on a pin
-        // count, not just dead-center).
+        // count, not just dead-center). Manual inspector markers are valid
+        // endpoints alongside Gemini auto-detected pins.
         guard let result = arView.raycast(from: viewPoint,
                                           allowing: .estimatedPlane,
                                           alignment: .any).first else {
@@ -1312,23 +1431,26 @@ final class ARInspectionCoordinator: NSObject {
         let p = SIMD3<Float>(result.worldTransform.columns.3.x,
                              result.worldTransform.columns.3.y,
                              result.worldTransform.columns.3.z)
-        var best: (UUID, Float)? = nil
-        for m in markers {
-            let d = simd_distance(m.position, p)
-            if d < 0.5, best == nil || d < best!.1 {
-                best = (m.id, d)
+        var candidates: [(id: UUID, pos: SIMD3<Float>)] = []
+        for m in markers { candidates.append((m.id, m.position)) }
+        for (id, pos) in manualMarkerPositions { candidates.append((id, pos)) }
+        var best: (UUID, SIMD3<Float>, Float)? = nil
+        for c in candidates {
+            let d = simd_distance(c.pos, p)
+            if d < 0.5, best == nil || d < best!.2 {
+                best = (c.id, c.pos, d)
             }
         }
-        guard let pickedID = best?.0,
-              let picked = markers.first(where: { $0.id == pickedID }) else {
+        guard let picked = best else {
             let g = UINotificationFeedbackGenerator(); g.notificationOccurred(.warning)
             return
         }
 
-        if let firstID = measureFirstMarkerID, firstID != pickedID,
-           let first = markers.first(where: { $0.id == firstID }) {
-            drawMeasurement(from: first.position, to: picked.position)
+        if let firstID = measureFirstMarkerID, firstID != picked.0,
+           let firstPos = measureFirstMarkerPosition {
+            drawMeasurement(from: firstPos, to: picked.1)
             measureFirstMarkerID = nil
+            measureFirstMarkerPosition = nil
             measureHighlightAnchor?.removeFromParent()
             measureHighlightAnchor = nil
             let g = UINotificationFeedbackGenerator(); g.notificationOccurred(.success)
@@ -1337,10 +1459,93 @@ final class ARInspectionCoordinator: NSObject {
             measureAnchor?.removeFromParent()
             measureAnchor = nil
             lastMeasurementText = nil
-            measureFirstMarkerID = pickedID
-            highlightFirstMeasurePick(at: picked.position)
+            measureFirstMarkerID = picked.0
+            measureFirstMarkerPosition = picked.1
+            highlightFirstMeasurePick(at: picked.1)
             let g = UISelectionFeedbackGenerator(); g.selectionChanged()
         }
+    }
+
+    // MARK: Manual (inspector-placed) markers
+
+    /// Anchors a `ManualDamageMarker` in 3D space using its `worldPosition`.
+    /// Renders a colored sphere with a soft white halo and a pencil glyph
+    /// floating above so it reads visually distinct from Gemini auto-detected
+    /// pins.
+    func spawnManualMarkerEntity(_ marker: ManualDamageMarker) {
+        guard let arView, let pos = marker.worldPosition else { return }
+        let anchor = AnchorEntity(world: pos)
+        let body = makeManualMarkerEntity(type: marker.type)
+        anchor.addChild(body)
+        arView.scene.addAnchor(anchor)
+        manualMarkerEntities[marker.id] = anchor
+        manualMarkerPositions[marker.id] = pos
+    }
+
+    func removeManualMarkerEntity(id: UUID) {
+        manualMarkerEntities[id]?.removeFromParent()
+        manualMarkerEntities.removeValue(forKey: id)
+        manualMarkerPositions.removeValue(forKey: id)
+        if measureFirstMarkerID == id {
+            measureFirstMarkerID = nil
+            measureFirstMarkerPosition = nil
+            measureHighlightAnchor?.removeFromParent()
+            measureHighlightAnchor = nil
+        }
+    }
+
+    private func makeManualMarkerEntity(type: DamageMarkerType) -> Entity {
+        let root = Entity()
+        let uiColor = UIColor(type.color)
+
+        // Soft white outer halo to mirror the 2D dot's white outline ring.
+        var haloMaterial = UnlitMaterial(color: UIColor.white.withAlphaComponent(0.55))
+        haloMaterial.blending = .transparent(opacity: .init(floatLiteral: 0.55))
+        let halo = ModelEntity(
+            mesh: .generateSphere(radius: 0.030),
+            materials: [haloMaterial]
+        )
+        root.addChild(halo)
+
+        // Colored core sphere (matches Gemini sphere size, distinct via halo).
+        let core = ModelEntity(
+            mesh: .generateSphere(radius: 0.025),
+            materials: [SimpleMaterial(color: uiColor, roughness: 0.3, isMetallic: false)]
+        )
+        root.addChild(core)
+
+        // Pencil glyph billboard floating above the sphere so the inspector
+        // can tell their own taps apart from AI auto-detections.
+        let pencilMesh = MeshResource.generateText(
+            "\u{270E}",
+            extrusionDepth: 0.001,
+            font: .systemFont(ofSize: 0.05, weight: .heavy),
+            containerFrame: .zero,
+            alignment: .center,
+            lineBreakMode: .byTruncatingTail
+        )
+        let pencil = ModelEntity(
+            mesh: pencilMesh,
+            materials: [UnlitMaterial(color: UIColor.white)]
+        )
+        let textBounds = pencil.visualBounds(relativeTo: nil)
+        pencil.position = SIMD3<Float>(0, 0.06, 0) - textBounds.center
+        root.addChild(pencil)
+
+        // Subtle pulse on the halo so it reads as "live" without competing
+        // with the brighter Gemini ring pulse.
+        let pulse = FromToByAnimation<Transform>(
+            name: "manual-pulse",
+            from: Transform(scale: SIMD3<Float>(repeating: 1.0)),
+            to: Transform(scale: SIMD3<Float>(repeating: 1.12)),
+            duration: 1.4,
+            timing: .easeInOut,
+            bindTarget: .transform
+        )
+        if let res = try? AnimationResource.generate(with: pulse) {
+            halo.playAnimation(res.repeat(duration: .infinity), transitionDuration: 0, startsPaused: false)
+        }
+        return root
     }
 
     private func highlightFirstMeasurePick(at position: SIMD3<Float>) {

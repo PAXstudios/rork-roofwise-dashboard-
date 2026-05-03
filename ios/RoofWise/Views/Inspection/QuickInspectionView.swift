@@ -126,6 +126,7 @@ struct QuickInspectionView: View {
         .fullScreenCover(isPresented: $showARMode) {
             ARInspectionView(
                 slope: currentSlope,
+                manualMarkers: $manualMarkers,
                 onSave: { snapshot in importARSnapshot(snapshot) },
                 onClose: { showARMode = false }
             )
