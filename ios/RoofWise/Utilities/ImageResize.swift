@@ -5,10 +5,10 @@ import UIKit
 /// Tries progressively smaller images until one fits under `maxBytes`.
 enum ImageResize {
     private static let ladder: [(maxPixel: CGFloat, quality: CGFloat)] = [
-        (1280, 0.82), (1024, 0.78), (832, 0.74), (640, 0.70), (512, 0.65)
+        (768, 0.7), (640, 0.65), (512, 0.6)
     ]
 
-    static func encodedJPEGBase64(from image: UIImage, maxBytes: Int = 3_000_000) -> String? {
+    static func encodedJPEGBase64(from image: UIImage, maxBytes: Int = 600_000) -> String? {
         for step in ladder {
             guard let resized = resize(image: image, maxEdge: step.maxPixel) else { continue }
             guard let data = resized.jpegData(compressionQuality: step.quality) else { continue }

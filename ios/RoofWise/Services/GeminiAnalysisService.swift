@@ -121,7 +121,7 @@ struct GeminiAnalysisService {
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue("Bearer \(secret)", forHTTPHeaderField: "Authorization")
-        req.timeoutInterval = 60
+        req.timeoutInterval = 30
         req.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
         do {
@@ -173,165 +173,43 @@ struct GeminiAnalysisService {
         }()
 
         let prompt = """
-        You are a certified forensic roof inspector applying HAAG Engineering standards.
-        \(intro)
+        You are a forensic roof inspector (HAAG standards). \(intro)
 
-        CRITICAL ACCURACY RULES — read carefully:
-          1. Look at the ACTUAL pixels in this image. Do NOT invent or hallucinate damage.
-          2. If a region is undamaged, do NOT place a marker there. Empty arrays ARE the
-             correct answer when the shingle/roof is undamaged.
-          3. Every marker you return MUST correspond to a visible pixel feature you can
-             describe in its `note` (color, shape, size, texture cue).
-          4. Do NOT distribute markers in a regular grid or random pattern. Markers must
-             land EXACTLY on the pixel feature you are calling out.
+        Identify the roof covering and any visible damage. Be conservative — only flag damage you can actually see in the pixels. Empty arrays are correct when nothing is visible.
 
-        WHAT HAIL DAMAGE LOOKS LIKE IN A PHOTO (purely visual cues — judge by pixels,
-        not physical inches; you don't know the camera distance or zoom level):
-          • On asphalt shingles: roughly CIRCULAR or oval spots that are visibly
-             DARKER than the surrounding granules, because granules have been
-             displaced and the black asphalt mat is exposed. The spot center often
-             looks slightly shinier/wetter than the matte surrounding granules. A
-             halo of lighter, scattered granules may ring the impact. A hairline
-             crack or pucker inside the spot indicates mat fracture. Spots are
-             usually scattered randomly — NOT in rows or grids.
-          • On wood shake: sharp clean splits with bright unweathered wood inside,
-             often radiating from a single point.
-          • On soft metal (vents, ridge cap, drip edge, gutters, downspouts, pipe
-             jacks, turbines, exhaust caps, satellite mounts): round concave DENTS
-             that break the straight/curved line of the metal — visible as shadows
-             on one side and highlights on the other under raking light. Paint or
-             coating may be fractured at the dent.
-          • Spatter marks: ring-shaped oxidation or clean dirt-line spots on
-             painted or weathered metal — no dent, just a tell-tale circular clean
-             spot where hail removed surface oxidation.
-
-        DO NOT confuse hail with these look-alikes (very common false positives):
-          • Foot traffic — elongated, smeared scuffs, often along a path; no halo.
-          • Mechanical / tool damage — linear scrapes, gouges, sharp straight edges.
-          • Age weathering — UNIFORM granule thinning across the whole shingle with
-             no discrete impact spots and no exposed-mat halo.
-          • Manufacturing pattern / shadow lines — repeating regular pattern
-             across tabs.
-          • Blisters — RAISED bumps with intact granules on top; hail spots are
-             FLUSH or slightly recessed with granules MISSING.
-          • Shadows, water stains, lichen specks, leaf debris, camera lens dust,
-             JPEG compression artifacts, or normal shingle color variation — these
-             are NOT hail.
-          • A single isolated dark fleck with no halo and no displaced granules
-             around it is almost certainly NOT hail. Require BOTH a darker
-             exposed-mat center AND visible granule disturbance around it before
-             calling a strike.
-
-        Analyze this image for ALL of the following:
-          • Hail damage — count INDIVIDUAL strikes separately on (a) shingles/roof field and
-            (b) metal components. Hail on soft metal is one of the strongest HAAG indicators
-            of a hail event.
-          • Bruising — soft spots / mat fractures under the granules.
-          • Spatter marks — oxidation/dirt-line spatter on metal.
-          • Granule loss — distinct granule-loss AREAS (each erosion patch is one marker).
-          • Wind damage — creasing at the nail line, lifted/folded tabs, missing tabs.
-          • Cracking / splitting, blistering, flashing damage, algae/moss, structural sagging.
-
-        First, identify the roof covering / shingle type. Choose the closest match from:
-        "3-tab asphalt", "architectural asphalt" (a.k.a. dimensional/laminated), "luxury asphalt",
-        "wood shake", "wood shingle", "metal standing seam", "metal shingle", "clay tile",
-        "concrete tile", "slate", "synthetic slate", "composite", "rolled roofing", "TPO", "EPDM", "unknown".
-
-        Return STRICT JSON only, no markdown, with this schema:
+        Return STRICT JSON only (no markdown), with this schema:
         {
-          "shingle_type": {
-            "type": "<one of the values above>",
-            "confidence": 0-100,
-            "note": "<short visual evidence: tab shape, exposure, profile, material cues>"
-          },
-          "shingle_type_confidence": <0-100, mirrors shingle_type.confidence for convenience>,
-          "shingleScaleEstimate": {
-            "pixelsPerInch": <number, estimated pixels-per-inch in this photo based on the visible shingle features (tab width ~12in for 3-tab, exposure ~5-5.625in for architectural, granule size ~1mm). 0 if you cannot estimate.>,
-            "confidence": 0-100,
-            "basis": "<short note describing which feature you measured (e.g. 'tab width spans ~480px and 3-tab tabs are ~12in wide, so ~40 px/in')>"
-          },
-          "hail_summary": {
-            "strikes_on_shingles": <int>,
-            "strikes_on_metal": <int>,
-            "affected_metal_components": ["vent"|"flashing"|"drip_edge"|"gutter"|"downspout"|"pipe_boot"|"ridge_cap"|"valley_metal"|"skylight"|"other"],
-            "directionality": "<e.g. 'predominantly south-facing' or 'random'>",
-            "spatter_observed": true|false
-          },
+          "analyzed": true|false,
+          "shingle_type": { "type": "3-tab asphalt|architectural asphalt|luxury asphalt|wood shake|wood shingle|metal standing seam|metal shingle|clay tile|concrete tile|slate|synthetic slate|composite|rolled roofing|TPO|EPDM|unknown", "confidence": 0-100, "note": "<short evidence>" },
           "findings": [
-            {
-              "label": "hail_damage|granule_loss|missing_shingles|wind_creasing|blistering|cracking_splitting|flashing_damage|algae_moss|bruising|structural_sagging",
-              "detected": true|false,
-              "severity": "none|minor|moderate|severe",
-              "confidence": 0-100,
-              "affected_components": ["shingle"|"flashing"|"drip_edge"|"gutter"|"downspout"|"vent"|"pipe_boot"|"ridge_cap"|"valley_metal"|"skylight"],
-              "count": <int, 0 if not applicable>,
-              "note": "<short evidence sentence citing HAAG indicators>"
-            }
+            { "label": "hail_damage|granule_loss|missing_shingles|wind_creasing|blistering|cracking_splitting|flashing_damage|algae_moss|bruising|structural_sagging", "detected": true|false, "severity": "none|minor|moderate|severe", "confidence": 0-100, "count": <int>, "note": "<short evidence>" }
           ],
           "damage_markers": [
-            {
-              "type": "hail_strike|crack|granule_loss|missing_shingle|wind_crease|blister|flashing|algae|other",
-              "surface": "shingle|metal|other",
-              "x": 0.0-1.0,
-              "y": 0.0-1.0,
-              "width": 0.0-1.0,
-              "height": 0.0-1.0,
-              "radius": 0.0-1.0,
-              "severity": "minor|moderate|severe",
-              "note": "<short evidence describing the actual pixel feature you see>"
-            }
+            { "type": "hail_strike|crack|granule_loss|missing_shingle|wind_crease|blister|flashing|algae|other", "x": 0.0-1.0, "y": 0.0-1.0, "radius": 0.0-1.0, "severity": "minor|moderate|severe", "confidence": 0-100, "note": "<short pixel evidence>" }
           ]
         }
-        Include ALL 10 damage categories in `findings`. Be conservative — only mark `detected: true`
-        when clearly visible. Set `severity: "severe"` only when the evidence is unambiguous.
 
-        Coordinate system (CRITICAL):
-          • The image origin is the TOP-LEFT corner. x increases rightward, y increases downward.
-          • All coordinates are FRACTIONS of the image dimensions, in [0.0, 1.0].
-          • (x, y) is the CENTER of the bounding box around the damage feature.
-          • width and height are the bounding box size as fractions of image width/height.
-          • radius is a convenience field: half the longer side of the bbox, as a fraction of
-             the SHORTER image dimension. If unsure, set radius = max(width, height) / 2.
-          • Place markers ON the pixel feature. A hail strike on the lower-right shingle should
-             have x ~0.7, y ~0.7 — NOT centered or in a corner.
+        Coordinates: top-left origin, normalized [0,1]. (x,y) is the CENTER of the feature; radius is roughly half the feature size relative to the shorter image edge.
 
-        Mark EVERY visible hail strike INDIVIDUALLY — do not group them. Size each
-        bbox to the ACTUAL pixel extent of the spot in THIS specific image. Camera
-        distance and zoom are unknown, so do NOT assume any physical inch size —
-        measure the feature in the pixels you actually see.
-
-        FINAL CHECK before returning each marker, ask yourself:
-          1. Can I describe in `note` the exact visual cue at this (x, y) — color
-             contrast, halo, mat exposure, dent shadow? If not, drop the marker.
-          2. For shingle hail: is there a darker exposed-mat center AND visible
-             granule disturbance around it? If only one is present, drop the marker.
-          3. Am I placing this marker because I actually see the feature, or
-             because I expect hail to be present? If the latter, drop it.
-
-        If the image shows NO damage, return "damage_markers": [] (empty). A
-        confident empty result is far better than fabricated markers. Do NOT
-        invent damage to be helpful.
-
-        CRITICAL: If the image does NOT clearly show a roof surface, asphalt shingles, tile, metal panels, or any roofing material — for example if it shows grass, sky, ground, indoors, a person, a vehicle, or any non-roof scene — you MUST set analyzed=false, return an empty damage_markers array, and add a finding with label="no_roof_detected" and note="No roof or shingles visible in this photo". Do not fabricate damage findings on non-roof images.
-
-        Add an `"analyzed": true|false` boolean at the top level of the JSON. Set it
-        to false ONLY when the image is a non-roof scene as described above; otherwise true.
+        Include all 10 damage categories in `findings` (set detected=false for ones not present). Mark each visible hail strike individually. If the image is NOT a roof (grass, sky, indoors, person, vehicle), set analyzed=false, return empty `damage_markers`, and add a finding with label="no_roof_detected".
         """
 
         let body = Self.chatCompletionBody(systemPrompt: prompt,
                                             userText: "Analyse this roof photo.",
                                             base64JPEG: base64,
-                                            temperature: 0.2)
+                                            temperature: 0.1)
 
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue("Bearer \(secret)", forHTTPHeaderField: "Authorization")
-        req.timeoutInterval = 60
+        req.timeoutInterval = 45
         req.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
+        let started = Date()
         do {
             let (data, response) = try await URLSession.shared.data(for: req)
+            print("[Gemini] \u{23F1}\u{FE0F} round-trip \(String(format: "%.2f", Date().timeIntervalSince(started)))s, \(data.count) bytes")
             if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
                 let bodyStr = String(data: data, encoding: .utf8)?.prefix(800) ?? ""
                 print("[Gemini] \u{274C} HTTP \(http.statusCode): \(bodyStr)")
