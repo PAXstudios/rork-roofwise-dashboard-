@@ -5,12 +5,17 @@ import SwiftUI
 /// Gemini 2.5 Flash Vision integration via the Rork toolkit proxy.
 /// Requests are sent to the OpenAI-compatible chat completions endpoint and
 /// authenticated with `EXPO_PUBLIC_RORK_TOOLKIT_SECRET_KEY`.
-enum GeminiAnalysisService {
-    private static var toolkitURL: String { Config.EXPO_PUBLIC_TOOLKIT_URL }
-    private static var secret: String { Config.EXPO_PUBLIC_RORK_TOOLKIT_SECRET_KEY }
+struct GeminiAnalysisService {
+    private let toolkitURL: String
+    private let secret: String
     private static let model = "google/gemini-2.5-flash"
 
-    private static var chatCompletionsURL: URL? {
+    init() {
+        self.toolkitURL = Config.EXPO_PUBLIC_TOOLKIT_URL
+        self.secret = Config.EXPO_PUBLIC_RORK_TOOLKIT_SECRET_KEY
+    }
+
+    private var chatCompletionsURL: URL? {
         URL(string: "\(toolkitURL)/v2/vercel/v1/chat/completions")
     }
 
@@ -43,12 +48,24 @@ enum GeminiAnalysisService {
                         slope: SlopeType,
                         mode: CaptureMode = .square,
                         squaresCovered: Int = 0) async -> [InspectionFinding] {
-        await analyzeFull(image: image, slope: slope, mode: mode, squaresCovered: squaresCovered).findings
+        await GeminiAnalysisService().analyzeFull(image: image, slope: slope, mode: mode, squaresCovered: squaresCovered).findings
+    }
+
+    /// Static convenience wrappers so existing callers keep compiling.
+    static func analyzeFull(image: UIImage,
+                            slope: SlopeType,
+                            mode: CaptureMode = .square,
+                            squaresCovered: Int = 0) async -> AnalysisResult {
+        await GeminiAnalysisService().analyzeFull(image: image, slope: slope, mode: mode, squaresCovered: squaresCovered)
+    }
+
+    static func analyzeLiveDamage(image: UIImage) async -> AnalysisResult {
+        await GeminiAnalysisService().analyzeLiveDamage(image: image)
     }
 
     /// Lightweight live camera damage check. Reuses the same parsing pipeline, but
     /// prompts Gemini to return only roof-gated damage markers for the current frame.
-    static func analyzeLiveDamage(image: UIImage) async -> AnalysisResult {
+    func analyzeLiveDamage(image: UIImage) async -> AnalysisResult {
         guard !secret.isEmpty, let url = chatCompletionsURL else {
             return AnalysisResult(findings: [], markers: [], failed: true)
         }
@@ -95,10 +112,10 @@ enum GeminiAnalysisService {
         Mark only visible damage locations. Do NOT generate random or evenly spaced markers. If no damage is clearly visible, return "damage_markers": []. Coordinates are normalized from top-left.
         """
 
-        let body = chatCompletionBody(systemPrompt: prompt,
-                                      userText: "Analyse this roof photo.",
-                                      base64JPEG: base64,
-                                      temperature: 0.05)
+        let body = Self.chatCompletionBody(systemPrompt: prompt,
+                                            userText: "Analyse this roof photo.",
+                                            base64JPEG: base64,
+                                            temperature: 0.05)
 
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
@@ -112,7 +129,7 @@ enum GeminiAnalysisService {
             if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
                 return AnalysisResult(findings: [], markers: [], failed: true)
             }
-            return parseResponse(data) ?? AnalysisResult(findings: [], markers: [], failed: true)
+            return Self.parseResponse(data) ?? AnalysisResult(findings: [], markers: [], failed: true)
         } catch {
             return AnalysisResult(findings: [], markers: [], failed: true)
         }
@@ -121,19 +138,19 @@ enum GeminiAnalysisService {
     /// Analyze a captured roof photo and return findings + per-pixel damage markers.
     /// On API failure returns `failed: true` with EMPTY markers (no fake mock data
     /// gets painted onto real photos).
-    static func analyzeFull(image: UIImage,
-                            slope: SlopeType,
-                            mode: CaptureMode = .square,
-                            squaresCovered: Int = 0) async -> AnalysisResult {
+    func analyzeFull(image: UIImage,
+                     slope: SlopeType,
+                     mode: CaptureMode = .square,
+                     squaresCovered: Int = 0) async -> AnalysisResult {
         guard !secret.isEmpty, let url = chatCompletionsURL else {
-            return AnalysisResult(findings: failureFinding(reason: "Rork toolkit not configured. Tap retry."),
+            return AnalysisResult(findings: Self.failureFinding(reason: "Rork toolkit not configured. Tap retry."),
                                   markers: [],
                                   failed: true)
         }
-        print("[Gemini] \u{2705} Using Rork toolkit proxy (\(model)) — image \(Int(image.size.width))x\(Int(image.size.height)) slope=\(slope.rawValue) mode=\(mode.rawValue)")
+        print("[Gemini] \u{2705} Using Rork toolkit proxy (\(Self.model)) — image \(Int(image.size.width))x\(Int(image.size.height)) slope=\(slope.rawValue) mode=\(mode.rawValue)")
 
         guard let base64 = ImageResize.encodedJPEGBase64(from: image) else {
-            return AnalysisResult(findings: failureFinding(reason: "Could not encode photo for analysis."),
+            return AnalysisResult(findings: Self.failureFinding(reason: "Could not encode photo for analysis."),
                                   markers: [],
                                   failed: true)
         }
@@ -301,10 +318,10 @@ enum GeminiAnalysisService {
         to false ONLY when the image is a non-roof scene as described above; otherwise true.
         """
 
-        let body = chatCompletionBody(systemPrompt: prompt,
-                                      userText: "Analyse this roof photo.",
-                                      base64JPEG: base64,
-                                      temperature: 0.2)
+        let body = Self.chatCompletionBody(systemPrompt: prompt,
+                                            userText: "Analyse this roof photo.",
+                                            base64JPEG: base64,
+                                            temperature: 0.2)
 
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
@@ -319,7 +336,7 @@ enum GeminiAnalysisService {
                 let bodyStr = String(data: data, encoding: .utf8)?.prefix(800) ?? ""
                 print("[Gemini] \u{274C} HTTP \(http.statusCode): \(bodyStr)")
                 return AnalysisResult(
-                    findings: failureFinding(reason: "AI service returned HTTP \(http.statusCode). Tap retry."),
+                    findings: Self.failureFinding(reason: "AI service returned HTTP \(http.statusCode). Tap retry."),
                     markers: [],
                     failed: true
                 )
@@ -328,20 +345,20 @@ enum GeminiAnalysisService {
             if let raw = String(data: data, encoding: .utf8) {
                 print("[Gemini] \u{1F4E5} raw response (\(data.count) bytes): \(raw.prefix(1200))")
             }
-            if let parsed = parseResponse(data) {
+            if let parsed = Self.parseResponse(data) {
                 print("[Gemini] \u{2705} parsed: \(parsed.findings.count) findings, \(parsed.markers.count) markers")
                 return parsed
             }
             print("[Gemini] \u{274C} Could not parse response JSON.")
             return AnalysisResult(
-                findings: failureFinding(reason: "AI returned an unreadable response. Tap retry."),
+                findings: Self.failureFinding(reason: "AI returned an unreadable response. Tap retry."),
                 markers: [],
                 failed: true
             )
         } catch {
             print("[Gemini] \u{274C} Request failed: \(error.localizedDescription)")
             return AnalysisResult(
-                findings: failureFinding(reason: "Network error during AI analysis. Tap retry."),
+                findings: Self.failureFinding(reason: "Network error during AI analysis. Tap retry."),
                 markers: [],
                 failed: true
             )
@@ -355,7 +372,7 @@ enum GeminiAnalysisService {
                                             base64JPEG: String,
                                             temperature: Double) -> [String: Any] {
         return [
-            "model": model,
+            "model": Self.model,
             "temperature": temperature,
             "messages": [
                 ["role": "system", "content": systemPrompt],
