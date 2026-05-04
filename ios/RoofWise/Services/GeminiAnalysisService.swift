@@ -2,15 +2,17 @@ import Foundation
 import UIKit
 import SwiftUI
 
-/// Gemini 2.5 Flash Vision integration.
-/// API key is read from `Config.EXPO_PUBLIC_GEMINI_API_KEY` (env var).
+/// Gemini 2.5 Flash Vision integration via the Rork toolkit proxy.
+/// Requests are sent to the OpenAI-compatible chat completions endpoint and
+/// authenticated with `EXPO_PUBLIC_RORK_TOOLKIT_SECRET_KEY`.
 enum GeminiAnalysisService {
-    /// Reads the key from the auto-generated Config (env var EXPO_PUBLIC_GEMINI_API_KEY).
-    static var apiKey: String { Config.allValues["EXPO_PUBLIC_GEMINI_API_KEY"] ?? "" }
+    private static var toolkitURL: String { Config.EXPO_PUBLIC_TOOLKIT_URL }
+    private static var secret: String { Config.EXPO_PUBLIC_RORK_TOOLKIT_SECRET_KEY }
+    private static let model = "google/gemini-2.5-flash"
 
-    /// gemini-2.5-flash is significantly better at fine-detail vision (hail strikes,
-    /// granule displacement, soft-metal dings) than 1.5-flash.
-    static let endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+    private static var chatCompletionsURL: URL? {
+        URL(string: "\(toolkitURL)/v2/vercel/v1/chat/completions")
+    }
 
     /// Result returned from `analyzeFull`.
     /// `failed == true` means the API call could not be completed successfully —
@@ -47,15 +49,11 @@ enum GeminiAnalysisService {
     /// Lightweight live camera damage check. Reuses the same parsing pipeline, but
     /// prompts Gemini to return only roof-gated damage markers for the current frame.
     static func analyzeLiveDamage(image: UIImage) async -> AnalysisResult {
-        let key = apiKey
-        guard !key.isEmpty,
-              key != "GEMINI_API_KEY",
-              let url = URL(string: "\(endpoint)?key=\(key)") else {
+        guard !secret.isEmpty, let url = chatCompletionsURL else {
             return AnalysisResult(findings: [], markers: [], failed: true)
         }
 
-        let prepared = resizeForUpload(image, maxEdge: 768)
-        guard let jpeg = prepared.jpegData(compressionQuality: 0.72) else {
+        guard let base64 = ImageResize.encodedJPEGBase64(from: image) else {
             return AnalysisResult(findings: [], markers: [], failed: true)
         }
 
@@ -97,24 +95,16 @@ enum GeminiAnalysisService {
         Mark only visible damage locations. Do NOT generate random or evenly spaced markers. If no damage is clearly visible, return "damage_markers": []. Coordinates are normalized from top-left.
         """
 
-        let body: [String: Any] = [
-            "contents": [[
-                "parts": [
-                    ["text": prompt],
-                    ["inline_data": ["mime_type": "image/jpeg", "data": jpeg.base64EncodedString()]]
-                ]
-            ]],
-            "generationConfig": [
-                "responseMimeType": "application/json",
-                "temperature": 0.05,
-                "topP": 0.9
-            ]
-        ]
+        let body = chatCompletionBody(systemPrompt: prompt,
+                                      userText: "Analyse this roof photo.",
+                                      base64JPEG: base64,
+                                      temperature: 0.05)
 
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.timeoutInterval = 20
+        req.setValue("Bearer \(secret)", forHTTPHeaderField: "Authorization")
+        req.timeoutInterval = 60
         req.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
         do {
@@ -135,27 +125,14 @@ enum GeminiAnalysisService {
                             slope: SlopeType,
                             mode: CaptureMode = .square,
                             squaresCovered: Int = 0) async -> AnalysisResult {
-        let key = apiKey
-        guard !key.isEmpty,
-              key != "GEMINI_API_KEY",
-              let url = URL(string: "\(endpoint)?key=\(key)") else {
-            // No key configured -> dev mode: surface mock findings so the demo flow
-            // still works, but DO NOT paint fake markers onto a real photo. Empty
-            // markers means the overlay will correctly show "no AI detections".
-            print("[Gemini] \u{26A0}\u{FE0F} No EXPO_PUBLIC_GEMINI_API_KEY set — falling back to MOCK findings (no markers will be drawn).")
-            try? await Task.sleep(for: .milliseconds(600))
-            return AnalysisResult(findings: mockFindings(for: slope),
+        guard !secret.isEmpty, let url = chatCompletionsURL else {
+            return AnalysisResult(findings: failureFinding(reason: "Rork toolkit not configured. Tap retry."),
                                   markers: [],
-                                  failed: false,
-                                  usedMock: true)
+                                  failed: true)
         }
-        print("[Gemini] \u{2705} Using REAL API (gemini-2.5-flash, key prefix=\(key.prefix(6))…) — image \(Int(image.size.width))x\(Int(image.size.height)) slope=\(slope.rawValue) mode=\(mode.rawValue)")
+        print("[Gemini] \u{2705} Using Rork toolkit proxy (\(model)) — image \(Int(image.size.width))x\(Int(image.size.height)) slope=\(slope.rawValue) mode=\(mode.rawValue)")
 
-        // Resize for upload: cap at 1536px on the long edge. Large enough to
-        // preserve the granule-scale detail Gemini needs to see hail strikes,
-        // small enough to stay well under token limits and keep latency low.
-        let prepared = resizeForUpload(image, maxEdge: 1536)
-        guard let jpeg = prepared.jpegData(compressionQuality: 0.9) else {
+        guard let base64 = ImageResize.encodedJPEGBase64(from: image) else {
             return AnalysisResult(findings: failureFinding(reason: "Could not encode photo for analysis."),
                                   markers: [],
                                   failed: true)
@@ -324,24 +301,15 @@ enum GeminiAnalysisService {
         to false ONLY when the image is a non-roof scene as described above; otherwise true.
         """
 
-        let body: [String: Any] = [
-            "contents": [[
-                "parts": [
-                    ["text": prompt],
-                    ["inline_data": ["mime_type": "image/jpeg",
-                                     "data": jpeg.base64EncodedString()]]
-                ]
-            ]],
-            "generationConfig": [
-                "responseMimeType": "application/json",
-                "temperature": 0.1,
-                "topP": 0.95
-            ]
-        ]
+        let body = chatCompletionBody(systemPrompt: prompt,
+                                      userText: "Analyse this roof photo.",
+                                      base64JPEG: base64,
+                                      temperature: 0.2)
 
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("Bearer \(secret)", forHTTPHeaderField: "Authorization")
         req.timeoutInterval = 60
         req.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
@@ -380,30 +348,53 @@ enum GeminiAnalysisService {
         }
     }
 
-    // MARK: - Image preparation
+    // MARK: - Request body
 
-    private static func resizeForUpload(_ image: UIImage, maxEdge: CGFloat) -> UIImage {
-        let size = image.size
-        let longest = max(size.width, size.height)
-        guard longest > maxEdge else { return image }
-        let scale = maxEdge / longest
-        let newSize = CGSize(width: size.width * scale, height: size.height * scale)
-        let renderer = UIGraphicsImageRenderer(size: newSize)
-        return renderer.image { _ in
-            image.draw(in: CGRect(origin: .zero, size: newSize))
-        }
+    private static func chatCompletionBody(systemPrompt: String,
+                                            userText: String,
+                                            base64JPEG: String,
+                                            temperature: Double) -> [String: Any] {
+        return [
+            "model": model,
+            "temperature": temperature,
+            "messages": [
+                ["role": "system", "content": systemPrompt],
+                ["role": "user", "content": [
+                    ["type": "text", "text": userText],
+                    ["type": "image_url", "image_url": [
+                        "url": "data:image/jpeg;base64,\(base64JPEG)"
+                    ]]
+                ]]
+            ]
+        ]
     }
 
     // MARK: - Parsing
 
     private static func parseResponse(_ data: Data) -> AnalysisResult? {
-        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let candidates = root["candidates"] as? [[String: Any]],
-              let content = candidates.first?["content"] as? [String: Any],
-              let parts = content["parts"] as? [[String: Any]],
-              let text = parts.first?["text"] as? String else {
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return nil
         }
+        // OpenAI-compatible response shape:
+        // { "choices": [ { "message": { "content": "<json string>" } } ] }
+        let text: String? = {
+            if let choices = root["choices"] as? [[String: Any]],
+               let message = choices.first?["message"] as? [String: Any] {
+                if let s = message["content"] as? String { return s }
+                if let parts = message["content"] as? [[String: Any]] {
+                    return parts.compactMap { $0["text"] as? String }.joined()
+                }
+            }
+            // Fallback: legacy Gemini native shape, just in case.
+            if let candidates = root["candidates"] as? [[String: Any]],
+               let content = candidates.first?["content"] as? [String: Any],
+               let parts = content["parts"] as? [[String: Any]],
+               let s = parts.first?["text"] as? String {
+                return s
+            }
+            return nil
+        }()
+        guard let text else { return nil }
 
         let cleaned = stripCodeFences(text)
         guard let jsonData = cleaned.data(using: .utf8),
@@ -628,31 +619,4 @@ enum GeminiAnalysisService {
         )]
     }
 
-    /// Mock findings used ONLY when no API key is set (dev / demo mode).
-    private static func mockFindings(for slope: SlopeType) -> [InspectionFinding] {
-        let mockType = InspectionFinding(
-            label: "shingle_type",
-            display: "Shingle Type",
-            value: "Architectural Asphalt — laminated dimensional tabs, ~5\" exposure",
-            confidence: 92,
-            icon: "square.stack.3d.down.right.fill",
-            tint: Theme.sky,
-            detected: true,
-            severity: .none
-        )
-        let base = InspectionMock.findings
-        return [mockType] + base.map { f in
-            let bumped = (slope == .ridgeLine && f.label == "wind_creasing")
-            return InspectionFinding(
-                label: f.label,
-                display: f.display,
-                value: f.value,
-                confidence: min(99, f.confidence + (bumped ? 4 : Int.random(in: -3...3))),
-                icon: f.icon,
-                tint: f.tint,
-                detected: f.detected,
-                severity: f.severity
-            )
-        }
-    }
 }
