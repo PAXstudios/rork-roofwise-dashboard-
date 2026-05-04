@@ -19,6 +19,10 @@ struct PhotoDamageOverlayView: View {
     @State private var pulse: Bool = false
     @State private var isRetrying: Bool = false
     @State private var showInfo: Bool = false
+    /// Dev-only: long-press the eye icon to toggle a yellow border around the
+    /// displayed-image rect so we can visually confirm the coordinate space
+    /// markers are mapped against.
+    @State private var debugShowImageRect: Bool = false
 
     private var grouped: [(type: DamageMarkerType, items: [DamageMarker])] {
         let dict = Dictionary(grouping: photo.damageMarkers, by: \.type)
@@ -66,6 +70,14 @@ struct PhotoDamageOverlayView: View {
 
                     if showAllMarkers {
                         markersLayer(in: imageRect(for: photo.image, container: geo.size))
+                    }
+                    if debugShowImageRect {
+                        let r = imageRect(for: photo.image, container: geo.size)
+                        Rectangle()
+                            .stroke(Color.yellow, lineWidth: 1)
+                            .frame(width: r.width, height: r.height)
+                            .position(x: r.midX, y: r.midY)
+                            .allowsHitTesting(false)
                     }
                 }
                 .frame(width: geo.size.width, height: geo.size.height)
@@ -137,11 +149,17 @@ struct PhotoDamageOverlayView: View {
             } label: {
                 Image(systemName: showAllMarkers ? "eye.fill" : "eye.slash.fill")
                     .font(.system(size: 13, weight: .heavy))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(debugShowImageRect ? .yellow : .white)
                     .frame(width: 38, height: 38)
                     .background(.black.opacity(0.55), in: .circle)
-                    .overlay(Circle().stroke(.white.opacity(0.15), lineWidth: 0.5))
+                    .overlay(Circle().stroke((debugShowImageRect ? Color.yellow : .white).opacity(0.25), lineWidth: 0.5))
             }
+            .simultaneousGesture(
+                LongPressGesture(minimumDuration: 0.6).onEnded { _ in
+                    let g = UIImpactFeedbackGenerator(style: .rigid); g.impactOccurred()
+                    debugShowImageRect.toggle()
+                }
+            )
 
             Button {
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {

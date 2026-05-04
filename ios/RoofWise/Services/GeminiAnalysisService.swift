@@ -70,7 +70,7 @@ struct GeminiAnalysisService {
             return AnalysisResult(findings: [], markers: [], failed: true)
         }
 
-        guard let base64 = ImageResize.encodedJPEGBase64(from: image) else {
+        guard let base64 = ImageResize.encodedJPEGBase64(from: image, profile: .live) else {
             return AnalysisResult(findings: [], markers: [], failed: true)
         }
 
@@ -103,9 +103,12 @@ struct GeminiAnalysisService {
           ]
         }
 
-        Coordinates x, y, width, height are NORMALIZED [0.0, 1.0] with TOP-LEFT origin
-        (x increases rightward, y increases downward). (x, y) is the CENTER of the
-        bounding box; width/height are the bbox size as fractions of the image.
+        Coordinates x, y, width, height are NORMALIZED FRACTIONS of the image
+        (0.0 = left/top edge, 1.0 = right/bottom edge), TOP-LEFT origin. (x, y)
+        is the CENTER of the bounding box; width/height are the bbox size as
+        fractions of the image. NEVER return pixel values. NEVER return values
+        > 1.0. Coordinates must be measured against THIS image as you see it,
+        not rotated.
 
         CRITICAL: If the image does NOT clearly show a roof surface, asphalt shingles, tile, metal panels, or any roofing material — for example if it shows grass, sky, ground, indoors, a person, a vehicle, or any non-roof scene — you MUST set analyzed=false, return an empty damage_markers array, and add a finding with label="no_roof_detected" and note="No roof or shingles visible in this photo". Do not fabricate damage findings on non-roof images.
 
@@ -149,7 +152,7 @@ struct GeminiAnalysisService {
         }
         print("[Gemini] \u{2705} Using Rork toolkit proxy (\(Self.model)) — image \(Int(image.size.width))x\(Int(image.size.height)) slope=\(slope.rawValue) mode=\(mode.rawValue)")
 
-        guard let base64 = ImageResize.encodedJPEGBase64(from: image) else {
+        guard let base64 = ImageResize.encodedJPEGBase64(from: image, profile: .full) else {
             return AnalysisResult(findings: Self.failureFinding(reason: "Could not encode photo for analysis."),
                                   markers: [],
                                   failed: true)
@@ -189,7 +192,7 @@ struct GeminiAnalysisService {
           ]
         }
 
-        Coordinates: top-left origin, normalized [0,1]. (x,y) is the CENTER of the feature; radius is roughly half the feature size relative to the shorter image edge.
+        Coordinates MUST be normalized fractions of the image: x = (pixel_x / image_width), y = (pixel_y / image_height). 0.0 = left/top, 1.0 = right/bottom, top-left origin. (x,y) is the CENTER of the feature; radius is roughly half the feature size relative to the shorter image edge. NEVER return pixel values. NEVER return values outside [0, 1]. Measure coordinates against THIS image as you see it (do not rotate).
 
         Include all 10 damage categories in `findings` (set detected=false for ones not present). Mark each visible hail strike individually. If the image is NOT a roof (grass, sky, indoors, person, vehicle), set analyzed=false, return empty `damage_markers`, and add a finding with label="no_roof_detected".
         """
@@ -203,7 +206,7 @@ struct GeminiAnalysisService {
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue("Bearer \(secret)", forHTTPHeaderField: "Authorization")
-        req.timeoutInterval = 45
+        req.timeoutInterval = 60
         req.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
         let started = Date()

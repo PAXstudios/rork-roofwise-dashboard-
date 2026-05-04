@@ -455,7 +455,10 @@ extension CameraCaptureService: AVCapturePhotoCaptureDelegate {
         let image: UIImage = {
             if let data = photo.fileDataRepresentation(),
                let img = UIImage(data: data) {
-                return img
+                // Normalize EXIF orientation up-front so the bitmap we send to
+                // Gemini Vision and the bitmap we display under the marker
+                // overlay are pixel-identical (markers landed off otherwise).
+                return img.normalizedOrientation()
             }
             return UIImage()
         }()
