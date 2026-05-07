@@ -71,7 +71,7 @@ struct JobDetailView: View {
             get: { pdfShareURL.map(IdentifiableURL.init) },
             set: { pdfShareURL = $0?.url }
         )) { wrapper in
-            ShareSheet(items: [wrapper.url])
+            PDFPreviewSheet(url: wrapper.url)
         }
         .alert("Remove this slope?",
                isPresented: Binding(get: { slopePendingDelete != nil },
@@ -539,6 +539,87 @@ extension String: @retroactive Identifiable {
 private struct IdentifiableURL: Identifiable {
     let url: URL
     var id: String { url.absoluteString }
+}
+
+// MARK: - PDF Preview Sheet
+
+import PDFKit
+
+private struct PDFPreviewSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let url: URL
+    @State private var showShare = false
+
+    var body: some View {
+        NavigationStack {
+            PDFKitView(url: url)
+                .background(Theme.canvas.ignoresSafeArea())
+                .navigationTitle("Report Preview")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button("Done") { dismiss() }
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(Theme.ember)
+                    }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        HStack(spacing: 18) {
+                            Button {
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                printPDF()
+                            } label: {
+                                Image(systemName: "printer")
+                                    .font(.system(size: 17, weight: .semibold))
+                            }
+                            .foregroundStyle(Theme.ink)
+
+                            Button {
+                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                showShare = true
+                            } label: {
+                                Image(systemName: "square.and.arrow.up")
+                                    .font(.system(size: 17, weight: .semibold))
+                            }
+                            .foregroundStyle(Theme.ember)
+                        }
+                    }
+                }
+                .sheet(isPresented: $showShare) {
+                    ShareSheet(items: [url])
+                }
+        }
+    }
+
+    private func printPDF() {
+        guard UIPrintInteractionController.canPrint(url) else { return }
+        let info = UIPrintInfo(dictionary: nil)
+        info.outputType = .general
+        info.jobName = url.lastPathComponent
+        let pic = UIPrintInteractionController.shared
+        pic.printInfo = info
+        pic.printingItem = url
+        pic.present(animated: true, completionHandler: nil)
+    }
+}
+
+private struct PDFKitView: UIViewRepresentable {
+    let url: URL
+
+    func makeUIView(context: Context) -> PDFView {
+        let v = PDFView()
+        v.autoScales = true
+        v.displayMode = .singlePageContinuous
+        v.displayDirection = .vertical
+        v.backgroundColor = UIColor(Theme.canvas)
+        v.document = PDFDocument(url: url)
+        return v
+    }
+
+    func updateUIView(_ uiView: PDFView, context: Context) {
+        if uiView.document?.documentURL != url {
+            uiView.document = PDFDocument(url: url)
+        }
+    }
 }
 
 private struct FieldLabelInline: View {
