@@ -17,18 +17,18 @@ enum ImageResize {
     }
 
     private static let fullLadder: [(maxPixel: CGFloat, quality: CGFloat)] = [
-        (2048, 0.90), (1792, 0.88), (1536, 0.86), (1280, 0.82),
-        (1024, 0.80), (832, 0.76), (640, 0.72)
+        (2560, 0.92), (2304, 0.91), (2048, 0.90), (1792, 0.88),
+        (1536, 0.86), (1280, 0.82), (1024, 0.80), (832, 0.76), (640, 0.72)
     ]
     private static let liveLadder: [(maxPixel: CGFloat, quality: CGFloat)] = [
-        (768, 0.70), (640, 0.65), (512, 0.60)
+        (1024, 0.74), (832, 0.72), (768, 0.70), (640, 0.65), (512, 0.60)
     ]
 
     static func encodedJPEGBase64(from image: UIImage,
                                   profile: Profile = .full,
                                   maxBytes: Int? = nil) -> String? {
         let normalized = image.normalizedOrientation()
-        let aiReady = profile == .full ? damageAnalysisOptimizedImage(from: normalized) : normalized
+        let aiReady = damageAnalysisOptimizedImage(from: normalized)
         let ladder = profile == .full ? fullLadder : liveLadder
         let cap = maxBytes ?? (profile == .full ? 3_000_000 : 600_000)
         for step in ladder {
@@ -62,20 +62,28 @@ enum ImageResize {
         let colorAdjusted: CIImage = {
             guard let filter = CIFilter(name: "CIColorControls") else { return input }
             filter.setValue(input, forKey: kCIInputImageKey)
-            filter.setValue(1.16, forKey: kCIInputContrastKey)
-            filter.setValue(1.04, forKey: kCIInputSaturationKey)
-            filter.setValue(0.015, forKey: kCIInputBrightnessKey)
+            filter.setValue(1.22, forKey: kCIInputContrastKey)
+            filter.setValue(1.05, forKey: kCIInputSaturationKey)
+            filter.setValue(0.018, forKey: kCIInputBrightnessKey)
             return filter.outputImage ?? input
         }()
 
-        let sharpened: CIImage = {
+        let luminanceSharpened: CIImage = {
             guard let filter = CIFilter(name: "CISharpenLuminance") else { return colorAdjusted }
             filter.setValue(colorAdjusted, forKey: kCIInputImageKey)
-            filter.setValue(0.42, forKey: kCIInputSharpnessKey)
+            filter.setValue(0.62, forKey: kCIInputSharpnessKey)
             return filter.outputImage ?? colorAdjusted
         }()
 
-        guard let output = context.createCGImage(sharpened, from: input.extent) else { return image }
+        let edgeSharpened: CIImage = {
+            guard let filter = CIFilter(name: "CIUnsharpMask") else { return luminanceSharpened }
+            filter.setValue(luminanceSharpened, forKey: kCIInputImageKey)
+            filter.setValue(0.78, forKey: kCIInputIntensityKey)
+            filter.setValue(1.20, forKey: kCIInputRadiusKey)
+            return filter.outputImage ?? luminanceSharpened
+        }()
+
+        guard let output = context.createCGImage(edgeSharpened, from: input.extent) else { return image }
         return UIImage(cgImage: output, scale: 1.0, orientation: .up)
     }
 

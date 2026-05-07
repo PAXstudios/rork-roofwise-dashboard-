@@ -127,11 +127,13 @@ struct SlopeCaptureView: View {
             .ignoresSafeArea()
         }
         .fullScreenCover(isPresented: $showFullCapture) {
-            // Reuse the existing polished capture flow as-is. It manages its
-            // own state and dismisses itself; we don't bind back into our
-            // local photos array (QuickInspectionView doesn't surface them).
-            QuickInspectionView()
-                .environment(fullCaptureCustomerStore)
+            QuickInspectionView(autoAnalyzeOnDone: false) { captured, _ in
+                let newImages = captured.map(\.image)
+                guard !newImages.isEmpty else { return }
+                photos.append(contentsOf: newImages)
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            }
+            .environment(fullCaptureCustomerStore)
         }
         .confirmationDialog("Discard slope?",
                             isPresented: $showDiscardConfirm,

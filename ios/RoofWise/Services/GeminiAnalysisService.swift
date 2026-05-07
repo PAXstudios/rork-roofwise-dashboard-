@@ -10,7 +10,7 @@ struct GeminiAnalysisService {
     private let secret: String
     private let geminiAPIKey: String
     private static let model = "google/gemini-3-flash"
-    private static let directGeminiModel = "gemini-1.5-flash"
+    private static let directGeminiModel = "gemini-3-flash"
     private static let fallbackModels: [String] = [
         "anthropic/claude-haiku-4.5",
         "alibaba/qwen3-vl-instruct"
@@ -82,9 +82,6 @@ struct GeminiAnalysisService {
     /// Lightweight live camera damage check. Reuses the same parsing pipeline, but
     /// prompts Gemini to return only roof-gated damage markers for the current frame.
     func analyzeLiveDamage(image: UIImage) async -> AnalysisResult {
-        if APIKeys.USE_MOCKS {
-            return Self.mockAnalysisResult()
-        }
         guard let base64 = ImageResize.encodedJPEGBase64(from: image, profile: .live) else {
             return AnalysisResult(findings: [], markers: [], failed: true)
         }
@@ -127,7 +124,7 @@ struct GeminiAnalysisService {
 
         CRITICAL: If the image does NOT clearly show a roof surface, asphalt shingles, tile, metal panels, or any roofing material — for example if it shows grass, sky, ground, indoors, a person, a vehicle, or any non-roof scene — you MUST set analyzed=false, return an empty damage_markers array, and add a finding with label="no_roof_detected" and note="No roof or shingles visible in this photo". Do not fabricate damage findings on non-roof images.
 
-        Mark only visible damage locations. A marker is valid only when its center sits on visible pixel evidence: dark circular bruising, exposed mat, displaced granules, a crack, missing/lifted/torn shingle edge, or flashing defect. Shingle seams, tab boundaries, clean granule texture, shadows, and repeating rows are NOT damage. Do NOT generate random, evenly spaced, grid-like, or per-shingle markers. Include shingle damage beyond hail: lifted tabs, torn tabs, missing tabs, cracks, exposed mat, and wind creases. If no damage is clearly visible, return "damage_markers": []. Coordinates are normalized from top-left.
+        Mark only visible damage locations. A marker is valid only when its center sits on visible pixel evidence: dark circular bruising, exposed mat, displaced granules, a crack, a missing/lifted/torn shingle edge, exposed fiberglass mat, or a wind crease. Shingle seams, tab boundaries, clean granule texture, shadows, and repeating rows are NOT damage. Do NOT generate random, evenly spaced, grid-like, or per-shingle markers. Include shingle damage beyond hail: shingle_bruise, exposed_mat, lifted_shingle, torn_shingle, missing_shingle, crack, wind_crease, granule_loss, and hail_strike. If no damage is clearly visible, return "damage_markers": []. Coordinates are normalized from top-left.
         """
 
         guard let req = liveVisionRequest(systemPrompt: prompt,
@@ -159,9 +156,6 @@ struct GeminiAnalysisService {
                      slope: SlopeType,
                      mode: CaptureMode = .square,
                      squaresCovered: Int = 0) async -> AnalysisResult {
-        if APIKeys.USE_MOCKS {
-            return Self.mockAnalysisResult()
-        }
         print("[VisionAI] Starting roof damage analysis — image \(Int(image.size.width))x\(Int(image.size.height)) slope=\(slope.rawValue) mode=\(mode.rawValue) provider=\(providerLabel)")
 
         guard let base64 = ImageResize.encodedJPEGBase64(from: image, profile: .full) else {
@@ -197,9 +191,10 @@ struct GeminiAnalysisService {
 
         CRITICAL LOCALIZATION RULES:
         - Every marker center must land on the actual damaged pixel, not the center of a shingle, not a grid cell, and not an approximate region.
-        - Do NOT mark every shingle, every tab, or every stain. Repeating rows/columns of markers are invalid.
+        - Do NOT mark every shingle, every tab, every seam, or every stain. Repeating rows/columns of markers are invalid and must be returned as an empty marker list instead.
         - Hail markers require visible circular/oval impact evidence: bruising, crushed granules, exposed mat, pitting, or dark impact ring.
-        - Shingle damage markers must include missing tabs, lifted/torn shingle edges, punctures, cracks, exposed mat, or wind creases. Do not ignore these.
+        - Shingle damage markers must include missing tabs, lifted/torn shingle edges, punctures, cracks, exposed mat, wind creases, shingle bruises, or granule-loss clusters. Do not ignore these.
+        - For every marker, the note must name the local pixel evidence directly under the marker center.
         - If the photo is too blurry or low-resolution to localize a spot, skip that marker instead of guessing.
 
         Return STRICT JSON only (no markdown), with this schema:
@@ -211,7 +206,7 @@ struct GeminiAnalysisService {
           ],
           "confidence_avg": 0.0-1.0,
           "findings": [
-            { "label": "hail_damage|granule_loss|missing_shingles|wind_creasing|blistering|cracking_splitting|flashing_damage|algae_moss|bruising|structural_sagging", "detected": true|false, "severity": "none|minor|moderate|severe", "confidence": 0-100, "count": <int>, "note": "<short evidence>" }
+            { "label": "hail_damage|shingle_bruise|exposed_mat|granule_loss|missing_shingles|lifted_shingle|torn_shingle|wind_creasing|blistering|cracking_splitting|flashing_damage|algae_moss|bruising|structural_sagging", "detected": true|false, "severity": "none|minor|moderate|severe", "confidence": 0-100, "count": <int>, "note": "<short evidence>" }
           ],
           "damage_markers": [
             { "type": "hail_strike|shingle_bruise|exposed_mat|crack|granule_loss|missing_shingle|lifted_shingle|torn_shingle|wind_crease|blister|flashing|algae|other", "x": 0.0-1.0, "y": 0.0-1.0, "width": 0.0-1.0, "height": 0.0-1.0, "radius": 0.0-1.0, "severity": "minor|moderate|severe", "confidence": 0-100, "note": "<short pixel evidence visible exactly at x/y>" }
@@ -220,15 +215,15 @@ struct GeminiAnalysisService {
 
         Coordinates MUST be normalized fractions of the image: x = (pixel_x / image_width), y = (pixel_y / image_height). 0.0 = left/top, 1.0 = right/bottom, top-left origin. (x,y) is the CENTER of the feature; width/height/radius describe only that damaged feature, not the entire shingle. NEVER return pixel values. NEVER return values outside [0, 1]. Measure coordinates against THIS image as you see it (do not rotate).
 
-        Include all 10 damage categories in `findings` (set detected=false for ones not present). Always include exactly four `categories` entries: hail, wind, wear, missing. `confidence` and `confidence_avg` MUST be normalized floats from 0.0 to 1.0, not percentages. Mark each visible hail strike and each visible shingle defect individually only when exact pixel evidence is present. If the image is NOT a roof (grass, sky, indoors, person, vehicle), set analyzed=false, return empty `damage_markers`, and add a finding with label="no_roof_detected".
+        Include all listed damage categories in `findings` (set detected=false for ones not present), including shingle_bruise, exposed_mat, lifted_shingle, and torn_shingle. Always include exactly four rollup `categories` entries: hail, wind, wear, missing. `confidence` and `confidence_avg` MUST be normalized floats from 0.0 to 1.0, not percentages. Mark each visible hail strike and each visible shingle defect individually only when exact pixel evidence is present. If the image is NOT a roof (grass, sky, indoors, person, vehicle), set analyzed=false, return empty `damage_markers`, and add a finding with label="no_roof_detected".
         """
 
         guard let req = liveVisionRequest(systemPrompt: prompt,
-                                          userText: "Analyse this roof photo.",
+                                          userText: "Analyse this high-resolution, contrast-enhanced roof photo. Return only strict JSON and only evidence-backed markers.",
                                           base64JPEG: base64,
-                                          temperature: 0.1,
+                                          temperature: 0.05,
                                           timeout: 60) else {
-            return AnalysisResult(findings: Self.failureFinding(reason: "AI service is not configured. Add a Gemini or Rork toolkit key, then tap retry."),
+            return AnalysisResult(findings: Self.failureFinding(reason: "AI service is not configured. Add the Rork toolkit credentials or Gemini key, then tap retry. Mock damage markers are disabled."),
                                   markers: [],
                                   failed: true)
         }
@@ -280,7 +275,7 @@ struct GeminiAnalysisService {
     private var providerLabel: String {
         if !secret.isEmpty, chatCompletionsURL != nil { return "Rork toolkit \(Self.model)" }
         if !geminiAPIKey.isEmpty, directGeminiURL != nil { return "Google Gemini \(Self.directGeminiModel)" }
-        return "mock"
+        return "not configured"
     }
 
     private func liveVisionRequest(systemPrompt: String,
@@ -328,6 +323,9 @@ struct GeminiAnalysisService {
             "providerOptions": [
                 "gateway": [
                     "models": Self.fallbackModels
+                ],
+                "google": [
+                    "thinkingLevel": "low"
                 ]
             ],
             "response_format": ["type": "json_object"],
@@ -732,10 +730,18 @@ struct GeminiAnalysisService {
         switch label {
         case "hail_damage", "bruising":
             return ("Bruising", "circle.hexagongrid.fill", "Hail bruising on mat")
+        case "shingle_bruise":
+            return ("Shingle Bruise", "circle.lefthalf.filled", "Localized bruise in shingle mat")
+        case "exposed_mat":
+            return ("Exposed Mat", "viewfinder.circle.fill", "Fiberglass mat exposed")
         case "granule_loss":
             return ("Granule Loss", "circle.dotted", "Granule displacement")
         case "missing_shingles":
             return ("Missing Shingles", "square.dashed", "Tabs missing")
+        case "lifted_shingle":
+            return ("Lifted Shingle", "square.stack.3d.up.fill", "Lifted or unsealed tab edge")
+        case "torn_shingle":
+            return ("Torn Shingle", "rectangle.split.3x1.fill", "Torn shingle tab")
         case "wind_creasing":
             return ("Wind Creasing", "wind", "Creases at nail line")
         case "blistering":

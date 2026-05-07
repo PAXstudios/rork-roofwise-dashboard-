@@ -14,6 +14,8 @@ enum InspectionStep {
 struct QuickInspectionView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(CustomerStore.self) private var customerStore
+    var autoAnalyzeOnDone: Bool = true
+    var onSessionFinished: ([CapturedPhoto], [InspectionFinding]) -> Void = { _, _ in }
     @State private var step: InspectionStep = .capture
     @State private var scanProgress: CGFloat = 0
     @State private var detectedHits: [DetectedHit] = []
@@ -85,7 +87,10 @@ struct QuickInspectionView: View {
                             customer: customerStore.activeCustomer,
                             usdzReportURL: latestUSDZReportURL,
                             manualMarkers: manualMarkers,
-                            onClose: { dismiss() },
+                            onClose: {
+                                onSessionFinished(capturedPhotos, lastFindings)
+                                dismiss()
+                            },
                             onRescan: { resetToCapture() },
                             onCreateClaim: { generateClaimPacket() })
             }
@@ -976,8 +981,13 @@ struct QuickInspectionView: View {
 
     private func finishSession() {
         let gen = UIImpactFeedbackGenerator(style: .heavy); gen.impactOccurred()
-        withAnimation(.easeInOut(duration: 0.4)) { step = .scanning }
-        runScan()
+        if autoAnalyzeOnDone {
+            withAnimation(.easeInOut(duration: 0.4)) { step = .scanning }
+            runScan()
+        } else {
+            onSessionFinished(capturedPhotos, lastFindings)
+            dismiss()
+        }
     }
 
     private func runScan() {
