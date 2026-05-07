@@ -6,6 +6,9 @@ struct JobDetailView: View {
     @State private var showAddSlope = false
     @State private var editingOrientation: String? = nil
     @State private var slopePendingDelete: Slope? = nil
+    @State private var showSignatures = false
+    @State private var pdfShareURL: URL? = nil
+    @State private var isGenerating = false
 
     let reportId: String
 
@@ -29,6 +32,9 @@ struct JobDetailView: View {
                             slopesList(insp)
                         }
                         addSlopeButton(label: insp.slopes.isEmpty ? "Add slope" : "Add another slope")
+                        if !insp.slopes.isEmpty {
+                            signReportCard(insp)
+                        }
                         Color.clear.frame(height: 140)
                     } else {
                         Text("Job not found.")
@@ -57,6 +63,15 @@ struct JobDetailView: View {
         }
         .navigationDestination(item: $editingOrientation) { orient in
             SlopeCaptureView(reportId: reportId, existingOrientation: orient)
+        }
+        .navigationDestination(isPresented: $showSignatures) {
+            SignaturesView(reportId: reportId)
+        }
+        .sheet(item: Binding(
+            get: { pdfShareURL.map(IdentifiableURL.init) },
+            set: { pdfShareURL = $0?.url }
+        )) { wrapper in
+            ShareSheet(items: [wrapper.url])
         }
         .alert("Remove this slope?",
                isPresented: Binding(get: { slopePendingDelete != nil },
@@ -303,26 +318,143 @@ struct JobDetailView: View {
     }
 
     private var generateReportBar: some View {
-        VStack(spacing: 6) {
+        let enabled = canGeneratePDF
+        return VStack(spacing: 6) {
             Rectangle().fill(Theme.hairline).frame(height: 0.5)
-            HStack(spacing: 6) {
-                Image(systemName: "doc.richtext.fill")
-                    .font(.system(size: 18, weight: .bold))
-                Text("Generate Haag Report (PDF)")
-                    .font(.system(size: 18, weight: .bold))
+            Button {
+                generatePDF()
+            } label: {
+                HStack(spacing: 8) {
+                    if isGenerating {
+                        ProgressView()
+                            .progressViewStyle(.circular)
+                            .tint(.white)
+                    } else {
+                        Image(systemName: "doc.richtext.fill")
+                            .font(.system(size: 18, weight: .bold))
+                    }
+                    Text(isGenerating ? "Generating…" : "Generate Haag Report (PDF)")
+                        .font(.system(size: Theme.TypeRamp.cta, weight: .bold))
+                }
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity, minHeight: 64)
+                .background(enabled ? AnyShapeStyle(Theme.inkGradient) : AnyShapeStyle(Theme.inkFaint),
+                            in: .rect(cornerRadius: 18))
+                .shadow(color: enabled ? Theme.ink.opacity(0.28) : .clear,
+                        radius: 14, x: 0, y: 6)
+                .padding(.horizontal, 20)
+                .padding(.top, 12)
             }
-            .foregroundStyle(.white)
-            .frame(maxWidth: .infinity, minHeight: 64)
-            .background(Theme.inkFaint, in: .rect(cornerRadius: 18))
-            .padding(.horizontal, 20)
-            .padding(.top, 12)
+            .buttonStyle(.plain)
+            .disabled(!enabled || isGenerating)
 
-            Text("Available in Phase 3")
-                .font(.system(size: 13, weight: .semibold))
+            Text(generateCaption)
+                .font(.system(size: Theme.TypeRamp.metaSm, weight: .semibold))
                 .foregroundStyle(Theme.inkSoft)
                 .padding(.bottom, 18)
         }
         .background(Theme.canvas)
+    }
+
+    // MARK: PDF gating
+
+    private var canGeneratePDF: Bool {
+        guard let insp = inspection,
+              !insp.slopes.isEmpty else { return false }
+        let job = insp.job
+        return !job.clientName.trimmingCharacters(in: .whitespaces).isEmpty
+            && !job.propertyAddress.trimmingCharacters(in: .whitespaces).isEmpty
+            && !job.inspectorName.trimmingCharacters(in: .whitespaces).isEmpty
+            && !job.companyName.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    private var generateCaption: String {
+        guard let insp = inspection else { return "Add a slope to enable." }
+        if insp.slopes.isEmpty { return "Add at least one slope to enable." }
+        if !canGeneratePDF { return "Fill in client, property, and inspector to enable." }
+        return "Saves to Files · share via Mail, AirDrop, Print."
+    }
+
+    private func generatePDF() {
+        guard let insp = inspection else { return }
+        isGenerating = true
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        Task { @MainActor in
+            // PDF generation is fast but synchronous; hop off the main
+            // run-loop tick so the spinner has a chance to render.
+            try? await Task.sleep(for: .milliseconds(50))
+            let url = HaagReportGenerator.write(inspection: insp)
+            isGenerating = false
+            if let url {
+                pdfShareURL = url
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+            } else {
+                UINotificationFeedbackGenerator().notificationOccurred(.error)
+            }
+        }
+    }
+
+    // MARK: Sign Report card
+
+    private func signReportCard(_ insp: Inspection) -> some View {
+        let inspectorSigned = insp.inspectorSignaturePng != nil
+        let homeownerSigned = insp.homeownerSignaturePng != nil
+        return Button {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            showSignatures = true
+        } label: {
+            HStack(spacing: 14) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 14).fill(Theme.emberSoft)
+                    Image(systemName: "signature")
+                        .font(.system(size: 20, weight: .heavy))
+                        .foregroundStyle(Theme.ember)
+                }
+                .frame(width: 56, height: 56)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Sign Report")
+                        .font(.system(size: Theme.TypeRamp.body, weight: .heavy))
+                        .foregroundStyle(Theme.ink)
+                    Text(signatureSubtitle(inspectorSigned: inspectorSigned,
+                                           homeownerSigned: homeownerSigned))
+                        .font(.system(size: Theme.TypeRamp.metaSm, weight: .semibold))
+                        .foregroundStyle(Theme.inkSoft)
+                        .lineLimit(1)
+                    HStack(spacing: 6) {
+                        signaturePill(label: "Inspector", signed: inspectorSigned)
+                        signaturePill(label: "Homeowner", signed: homeownerSigned)
+                    }
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(Theme.inkFaint)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .cardStyle(padding: 16, radius: 18)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func signatureSubtitle(inspectorSigned: Bool, homeownerSigned: Bool) -> String {
+        switch (inspectorSigned, homeownerSigned) {
+        case (true, true):   return "Both signatures captured."
+        case (true, false):  return "Homeowner signature still needed."
+        case (false, true):  return "Inspector signature still needed."
+        case (false, false): return "Capture inspector & homeowner signatures."
+        }
+    }
+
+    private func signaturePill(label: String, signed: Bool) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: signed ? "checkmark.seal.fill" : "circle.dashed")
+                .font(.system(size: 10, weight: .heavy))
+            Text(label)
+                .font(.system(size: Theme.TypeRamp.caption, weight: .heavy))
+        }
+        .foregroundStyle(signed ? Theme.mint : Theme.inkSoft)
+        .padding(.horizontal, 8).padding(.vertical, 4)
+        .background((signed ? Theme.mintSoft : Theme.canvas), in: .capsule)
     }
 
     // MARK: Decision banner
@@ -401,6 +533,12 @@ struct JobDetailView: View {
 // Allow String to drive .fullScreenCover(item:) for editing-by-orientation.
 extension String: @retroactive Identifiable {
     public var id: String { self }
+}
+
+/// Identifiable wrapper for URL so .sheet(item:) can present a share sheet.
+private struct IdentifiableURL: Identifiable {
+    let url: URL
+    var id: String { url.absoluteString }
 }
 
 private struct FieldLabelInline: View {

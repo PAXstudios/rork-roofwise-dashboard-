@@ -307,13 +307,48 @@ struct Inspection: Codable, Hashable, Identifiable {
     var slopes: [Slope]
     var collateral: InspectionCollateral
     var summary: InspectionSummary
+    /// Optional PencilKit-captured signatures, persisted as PNG bytes.
+    var inspectorSignaturePng: Data?
+    var homeownerSignaturePng: Data?
 
     enum CodingKeys: String, CodingKey {
         case job, event, roof, slopes, collateral, summary
+        case inspectorSignaturePng = "inspector_signature_png"
+        case homeownerSignaturePng = "homeowner_signature_png"
     }
 
     /// Stable identity backed by `report_id`.
     var id: String { job.reportId }
+
+    init(job: InspectionJob,
+         event: InspectionEvent,
+         roof: InspectionRoof,
+         slopes: [Slope],
+         collateral: InspectionCollateral,
+         summary: InspectionSummary,
+         inspectorSignaturePng: Data? = nil,
+         homeownerSignaturePng: Data? = nil) {
+        self.job = job
+        self.event = event
+        self.roof = roof
+        self.slopes = slopes
+        self.collateral = collateral
+        self.summary = summary
+        self.inspectorSignaturePng = inspectorSignaturePng
+        self.homeownerSignaturePng = homeownerSignaturePng
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        job = try c.decode(InspectionJob.self, forKey: .job)
+        event = try c.decode(InspectionEvent.self, forKey: .event)
+        roof = try c.decode(InspectionRoof.self, forKey: .roof)
+        slopes = try c.decode([Slope].self, forKey: .slopes)
+        collateral = try c.decode(InspectionCollateral.self, forKey: .collateral)
+        summary = try c.decode(InspectionSummary.self, forKey: .summary)
+        inspectorSignaturePng = try c.decodeIfPresent(Data.self, forKey: .inspectorSignaturePng)
+        homeownerSignaturePng = try c.decodeIfPresent(Data.self, forKey: .homeownerSignaturePng)
+    }
 }
 
 // MARK: Stub user
