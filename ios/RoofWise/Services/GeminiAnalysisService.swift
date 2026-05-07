@@ -244,6 +244,7 @@ struct GeminiAnalysisService {
         }
 
         let started = Date()
+        Self.logOutgoingRequest(req)
         do {
             let (data, response) = try await URLSession.shared.data(for: req)
             print("[Gemini] \u{23F1}\u{FE0F} round-trip \(String(format: "%.2f", Date().timeIntervalSince(started)))s, \(data.count) bytes")
@@ -394,14 +395,84 @@ struct GeminiAnalysisService {
     private static func logHTTPFailure(prefix: String, statusCode: Int, data: Data) -> String? {
         let body = String(data: data, encoding: .utf8) ?? "<non-UTF8 body, \(data.count) bytes>"
         print("[GeminiAnalysisService] \u{274C} HTTP \(statusCode) FULL RESPONSE BODY: \(body)")
-        // Try to parse a literal upstream error.message string.
+        // Build a multi-line, debuggable message: status + upstream error.message +
+        // status string + JSON-stringified details + leading 1500 chars of body.
+        var lines: [String] = ["HTTP \(statusCode)"]
+        var upstreamMessage: String? = nil
+        var upstreamStatus: String? = nil
+        var upstreamDetails: String? = nil
         if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            if let err = json["error"] as? [String: Any], let m = err["message"] as? String, !m.isEmpty {
-                return m
+            if let err = json["error"] as? [String: Any] {
+                if let m = err["message"] as? String, !m.isEmpty { upstreamMessage = m }
+                if let s = err["status"] as? String, !s.isEmpty { upstreamStatus = s }
+                if let d = err["details"] {
+                    if let dData = try? JSONSerialization.data(withJSONObject: d, options: [.prettyPrinted]),
+                       let dStr = String(data: dData, encoding: .utf8), !dStr.isEmpty {
+                        upstreamDetails = dStr
+                    }
+                }
             }
-            if let m = json["message"] as? String, !m.isEmpty { return m }
+            if upstreamMessage == nil, let m = json["message"] as? String, !m.isEmpty {
+                upstreamMessage = m
+            }
         }
-        return body.isEmpty ? nil : body
+        if let m = upstreamMessage { lines.append("Message: \(m)") }
+        if let s = upstreamStatus { lines.append("Status: \(s)") }
+        if let d = upstreamDetails { lines.append("Details: \(d)") }
+        let bodyPreview = String(body.prefix(1500))
+        if !bodyPreview.isEmpty {
+            lines.append("Body: \(bodyPreview)")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    /// Logs the outgoing request body (size + parts shape + mime types) so we
+    /// can verify the inline_data payload looks sane before Google rejects it.
+    private static func logOutgoingRequest(_ req: URLRequest) {
+        let bodySize = req.httpBody?.count ?? 0
+        var partsCount = 0
+        var mimeTypes: [String] = []
+        var hasInlineData = false
+        var inlineDataLengths: [Int] = []
+        if let bodyData = req.httpBody,
+           let json = try? JSONSerialization.jsonObject(with: bodyData) as? [String: Any] {
+            // Direct Gemini path: contents[].parts[]
+            if let contents = json["contents"] as? [[String: Any]],
+               let firstParts = contents.first?["parts"] as? [[String: Any]] {
+                partsCount = firstParts.count
+                for part in firstParts {
+                    if let inline = part["inline_data"] as? [String: Any] {
+                        hasInlineData = true
+                        if let mt = inline["mime_type"] as? String { mimeTypes.append(mt) }
+                        if let d = inline["data"] as? String { inlineDataLengths.append(d.count) }
+                    }
+                }
+            }
+            // OpenAI-compatible path: messages[].content[]
+            if let messages = json["messages"] as? [[String: Any]] {
+                for msg in messages {
+                    if let content = msg["content"] as? [[String: Any]] {
+                        partsCount = max(partsCount, content.count)
+                        for part in content {
+                            if let imageURL = part["image_url"] as? [String: Any],
+                               let urlStr = imageURL["url"] as? String,
+                               urlStr.hasPrefix("data:") {
+                                hasInlineData = true
+                                if let semi = urlStr.firstIndex(of: ";") {
+                                    let mt = String(urlStr[urlStr.index(urlStr.startIndex, offsetBy: 5)..<semi])
+                                    mimeTypes.append(mt)
+                                }
+                                if let comma = urlStr.firstIndex(of: ",") {
+                                    inlineDataLengths.append(urlStr.distance(from: urlStr.index(after: comma), to: urlStr.endIndex))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        let urlStr = req.url?.absoluteString ?? "<no url>"
+        print("[GeminiAnalysisService] REQUEST url=\(urlStr) bodyBytes=\(bodySize) parts=\(partsCount) hasInlineData=\(hasInlineData) mime=\(mimeTypes) inlineBase64Len=\(inlineDataLengths)")
     }
 
     private static func parseResponse(_ data: Data) -> AnalysisResult? {
