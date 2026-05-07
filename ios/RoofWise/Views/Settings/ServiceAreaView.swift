@@ -5,7 +5,10 @@ struct ServiceAreaView: View {
     @State private var query: String = ""
     @State private var errorMessage: String? = nil
     @State private var pendingDelete: ServiceArea? = nil
+    @State private var showRationale: Bool = false
     @FocusState private var focused: Bool
+
+    private let didAskNotificationsKey = "rw.notifications.didAsk"
 
     var body: some View {
         ScrollView {
@@ -60,6 +63,10 @@ struct ServiceAreaView: View {
                 pendingDelete = nil
             }
             Button("Cancel", role: .cancel) { pendingDelete = nil }
+        }
+        .sheet(isPresented: $showRationale) {
+            NotificationsRationaleView()
+                .presentationDragIndicator(.visible)
         }
     }
 
@@ -144,10 +151,22 @@ struct ServiceAreaView: View {
             return
         }
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        let wasEmpty = store.areas.isEmpty
         store.add(area)
         query = ""
         errorMessage = nil
         focused = false
+        // First-area transition (0 -> 1): present the notifications rationale
+        // sheet exactly once per install.
+        if wasEmpty && !store.areas.isEmpty {
+            let didAsk = UserDefaults.standard.bool(forKey: didAskNotificationsKey)
+            if !didAsk {
+                UserDefaults.standard.set(true, forKey: didAskNotificationsKey)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+                    showRationale = true
+                }
+            }
+        }
     }
 
     // MARK: - Push settings link
