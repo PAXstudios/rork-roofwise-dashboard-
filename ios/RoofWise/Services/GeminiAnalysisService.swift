@@ -8,7 +8,9 @@ import SwiftUI
 struct GeminiAnalysisService {
     private let toolkitURL: String
     private let secret: String
+    private let geminiAPIKey: String
     private static let model = "google/gemini-3-flash"
+    private static let directGeminiModel = "gemini-1.5-flash"
     private static let fallbackModels: [String] = [
         "anthropic/claude-haiku-4.5",
         "alibaba/qwen3-vl-instruct"
@@ -17,10 +19,17 @@ struct GeminiAnalysisService {
     init() {
         self.toolkitURL = Config.EXPO_PUBLIC_TOOLKIT_URL
         self.secret = Config.EXPO_PUBLIC_RORK_TOOLKIT_SECRET_KEY
+        self.geminiAPIKey = Config.EXPO_PUBLIC_GEMINI_API_KEY
     }
 
     private var chatCompletionsURL: URL? {
         URL(string: "\(toolkitURL)/v2/vercel/v1/chat/completions")
+    }
+
+    private var directGeminiURL: URL? {
+        var components = URLComponents(string: "https://generativelanguage.googleapis.com/v1beta/models/\(Self.directGeminiModel):generateContent")
+        components?.queryItems = [URLQueryItem(name: "key", value: geminiAPIKey)]
+        return components?.url
     }
 
     /// Result returned from `analyzeFull`.
@@ -76,10 +85,6 @@ struct GeminiAnalysisService {
         if APIKeys.USE_MOCKS {
             return Self.mockAnalysisResult()
         }
-        guard !secret.isEmpty, let url = chatCompletionsURL else {
-            return AnalysisResult(findings: [], markers: [], failed: true)
-        }
-
         guard let base64 = ImageResize.encodedJPEGBase64(from: image, profile: .live) else {
             return AnalysisResult(findings: [], markers: [], failed: true)
         }
@@ -125,17 +130,13 @@ struct GeminiAnalysisService {
         Mark only visible damage locations. A marker is valid only when its center sits on visible pixel evidence: dark circular bruising, exposed mat, displaced granules, a crack, missing/lifted/torn shingle edge, or flashing defect. Shingle seams, tab boundaries, clean granule texture, shadows, and repeating rows are NOT damage. Do NOT generate random, evenly spaced, grid-like, or per-shingle markers. Include shingle damage beyond hail: lifted tabs, torn tabs, missing tabs, cracks, exposed mat, and wind creases. If no damage is clearly visible, return "damage_markers": []. Coordinates are normalized from top-left.
         """
 
-        let body = Self.chatCompletionBody(systemPrompt: prompt,
-                                            userText: "Analyse this roof photo.",
-                                            base64JPEG: base64,
-                                            temperature: 0.05)
-
-        var req = URLRequest(url: url)
-        req.httpMethod = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.setValue("Bearer \(secret)", forHTTPHeaderField: "Authorization")
-        req.timeoutInterval = 30
-        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        guard let req = liveVisionRequest(systemPrompt: prompt,
+                                          userText: "Analyse this roof photo.",
+                                          base64JPEG: base64,
+                                          temperature: 0.05,
+                                          timeout: 30) else {
+            return AnalysisResult(findings: [], markers: [], failed: true)
+        }
 
         do {
             let (data, response) = try await URLSession.shared.data(for: req)
@@ -161,12 +162,7 @@ struct GeminiAnalysisService {
         if APIKeys.USE_MOCKS {
             return Self.mockAnalysisResult()
         }
-        guard !secret.isEmpty, let url = chatCompletionsURL else {
-            return AnalysisResult(findings: Self.failureFinding(reason: "Rork toolkit not configured. Tap retry."),
-                                  markers: [],
-                                  failed: true)
-        }
-        print("[VisionAI] \u{2705} Using Rork toolkit proxy (\(Self.model), fallbacks: \(Self.fallbackModels.joined(separator: ", "))) — image \(Int(image.size.width))x\(Int(image.size.height)) slope=\(slope.rawValue) mode=\(mode.rawValue)")
+        print("[VisionAI] Starting roof damage analysis — image \(Int(image.size.width))x\(Int(image.size.height)) slope=\(slope.rawValue) mode=\(mode.rawValue) provider=\(providerLabel)")
 
         guard let base64 = ImageResize.encodedJPEGBase64(from: image, profile: .full) else {
             return AnalysisResult(findings: Self.failureFinding(reason: "Could not encode photo for analysis."),
@@ -227,17 +223,15 @@ struct GeminiAnalysisService {
         Include all 10 damage categories in `findings` (set detected=false for ones not present). Always include exactly four `categories` entries: hail, wind, wear, missing. `confidence` and `confidence_avg` MUST be normalized floats from 0.0 to 1.0, not percentages. Mark each visible hail strike and each visible shingle defect individually only when exact pixel evidence is present. If the image is NOT a roof (grass, sky, indoors, person, vehicle), set analyzed=false, return empty `damage_markers`, and add a finding with label="no_roof_detected".
         """
 
-        let body = Self.chatCompletionBody(systemPrompt: prompt,
-                                            userText: "Analyse this roof photo.",
-                                            base64JPEG: base64,
-                                            temperature: 0.1)
-
-        var req = URLRequest(url: url)
-        req.httpMethod = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.setValue("Bearer \(secret)", forHTTPHeaderField: "Authorization")
-        req.timeoutInterval = 60
-        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        guard let req = liveVisionRequest(systemPrompt: prompt,
+                                          userText: "Analyse this roof photo.",
+                                          base64JPEG: base64,
+                                          temperature: 0.1,
+                                          timeout: 60) else {
+            return AnalysisResult(findings: Self.failureFinding(reason: "AI service is not configured. Add a Gemini or Rork toolkit key, then tap retry."),
+                                  markers: [],
+                                  failed: true)
+        }
 
         let started = Date()
         do {
@@ -279,10 +273,55 @@ struct GeminiAnalysisService {
 
     // MARK: - Request body
 
+    private var hasLiveVisionCredentials: Bool {
+        (!secret.isEmpty && chatCompletionsURL != nil) || (!geminiAPIKey.isEmpty && directGeminiURL != nil)
+    }
+
+    private var providerLabel: String {
+        if !secret.isEmpty, chatCompletionsURL != nil { return "Rork toolkit \(Self.model)" }
+        if !geminiAPIKey.isEmpty, directGeminiURL != nil { return "Google Gemini \(Self.directGeminiModel)" }
+        return "mock"
+    }
+
+    private func liveVisionRequest(systemPrompt: String,
+                                   userText: String,
+                                   base64JPEG: String,
+                                   temperature: Double,
+                                   timeout: TimeInterval) -> URLRequest? {
+        if !secret.isEmpty, let url = chatCompletionsURL {
+            let body = Self.chatCompletionBody(systemPrompt: systemPrompt,
+                                               userText: userText,
+                                               base64JPEG: base64JPEG,
+                                               temperature: temperature)
+            var req = URLRequest(url: url)
+            req.httpMethod = "POST"
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.setValue("Bearer \(secret)", forHTTPHeaderField: "Authorization")
+            req.timeoutInterval = timeout
+            req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+            return req
+        }
+
+        if !geminiAPIKey.isEmpty, let url = directGeminiURL {
+            let body = Self.directGeminiBody(systemPrompt: systemPrompt,
+                                             userText: userText,
+                                             base64JPEG: base64JPEG,
+                                             temperature: temperature)
+            var req = URLRequest(url: url)
+            req.httpMethod = "POST"
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.timeoutInterval = timeout
+            req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+            return req
+        }
+
+        return nil
+    }
+
     private static func chatCompletionBody(systemPrompt: String,
-                                            userText: String,
-                                            base64JPEG: String,
-                                            temperature: Double) -> [String: Any] {
+                                           userText: String,
+                                           base64JPEG: String,
+                                           temperature: Double) -> [String: Any] {
         return [
             "model": Self.model,
             "temperature": temperature,
@@ -304,37 +343,47 @@ struct GeminiAnalysisService {
         ]
     }
 
+    private static func directGeminiBody(systemPrompt: String,
+                                         userText: String,
+                                         base64JPEG: String,
+                                         temperature: Double) -> [String: Any] {
+        return [
+            "system_instruction": [
+                "parts": [["text": systemPrompt]]
+            ],
+            "contents": [[
+                "role": "user",
+                "parts": [
+                    ["text": userText],
+                    ["inline_data": [
+                        "mime_type": "image/jpeg",
+                        "data": base64JPEG
+                    ]]
+                ]
+            ]],
+            "generationConfig": [
+                "temperature": temperature,
+                "response_mime_type": "application/json"
+            ]
+        ]
+    }
+
     // MARK: - Parsing
 
     private static func parseResponse(_ data: Data) -> AnalysisResult? {
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return nil
         }
-        // OpenAI-compatible response shape:
-        // { "choices": [ { "message": { "content": "<json string>" } } ] }
-        let text: String? = {
-            if let choices = root["choices"] as? [[String: Any]],
-               let message = choices.first?["message"] as? [String: Any] {
-                if let s = message["content"] as? String { return s }
-                if let parts = message["content"] as? [[String: Any]] {
-                    return parts.compactMap { $0["text"] as? String }.joined()
-                }
-            }
-            // Fallback: legacy Gemini native shape, just in case.
-            if let candidates = root["candidates"] as? [[String: Any]],
-               let content = candidates.first?["content"] as? [String: Any],
-               let parts = content["parts"] as? [[String: Any]],
-               let s = parts.first?["text"] as? String {
-                return s
-            }
-            return nil
-        }()
-        guard let text else { return nil }
 
-        let cleaned = stripCodeFences(text)
-        guard let jsonData = cleaned.data(using: .utf8),
-              let payload = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else {
-            return nil
+        let payload: [String: Any]
+        if looksLikeAnalysisPayload(root) {
+            payload = root
+        } else {
+            guard let text = responseText(from: root),
+                  let parsedPayload = payloadFromText(text) else {
+                return nil
+            }
+            payload = parsedPayload
         }
 
         // Calibration log: surface Gemini's pixels-per-inch estimate so we can
@@ -403,7 +452,10 @@ struct GeminiAnalysisService {
         }
 
         var markers: [DamageMarker] = []
-        if !noRoofFlag, let rawMarkers = payload["damage_markers"] as? [[String: Any]] {
+        let rawMarkers = (payload["damage_markers"] as? [[String: Any]])
+            ?? (payload["markers"] as? [[String: Any]])
+            ?? (payload["detections"] as? [[String: Any]])
+        if !noRoofFlag, let rawMarkers {
             for dict in rawMarkers {
                 if let m = markerFromDict(dict) { markers.append(m) }
             }
@@ -452,14 +504,27 @@ struct GeminiAnalysisService {
     }
 
     private static func mockAnalysisResult() -> AnalysisResult {
+        let markers = InspectionMock.damageMarkers
+        let hailCount = markers.filter { $0.type.isHailImpact }.count
+        let windCount = markers.filter { $0.type.isShingleDamage }.count
+        let wearCount = markers.filter { $0.type == .granuleLoss || $0.type == .blister || $0.type == .algae }.count
+        let missingCount = markers.filter { $0.type == .missingShingle }.count
         let categories = [
-            AIDamageCategoryConfidence(kind: .hail, count: 3, confidence: 0.82, severity: .moderate),
-            AIDamageCategoryConfidence(kind: .wind, count: 1, confidence: 0.74, severity: .minor),
-            AIDamageCategoryConfidence(kind: .wear, count: 2, confidence: 0.68, severity: .minor),
-            AIDamageCategoryConfidence(kind: .missing, count: 0, confidence: 0.91, severity: .minor)
+            AIDamageCategoryConfidence(kind: .hail, count: hailCount, confidence: 0.82, severity: .moderate),
+            AIDamageCategoryConfidence(kind: .wind, count: windCount, confidence: 0.74, severity: .minor),
+            AIDamageCategoryConfidence(kind: .wear, count: wearCount, confidence: 0.68, severity: .minor),
+            AIDamageCategoryConfidence(kind: .missing, count: missingCount, confidence: 0.91, severity: .minor)
         ]
         let snapshot = AIDamageConfidenceSnapshot(categories: categories)
         let findings: [InspectionFinding] = [
+            InspectionFinding(label: "shingle_type",
+                              display: "Shingle Type",
+                              value: "Architectural Asphalt - mock training roof surface",
+                              confidence: 86,
+                              icon: "square.stack.3d.down.right.fill",
+                              tint: Theme.sky,
+                              detected: true,
+                              severity: .none),
             InspectionFinding(label: "bruising",
                               display: "Bruising",
                               value: "Mock hail bruising confidence sample",
@@ -478,17 +543,42 @@ struct GeminiAnalysisService {
                               severity: .minor)
         ]
         return AnalysisResult(findings: findings,
-                              markers: [],
+                              markers: markers,
                               failed: false,
                               usedMock: true,
                               confidenceSnapshot: snapshot)
+    }
+
+    private static func looksLikeAnalysisPayload(_ root: [String: Any]) -> Bool {
+        root["damage_markers"] != nil || root["markers"] != nil || root["detections"] != nil || root["findings"] != nil || root["categories"] != nil
+    }
+
+    private static func responseText(from root: [String: Any]) -> String? {
+        if let choices = root["choices"] as? [[String: Any]],
+           let message = choices.first?["message"] as? [String: Any] {
+            if let s = message["content"] as? String { return s }
+            if let parts = message["content"] as? [[String: Any]] {
+                return parts.compactMap { ($0["text"] as? String) ?? ($0["content"] as? String) }.joined()
+            }
+        }
+        if let candidates = root["candidates"] as? [[String: Any]],
+           let content = candidates.first?["content"] as? [String: Any],
+           let parts = content["parts"] as? [[String: Any]] {
+            return parts.compactMap { $0["text"] as? String }.joined()
+        }
+        return nil
+    }
+
+    private static func payloadFromText(_ text: String) -> [String: Any]? {
+        let cleaned = jsonObjectSubstring(from: stripCodeFences(text))
+        guard let jsonData = cleaned.data(using: .utf8) else { return nil }
+        return try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any]
     }
 
     /// Strip ```json ... ``` or ``` ... ``` fences if Gemini wraps despite responseMimeType.
     private static func stripCodeFences(_ text: String) -> String {
         var s = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if s.hasPrefix("```") {
-            // remove first fence line (``` or ```json)
             if let nl = s.firstIndex(of: "\n") {
                 s = String(s[s.index(after: nl)...])
             }
@@ -500,30 +590,48 @@ struct GeminiAnalysisService {
         return s
     }
 
-    private static func markerFromDict(_ dict: [String: Any]) -> DamageMarker? {
-        let typeRaw = ((dict["type"] as? String) ?? "other").trimmingCharacters(in: .whitespacesAndNewlines)
-        let type = DamageMarkerType(rawValue: typeRaw) ?? DamageMarkerType.alias(for: typeRaw)
-        guard let xVal = (dict["x"] as? Double) ?? (dict["x"] as? NSNumber)?.doubleValue,
-              let yVal = (dict["y"] as? Double) ?? (dict["y"] as? NSNumber)?.doubleValue else {
-            return nil
+    private static func jsonObjectSubstring(from text: String) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let start = trimmed.firstIndex(of: "{"),
+              let end = trimmed.lastIndex(of: "}"),
+              start <= end else {
+            return trimmed
         }
-        // Prefer explicit radius. Otherwise derive from bbox width/height if Gemini
-        // returned a bounding box (newer schema), so single-strike pins land at the right size.
-        let explicitRadius = (dict["radius"] as? Double) ?? (dict["radius"] as? NSNumber)?.doubleValue
-        let bboxW = (dict["width"] as? Double) ?? (dict["width"] as? NSNumber)?.doubleValue
-        let bboxH = (dict["height"] as? Double) ?? (dict["height"] as? NSNumber)?.doubleValue
+        return String(trimmed[start...end])
+    }
+
+    private static func markerFromDict(_ dict: [String: Any]) -> DamageMarker? {
+        let typeRaw = string(dict["type"])
+            ?? string(dict["kind"])
+            ?? string(dict["category"])
+            ?? string(dict["damage_type"])
+            ?? "other"
+        let type = DamageMarkerType(rawValue: typeRaw) ?? DamageMarkerType.alias(for: typeRaw)
+
+        let bbox = bboxValues(from: dict)
+        let xVal = number(dict["x"])
+            ?? number(dict["center_x"])
+            ?? number(dict["cx"])
+            ?? bbox?.centerX
+        let yVal = number(dict["y"])
+            ?? number(dict["center_y"])
+            ?? number(dict["cy"])
+            ?? bbox?.centerY
+        guard let xVal, let yVal else { return nil }
+
+        let explicitRadius = number(dict["radius"])
+        let bboxW = number(dict["width"]) ?? number(dict["w"]) ?? bbox?.width
+        let bboxH = number(dict["height"]) ?? number(dict["h"]) ?? bbox?.height
         let radius: Double = {
             if let r = explicitRadius { return r }
             if let w = bboxW, let h = bboxH { return max(w, h) / 2 }
-            return 0.04
+            return 0.026
         }()
-        let severityRaw = (dict["severity"] as? String ?? "moderate").capitalized
+        let severityRaw = (string(dict["severity"]) ?? "moderate").capitalized
         let severity = FindingSeverity(rawValue: severityRaw) ?? .moderate
-        let note = dict["note"] as? String ?? type.display
+        let note = string(dict["note"]) ?? string(dict["evidence"]) ?? type.display
         let confidence: Int = {
-            if let i = dict["confidence"] as? Int { return max(0, min(100, i)) }
-            if let d = (dict["confidence"] as? Double) ?? (dict["confidence"] as? NSNumber)?.doubleValue {
-                // Accept either 0-1 or 0-100
+            if let d = number(dict["confidence"]) ?? number(dict["score"]) {
                 let v = d <= 1.0 ? d * 100 : d
                 return max(0, min(100, Int(v.rounded())))
             }
@@ -537,6 +645,49 @@ struct GeminiAnalysisService {
                             severity: severity,
                             note: note,
                             confidence: confidence)
+    }
+
+    private static func bboxValues(from dict: [String: Any]) -> (centerX: Double, centerY: Double, width: Double, height: Double)? {
+        if let values = dict["bbox"] as? [Any], values.count >= 4,
+           let x = number(values[0]),
+           let y = number(values[1]),
+           let w = number(values[2]),
+           let h = number(values[3]) {
+            return (x + w / 2, y + h / 2, w, h)
+        }
+        let rawBox = (dict["bbox"] as? [String: Any])
+            ?? (dict["bounding_box"] as? [String: Any])
+            ?? (dict["box"] as? [String: Any])
+        guard let rawBox else { return nil }
+        let x = number(rawBox["x"]) ?? number(rawBox["left"]) ?? number(rawBox["x_min"])
+        let y = number(rawBox["y"]) ?? number(rawBox["top"]) ?? number(rawBox["y_min"])
+        let w = number(rawBox["width"]) ?? number(rawBox["w"])
+        let h = number(rawBox["height"]) ?? number(rawBox["h"])
+        if let x, let y, let w, let h {
+            return (x + w / 2, y + h / 2, w, h)
+        }
+        if let xMin = number(rawBox["x_min"]),
+           let yMin = number(rawBox["y_min"]),
+           let xMax = number(rawBox["x_max"]),
+           let yMax = number(rawBox["y_max"]) {
+            let w = max(0, xMax - xMin)
+            let h = max(0, yMax - yMin)
+            return (xMin + w / 2, yMin + h / 2, w, h)
+        }
+        return nil
+    }
+
+    private static func number(_ raw: Any?) -> Double? {
+        if let value = raw as? Double { return value }
+        if let value = raw as? CGFloat { return Double(value) }
+        if let value = raw as? Int { return Double(value) }
+        if let value = raw as? NSNumber { return value.doubleValue }
+        if let value = raw as? String { return Double(value.trimmingCharacters(in: .whitespacesAndNewlines)) }
+        return nil
+    }
+
+    private static func string(_ raw: Any?) -> String? {
+        (raw as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private static func shingleTypeFinding(from dict: [String: Any]) -> InspectionFinding? {
