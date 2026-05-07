@@ -3,6 +3,8 @@ import SwiftUI
 struct DashboardView: View {
     var onQuickInspection: () -> Void = {}
     var onOpenTraining: () -> Void = {}
+    var onOpenLeads: () -> Void = {}
+    var onOpenLeadsStage: (JobPipelineStage?) -> Void = { _ in }
 
     @State private var path: [UUID] = []
 
@@ -12,6 +14,15 @@ struct DashboardView: View {
                 VStack(spacing: 22) {
                     DashboardHeader()
                     KPIStrip(onQuickInspection: onQuickInspection)
+                    StormAlertHero(onView: onOpenLeads)
+                    RecentJobsHomeSection(
+                        onSeeAll: onOpenLeads,
+                        onOpenJob: { _ in onOpenLeads() }
+                    )
+                    PipelineMiniSection(
+                        onOpenBoard: { onOpenLeadsStage(nil) },
+                        onTapStage: { stage in onOpenLeadsStage(stage.mappedStage) }
+                    )
                     TodaysGoalsCard()
                     LeaderboardCard()
                     RecentWinsCard()
@@ -76,10 +87,10 @@ struct DashboardHeader: View {
                 ZStack {
                     Circle().fill(Theme.card)
                     Image(systemName: systemName)
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.system(size: 18, weight: .semibold))
                         .foregroundStyle(Theme.ink)
                 }
-                .frame(width: 42, height: 42)
+                .frame(width: 56, height: 56)
                 .overlay(Circle().stroke(Theme.hairline, lineWidth: 0.6))
 
                 if badge {

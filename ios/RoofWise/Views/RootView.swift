@@ -30,6 +30,7 @@ struct RootView: View {
     @State private var showMileage = false
     @State private var customerStore = CustomerStore()
     @State private var trainingProgress = TrainingProgressStore()
+    @State private var leadsFilter: JobPipelineStage? = nil
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -37,9 +38,19 @@ struct RootView: View {
 
             Group {
                 switch tab {
-                case .home: DashboardView(onQuickInspection: { showInspectionChooser = true },
-                                         onOpenTraining: { tab = .training })
-                case .leads: LeadsView()
+                case .home: DashboardView(
+                    onQuickInspection: { showInspectionChooser = true },
+                    onOpenTraining: { tab = .training },
+                    onOpenLeads: {
+                        leadsFilter = nil
+                        withAnimation(.spring(duration: 0.3)) { tab = .leads }
+                    },
+                    onOpenLeadsStage: { stage in
+                        leadsFilter = stage
+                        withAnimation(.spring(duration: 0.3)) { tab = .leads }
+                    }
+                )
+                case .leads: LeadsView(filter: $leadsFilter)
                 case .map: MapHubView()
                 case .plan: PlanView()
                 case .training: TrainingView()

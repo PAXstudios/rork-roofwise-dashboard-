@@ -2,9 +2,13 @@ import SwiftUI
 
 struct LeadsView: View {
     @Environment(CustomerStore.self) private var store
-    @State private var filter: JobPipelineStage? = nil
+    @Binding var filter: JobPipelineStage?
     @State private var search: String = ""
     @State private var showNewCustomer = false
+
+    init(filter: Binding<JobPipelineStage?> = .constant(nil)) {
+        self._filter = filter
+    }
 
     private var filtered: [Customer] {
         store.customers.filter { c in
