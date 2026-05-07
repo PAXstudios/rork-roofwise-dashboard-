@@ -26,6 +26,7 @@ struct CostEstimatorWizard: View {
     @State private var showConvertJob = false
     @State private var savedToast = false
     @State private var estimatesStore = EstimatesStore.shared
+    @State private var originEstimateId: UUID? = nil
 
     /// When set, the wizard opens straight at the Review step using this
     /// snapshot — used by the Saved Estimates strip on Home.
@@ -35,6 +36,7 @@ struct CostEstimatorWizard: View {
         self.prefilledSaved = prefilledSaved
         if let s = prefilledSaved {
             _step = State(initialValue: .review)
+            _originEstimateId = State(initialValue: s.id)
             _picked = State(initialValue: AddressSuggestion(
                 title: s.address,
                 subtitle: s.region,
@@ -133,7 +135,8 @@ struct CostEstimatorWizard: View {
             NewJobWizard(
                 prefillAddress: picked?.title,
                 prefillMaterial: material.roofMaterial,
-                prefillDetectedSquares: effectiveSquares > 0 ? effectiveSquares : nil
+                prefillDetectedSquares: effectiveSquares > 0 ? effectiveSquares : nil,
+                originEstimateId: originEstimateId
             )
         }
         .overlay(alignment: .top) {
@@ -261,6 +264,7 @@ struct CostEstimatorWizard: View {
         VStack(spacing: 10) {
             Button {
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                ensureEstimateSavedForConvert()
                 showConvertJob = true
             } label: {
                 HStack(spacing: 8) {
@@ -301,11 +305,28 @@ struct CostEstimatorWizard: View {
         .background(Theme.canvas)
     }
 
+    private func ensureEstimateSavedForConvert() {
+        // The Convert-to-Job flow needs a stable SavedEstimate id so the
+        // resulting Job can carry an `originEstimateId` and surface the
+        // "From estimate" chip later. Save (or re-use) the current snapshot
+        // silently — no toast, no haptic, since the user's primary action is
+        // converting to a job.
+        guard let picked, effectiveSquares > 0 else { return }
+        // If we're already viewing a previously saved estimate, keep its id.
+        if originEstimateId != nil { return }
+        let est = currentEstimate()
+        let saved = SavedEstimate(from: est, address: picked.title)
+        estimatesStore.save(saved)
+        // Resolve the canonical id (save() replaces by address).
+        originEstimateId = estimatesStore.estimates.first { $0.address == picked.title }?.id ?? saved.id
+    }
+
     private func saveCurrentEstimate() {
         guard let picked, effectiveSquares > 0 else { return }
         let est = currentEstimate()
         let saved = SavedEstimate(from: est, address: picked.title)
         estimatesStore.save(saved)
+        originEstimateId = estimatesStore.estimates.first { $0.address == picked.title }?.id ?? saved.id
         UINotificationFeedbackGenerator().notificationOccurred(.success)
         withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
             savedToast = true

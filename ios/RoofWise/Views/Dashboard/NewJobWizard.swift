@@ -51,12 +51,14 @@ struct NewJobWizard: View {
     init(prefillAddress: String?,
          prefillMaterial: RoofPrimaryMaterial?,
          prefillDetectedSquares: Double?,
+         originEstimateId: UUID? = nil,
          onCreated: @escaping (String) -> Void = { _ in }) {
         self.onCreated = onCreated
         var d = InspectionStore.shared.makeDraft()
         if let a = prefillAddress, !a.isEmpty { d.job.propertyAddress = a }
         if let m = prefillMaterial { d.roof.primaryMaterial = m }
         if let sq = prefillDetectedSquares, sq > 0 { d.roof.detectedAreaSquares = sq }
+        d.originEstimateId = originEstimateId
         _draft = State(initialValue: d)
     }
 

@@ -394,11 +394,16 @@ struct Inspection: Codable, Hashable, Identifiable {
     /// Optional PencilKit-captured signatures, persisted as PNG bytes.
     var inspectorSignaturePng: Data?
     var homeownerSignaturePng: Data?
+    /// If this job was created via the Cost Estimator's Convert-to-Job CTA,
+    /// holds the id of the originating `SavedEstimate` so JobDetailView can
+    /// surface a "From estimate" chip and re-open it at Step 4.
+    var originEstimateId: UUID?
 
     enum CodingKeys: String, CodingKey {
         case job, event, roof, slopes, collateral, summary
         case inspectorSignaturePng = "inspector_signature_png"
         case homeownerSignaturePng = "homeowner_signature_png"
+        case originEstimateId = "origin_estimate_id"
     }
 
     /// Stable identity backed by `report_id`.
@@ -411,7 +416,8 @@ struct Inspection: Codable, Hashable, Identifiable {
          collateral: InspectionCollateral,
          summary: InspectionSummary,
          inspectorSignaturePng: Data? = nil,
-         homeownerSignaturePng: Data? = nil) {
+         homeownerSignaturePng: Data? = nil,
+         originEstimateId: UUID? = nil) {
         self.job = job
         self.event = event
         self.roof = roof
@@ -420,6 +426,7 @@ struct Inspection: Codable, Hashable, Identifiable {
         self.summary = summary
         self.inspectorSignaturePng = inspectorSignaturePng
         self.homeownerSignaturePng = homeownerSignaturePng
+        self.originEstimateId = originEstimateId
     }
 
     init(from decoder: Decoder) throws {
@@ -432,6 +439,7 @@ struct Inspection: Codable, Hashable, Identifiable {
         summary = try c.decode(InspectionSummary.self, forKey: .summary)
         inspectorSignaturePng = try c.decodeIfPresent(Data.self, forKey: .inspectorSignaturePng)
         homeownerSignaturePng = try c.decodeIfPresent(Data.self, forKey: .homeownerSignaturePng)
+        originEstimateId = try c.decodeIfPresent(UUID.self, forKey: .originEstimateId)
     }
 }
 

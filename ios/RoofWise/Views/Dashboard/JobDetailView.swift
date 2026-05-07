@@ -16,6 +16,8 @@ struct JobDetailView: View {
     @State private var roofMeasurements: RoofMeasurements? = nil
     @State private var showSolarSheet = false
     @State private var showRoofOnMap = false
+    @State private var estimatesStore = EstimatesStore.shared
+    @State private var showOriginEstimate = false
 
     let reportId: String
 
@@ -100,6 +102,11 @@ struct JobDetailView: View {
                 SolarMeasurementsSheet(measurements: m, address: insp.job.propertyAddress)
             }
         }
+        .sheet(isPresented: $showOriginEstimate) {
+            if let saved = originSavedEstimate {
+                CostEstimatorWizard(prefilledSaved: saved)
+            }
+        }
         .sheet(item: Binding(
             get: { pdfShareURL.map(IdentifiableURL.init) },
             set: { pdfShareURL = $0?.url }
@@ -136,6 +143,9 @@ struct JobDetailView: View {
                 infoChip(text: insp.job.reportId,
                          icon: "doc.text.fill",
                          tint: Theme.ink)
+                if insp.originEstimateId != nil {
+                    fromEstimateChip
+                }
                 if !insp.job.claimNumber.isEmpty {
                     infoChip(text: "Claim \(insp.job.claimNumber)",
                              icon: "shield.fill",
@@ -174,6 +184,35 @@ struct JobDetailView: View {
                 locationLabel: insp.job.propertyAddress.isEmpty ? "Site" : insp.job.propertyAddress
             )
         }
+    }
+
+    private var originSavedEstimate: SavedEstimate? {
+        guard let id = inspection?.originEstimateId else { return nil }
+        return estimatesStore.estimates.first { $0.id == id }
+    }
+
+    private var fromEstimateChip: some View {
+        let exists = originSavedEstimate != nil
+        return Button {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            if exists { showOriginEstimate = true }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "dollarsign.circle.fill")
+                    .font(.system(size: Theme.TypeRamp.caption, weight: .bold))
+                Text(exists ? "From estimate" : "From estimate (deleted)")
+                    .font(.system(size: Theme.TypeRamp.metaSm, weight: .heavy))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(exists ? Theme.mint : Theme.inkSoft)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background((exists ? Theme.mintSoft : Theme.canvas), in: .capsule)
+            .overlay(Capsule().stroke(
+                exists ? Color.clear : Theme.hairline, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .disabled(!exists)
     }
 
     private func infoChip(text: String, icon: String, tint: Color) -> some View {
