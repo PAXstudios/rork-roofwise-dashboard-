@@ -6,13 +6,18 @@ struct DashboardView: View {
     var onOpenLeads: () -> Void = {}
     var onOpenLeadsStage: (JobPipelineStage?) -> Void = { _ in }
 
-    @State private var path: [UUID] = []
+    @State private var path: [DashboardRoute] = []
+    @State private var serviceAreaStore = ServiceAreaStore.shared
 
     var body: some View {
         NavigationStack(path: $path) {
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: 22) {
-                    DashboardHeader()
+                    DashboardHeader(onOpenSettings: { path.append(.serviceArea) })
+                    if !serviceAreaStore.hasConfiguredServiceArea {
+                        ServiceAreaBanner(onConfigure: { path.append(.serviceArea) })
+                            .padding(.horizontal, 18)
+                    }
                     KPIStrip(onQuickInspection: onQuickInspection)
                     StormAlertHero(onView: onOpenLeads)
                     WeatherTile()
@@ -33,7 +38,7 @@ struct DashboardView: View {
                     StormAlertSubscriptionCard()
                     PipelineCard()
                     ScheduleCard()
-                    RecentJobsRow(onOpenCustomer: { id in path.append(id) })
+                    RecentJobsRow(onOpenCustomer: { id in path.append(.customer(id)) })
                     AIInsightsCard()
                     Color.clear.frame(height: 120)
                 }
@@ -41,16 +46,71 @@ struct DashboardView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Theme.canvas)
-            .navigationDestination(for: UUID.self) { id in
-                CustomerProfileView(customerID: id)
+            .navigationDestination(for: DashboardRoute.self) { route in
+                switch route {
+                case .customer(let id): CustomerProfileView(customerID: id)
+                case .serviceArea: ServiceAreaView()
+                }
             }
         }
+    }
+}
+
+enum DashboardRoute: Hashable {
+    case customer(UUID)
+    case serviceArea
+}
+
+struct ServiceAreaBanner: View {
+    var onConfigure: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12).fill(Theme.amberSoft)
+                    Image(systemName: "mappin.and.ellipse")
+                        .font(.system(size: Theme.TypeRamp.subhead, weight: .heavy))
+                        .foregroundStyle(Theme.amber)
+                }
+                .frame(width: 44, height: 44)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("SET YOUR SERVICE AREA")
+                        .font(.system(size: Theme.TypeRamp.captionSm, weight: .heavy))
+                        .tracking(0.8)
+                        .foregroundStyle(Theme.inkSoft)
+                    Text("Set your service area to enable storm alerts")
+                        .font(.system(size: Theme.TypeRamp.body, weight: .heavy))
+                        .foregroundStyle(Theme.ink)
+                        .lineLimit(2)
+                }
+                Spacer(minLength: 0)
+            }
+            Button(action: onConfigure) {
+                HStack(spacing: 8) {
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.system(size: Theme.TypeRamp.body, weight: .heavy))
+                    Text("Configure now")
+                        .font(.system(size: Theme.TypeRamp.cta, weight: .heavy))
+                }
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity, minHeight: 64)
+                .background(Theme.inkGradient, in: .rect(cornerRadius: 16))
+                .shadow(color: Theme.ink.opacity(0.18), radius: 12, y: 4)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(16)
+        .background(Theme.amberSoft, in: .rect(cornerRadius: 20))
+        .overlay(RoundedRectangle(cornerRadius: 20).stroke(Theme.amber.opacity(0.5), lineWidth: 0.8))
     }
 }
 
 // MARK: - Header
 
 struct DashboardHeader: View {
+    var onOpenSettings: () -> Void = {}
+
     var body: some View {
         HStack(spacing: 14) {
             ZStack {
@@ -79,12 +139,13 @@ struct DashboardHeader: View {
 
             iconButton(systemName: "magnifyingglass")
             iconButton(systemName: "bell.fill", badge: true)
+            iconButton(systemName: "gearshape.fill", action: onOpenSettings)
         }
         .padding(.horizontal, 20)
     }
 
-    private func iconButton(systemName: String, badge: Bool = false) -> some View {
-        Button {} label: {
+    private func iconButton(systemName: String, badge: Bool = false, action: @escaping () -> Void = {}) -> some View {
+        Button(action: action) {
             ZStack(alignment: .topTrailing) {
                 ZStack {
                     Circle().fill(Theme.card)
