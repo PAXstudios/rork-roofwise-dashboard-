@@ -52,3 +52,37 @@ extension Theme {
                        startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 }
+
+// MARK: - Type ramp
+//
+// Audited from existing Plan / Training / Quick Inspection screens.
+// These are the ONLY sizes new screens may use. If a layout needs something
+// else, snap to the nearest ramp size — do NOT introduce a new one.
+//
+// Existing ramp (in pt): 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 22, 24, 26, 28
+// Weights: .heavy, .bold, .semibold, .medium
+//
+// Glove-readability minimums from Phase 1/2 prompts (28/24/22/18/17pt) all
+// already exist in the ramp — use these tokens rather than literals.
+extension Theme {
+    enum TypeRamp {
+        // Hero / numeric display (steppers, big values).
+        static let display: CGFloat = 28          // was 30, 32
+        static let title: CGFloat = 24            // section hero / client name
+        static let titleSm: CGFloat = 22          // card title large
+
+        // Body / CTA.
+        static let cta: CGFloat = 18              // big bottom button label
+        static let body: CGFloat = 17             // primary body, ≥17pt min
+        static let bodyTight: CGFloat = 16        // dense body, button label
+        static let subhead: CGFloat = 15          // subhead / chip large
+
+        // Meta / chip / caption.
+        static let meta: CGFloat = 14             // chip body, secondary
+        static let metaSm: CGFloat = 13           // section labels
+        static let caption: CGFloat = 12          // pill, eyebrow
+        static let captionSm: CGFloat = 11        // dense eyebrow
+        static let micro: CGFloat = 10            // micro tag
+        static let microSm: CGFloat = 9           // map glyph / counter
+    }
+}

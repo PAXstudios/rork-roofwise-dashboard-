@@ -430,7 +430,7 @@ private struct ReportComingSoonSheet: View {
             ZStack {
                 Circle().fill(Theme.emberSoft)
                 Image(systemName: "doc.richtext.fill")
-                    .font(.system(size: 30, weight: .bold))
+                    .font(.system(size: Theme.TypeRamp.display, weight: .bold))
                     .foregroundStyle(Theme.ember)
             }
             .frame(width: 84, height: 84)

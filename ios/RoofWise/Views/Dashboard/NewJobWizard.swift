@@ -409,7 +409,7 @@ private struct BigStepper: View {
                 .disabled(value <= range.lowerBound)
 
                 Text(format(value))
-                    .font(.system(size: 32, weight: .heavy))
+                    .font(.system(size: Theme.TypeRamp.display, weight: .heavy))
                     .foregroundStyle(Theme.ink)
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
