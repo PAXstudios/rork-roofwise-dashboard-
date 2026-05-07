@@ -51,6 +51,12 @@ struct SlopeCaptureView: View {
     @State private var pickerItems: [PhotosPickerItem] = []
     @State private var isImporting: Bool = false
     @State private var showCamera: Bool = false
+    // Launches the existing polished capture flow (QuickInspectionView).
+    // We don't read photos back from it (QuickInspection owns its own @State
+    // capturedPhotos and dismisses); the inline Capture / Library buttons below
+    // remain the source of truth for photos attached to this slope.
+    @State private var showFullCapture: Bool = false
+    @State private var fullCaptureCustomerStore = CustomerStore()
 
     // Misc
     @State private var showDiscardConfirm: Bool = false
@@ -117,6 +123,13 @@ struct SlopeCaptureView: View {
             }
             .ignoresSafeArea()
         }
+        .fullScreenCover(isPresented: $showFullCapture) {
+            // Reuse the existing polished capture flow as-is. It manages its
+            // own state and dismisses itself; we don't bind back into our
+            // local photos array (QuickInspectionView doesn't surface them).
+            QuickInspectionView()
+                .environment(fullCaptureCustomerStore)
+        }
         .confirmationDialog("Discard slope?",
                             isPresented: $showDiscardConfirm,
                             titleVisibility: .visible) {
@@ -156,17 +169,64 @@ struct SlopeCaptureView: View {
         photos = store.photos(for: reportId, orientation: s.orientation)
     }
 
-    // MARK: Photo card
+    // MARK: Photo card (thin)
+    //
+    // Intentionally compact so it doesn't compete with the polished
+    // QuickInspectionView capture flow. Primary CTA launches that flow
+    // full-screen; inline Capture / Library remain as quick fallbacks.
 
     private var photoCard: some View {
-        SlopeCard(title: "Photos", icon: "camera.fill") {
-            HStack(spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "camera.fill")
+                    .font(.system(size: 13, weight: .heavy))
+                    .foregroundStyle(Theme.ember)
+                Text("Photos")
+                    .font(.system(size: 13, weight: .heavy))
+                    .tracking(0.6)
+                    .foregroundStyle(Theme.inkSoft)
+                    .textCase(.uppercase)
+                Spacer()
+                if !photos.isEmpty {
+                    Text("\(photos.count)")
+                        .font(.system(size: 13, weight: .heavy))
+                        .foregroundStyle(Theme.ink)
+                        .monospacedDigit()
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(Theme.canvas, in: .capsule)
+                }
+            }
+
+            // Primary: launch the existing polished capture flow.
+            Button {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                showFullCapture = true
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "viewfinder")
+                        .font(.system(size: 18, weight: .bold))
+                    Text("Open Quick Inspection")
+                        .font(.system(size: 17, weight: .semibold))
+                    Spacer(minLength: 0)
+                    Image(systemName: "arrow.up.right.square.fill")
+                        .font(.system(size: 16, weight: .bold))
+                        .opacity(0.9)
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 16)
+                .frame(maxWidth: .infinity, minHeight: 56)
+                .background(Theme.ember, in: .rect(cornerRadius: 14))
+            }
+            .buttonStyle(.plain)
+
+            // Inline fallbacks — kept so the slope can have its own photos
+            // even if QuickInspection isn't used.
+            HStack(spacing: 10) {
                 Button {
-                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
                     showCamera = true
                 } label: {
-                    photoButtonLabel(icon: "camera.fill", title: "Capture",
-                                     fg: .white, bg: Theme.ember)
+                    miniPhotoButton(icon: "camera.fill", title: "Capture")
                 }
                 .buttonStyle(.plain)
 
@@ -174,82 +234,65 @@ struct SlopeCaptureView: View {
                              maxSelectionCount: 0,
                              selectionBehavior: .ordered,
                              matching: .images) {
-                    photoButtonLabel(icon: "photo.on.rectangle.angled",
-                                     title: isImporting ? "Importing…" : "Library",
-                                     fg: Theme.ink, bg: Theme.card,
-                                     bordered: true)
+                    miniPhotoButton(icon: "photo.on.rectangle.angled",
+                                    title: isImporting ? "Importing…" : "Library")
                 }
                 .disabled(isImporting)
             }
 
-            if photos.isEmpty {
-                VStack(spacing: 8) {
-                    Image(systemName: "photo.stack")
-                        .font(.system(size: 32, weight: .bold))
-                        .foregroundStyle(Theme.inkFaint)
-                    Text("Tap to add slope photos")
-                        .font(.system(size: 17, weight: .heavy))
-                        .foregroundStyle(Theme.ink)
-                    Text("Optional, but they help when reviewing the report later.")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(Theme.inkSoft)
-                        .multilineTextAlignment(.center)
-                }
-                .padding(24)
-                .frame(maxWidth: .infinity)
-                .background(Theme.canvas, in: .rect(cornerRadius: 16))
-                .overlay(RoundedRectangle(cornerRadius: 16)
-                    .stroke(Theme.hairline, lineWidth: 1))
-            } else {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 100), spacing: 10)], spacing: 10) {
-                    ForEach(Array(photos.enumerated()), id: \.offset) { idx, img in
-                        photoTile(img, index: idx)
+            if !photos.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(Array(photos.enumerated()), id: \.offset) { idx, img in
+                            thinPhotoTile(img, index: idx)
+                        }
                     }
+                    .padding(.vertical, 2)
                 }
             }
         }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.card, in: .rect(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Theme.hairline, lineWidth: 1))
     }
 
-    private func photoButtonLabel(icon: String, title: String,
-                                  fg: Color, bg: Color,
-                                  bordered: Bool = false) -> some View {
+    private func miniPhotoButton(icon: String, title: String) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: icon).font(.system(size: 18, weight: .bold))
-            Text(title).font(.system(size: 18, weight: .semibold))
+            Image(systemName: icon).font(.system(size: 15, weight: .bold))
+            Text(title).font(.system(size: 16, weight: .semibold))
         }
-        .foregroundStyle(fg)
-        .frame(maxWidth: .infinity, minHeight: 64)
-        .background(bg, in: .rect(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16)
-            .stroke(bordered ? Theme.hairline : .clear, lineWidth: 1))
+        .foregroundStyle(Theme.ink)
+        .frame(maxWidth: .infinity, minHeight: 56)
+        .background(Theme.canvas, in: .rect(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.hairline, lineWidth: 1))
     }
 
-    private func photoTile(_ img: UIImage, index: Int) -> some View {
+    private func thinPhotoTile(_ img: UIImage, index: Int) -> some View {
         ZStack(alignment: .topTrailing) {
             Color(.secondarySystemBackground)
-                .aspectRatio(1, contentMode: .fit)
+                .frame(width: 72, height: 72)
                 .overlay {
                     Image(uiImage: img)
                         .resizable()
                         .aspectRatio(contentMode: .fill)
                         .allowsHitTesting(false)
                 }
-                .clipShape(.rect(cornerRadius: 12))
-                .overlay(RoundedRectangle(cornerRadius: 12)
-                    .stroke(Theme.hairline, lineWidth: 0.6))
+                .clipShape(.rect(cornerRadius: 10))
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.hairline, lineWidth: 0.6))
 
             Button {
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 photos.remove(at: index)
             } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 14, weight: .heavy))
+                    .font(.system(size: 11, weight: .heavy))
                     .foregroundStyle(.white)
-                    .frame(width: 32, height: 32)
+                    .frame(width: 24, height: 24)
                     .background(Color.black.opacity(0.65), in: .circle)
             }
             .buttonStyle(.plain)
-            .padding(6)
+            .padding(4)
         }
     }
 
