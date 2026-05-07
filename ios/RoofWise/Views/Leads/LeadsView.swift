@@ -4,7 +4,7 @@ struct LeadsView: View {
     @Environment(CustomerStore.self) private var store
     @Binding var filter: JobPipelineStage?
     @State private var search: String = ""
-    @State private var showNewCustomer = false
+    @State private var showNewJob = false
 
     init(filter: Binding<JobPipelineStage?> = .constant(nil)) {
         self._filter = filter
@@ -57,15 +57,8 @@ struct LeadsView: View {
             .navigationDestination(for: UUID.self) { id in
                 CustomerProfileView(customerID: id)
             }
-            .sheet(isPresented: $showNewCustomer) {
-                NewCustomerSheet { newCustomer in
-                    store.add(newCustomer, makeActive: true)
-                    showNewCustomer = false
-                } onCancel: {
-                    showNewCustomer = false
-                }
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
+            .fullScreenCover(isPresented: $showNewJob) {
+                NewJobWizard()
             }
         }
     }
@@ -88,7 +81,7 @@ struct LeadsView: View {
             }
             Button {
                 ActivityStore.shared.logTap(target: "Leads.newCustomer")
-                showNewCustomer = true
+                showNewJob = true
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "plus")
@@ -217,7 +210,7 @@ struct LeadsView: View {
                 .foregroundStyle(Theme.inkFaint)
             Button {
                 ActivityStore.shared.logTap(target: "Leads.emptyState.newCustomer")
-                showNewCustomer = true
+                showNewJob = true
             } label: {
                 Text("Add a customer")
                     .font(.system(size: Theme.TypeRamp.cta, weight: .heavy))
