@@ -13,6 +13,7 @@ import GoogleMaps
 @main
 struct RoofWiseApp: App {
     private let modelContainer: ModelContainer = JobPersistence.makeContainer()
+    @Environment(\.scenePhase) private var scenePhase
 
     init() {
         MileageNotificationDelegate.shared.install()
@@ -40,5 +41,11 @@ struct RoofWiseApp: App {
                 .preferredColorScheme(.light)
         }
         .modelContainer(modelContainer)
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            Task { @MainActor in
+                await StormWatchService.shared.scanIfDue()
+            }
+        }
     }
 }
