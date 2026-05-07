@@ -4,6 +4,9 @@ struct JobDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var store = InspectionStore.shared
     @State private var showAddSlope = false
+    @State private var editingOrientation: String? = nil
+    @State private var slopePendingDelete: Slope? = nil
+    @State private var showReportPlaceholder = false
 
     let reportId: String
 
@@ -19,8 +22,13 @@ struct JobDetailView: View {
                 VStack(alignment: .leading, spacing: 20) {
                     if let insp = inspection {
                         header(insp)
-                        emptySlopesCard
-                        addSlopeButton
+                        if insp.slopes.isEmpty {
+                            emptySlopesCard
+                        } else {
+                            slopesSummaryCard(insp)
+                            slopesList(insp)
+                        }
+                        addSlopeButton(label: insp.slopes.isEmpty ? "Add slope" : "Add another slope")
                         Color.clear.frame(height: 140)
                     } else {
                         Text("Job not found.")
@@ -44,10 +52,30 @@ struct JobDetailView: View {
                     .foregroundStyle(Theme.ember)
             }
         }
-        .sheet(isPresented: $showAddSlope) {
-            AddSlopePlaceholderSheet()
+        .fullScreenCover(isPresented: $showAddSlope) {
+            SlopeCaptureSheet(reportId: reportId)
+        }
+        .fullScreenCover(item: $editingOrientation) { orient in
+            SlopeCaptureSheet(reportId: reportId, existingOrientation: orient)
+        }
+        .sheet(isPresented: $showReportPlaceholder) {
+            ReportComingSoonSheet()
                 .presentationDetents([.medium])
                 .presentationDragIndicator(.visible)
+        }
+        .alert("Remove this slope?",
+               isPresented: Binding(get: { slopePendingDelete != nil },
+                                    set: { if !$0 { slopePendingDelete = nil } })) {
+            Button("Remove", role: .destructive) {
+                if let s = slopePendingDelete {
+                    store.removeSlope(orientation: s.orientation, on: reportId)
+                    UINotificationFeedbackGenerator().notificationOccurred(.warning)
+                }
+                slopePendingDelete = nil
+            }
+            Button("Cancel", role: .cancel) { slopePendingDelete = nil }
+        } message: {
+            Text("All damage scoring for this face will be deleted from the report.")
         }
     }
 
@@ -116,7 +144,152 @@ struct JobDetailView: View {
         .overlay(RoundedRectangle(cornerRadius: 18).stroke(Theme.hairline, lineWidth: 1))
     }
 
-    private var addSlopeButton: some View {
+    private func slopesSummaryCard(_ insp: Inspection) -> some View {
+        let slopes = insp.slopes
+        let totalSquares = slopes.reduce(0.0) { $0 + $1.areaSquares }
+        let functional = slopes.filter { $0.functionalDamagePresent }.count
+        let totalRepair = slopes.reduce(0.0) { $0 + $1.repairCostSlope }
+        return VStack(alignment: .leading, spacing: 14) {
+            FieldLabelInline(text: "Slopes inspected")
+            HStack(spacing: 10) {
+                summaryStat(value: "\(slopes.count)", label: "Slopes", tint: Theme.ink)
+                summaryStat(value: String(format: "%.1f", totalSquares), label: "Squares", tint: Theme.amber)
+                summaryStat(value: "\(functional)", label: "Functional",
+                            tint: functional > 0 ? Theme.crimson : Theme.mint)
+            }
+            if totalRepair > 0 {
+                HStack(spacing: 8) {
+                    Image(systemName: "hammer.fill")
+                        .font(.system(size: 13, weight: .heavy))
+                        .foregroundStyle(Theme.ember)
+                    Text("Repair estimate: \(currency(totalRepair))")
+                        .font(.system(size: 15, weight: .heavy))
+                        .foregroundStyle(Theme.ink)
+                }
+            }
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.card, in: .rect(cornerRadius: 18))
+        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Theme.hairline, lineWidth: 1))
+    }
+
+    private func summaryStat(value: String, label: String, tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(value)
+                .font(.system(size: 24, weight: .heavy))
+                .foregroundStyle(tint)
+                .monospacedDigit()
+            Text(label.uppercased())
+                .font(.system(size: 10, weight: .heavy))
+                .tracking(0.8)
+                .foregroundStyle(Theme.inkSoft)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(Theme.canvas, in: .rect(cornerRadius: 14))
+    }
+
+    private func slopesList(_ insp: Inspection) -> some View {
+        VStack(spacing: 12) {
+            ForEach(insp.slopes) { slope in
+                slopeRow(slope)
+            }
+        }
+    }
+
+    private func slopeRow(_ slope: Slope) -> some View {
+        let photoCount = store.photos(for: reportId, orientation: slope.orientation).count
+        return HStack(spacing: 12) {
+            Button {
+                editingOrientation = slope.orientation
+            } label: {
+                HStack(spacing: 14) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(slope.functionalDamagePresent ? Theme.crimson.opacity(0.15) : Theme.emberSoft)
+                        Text(slope.orientation)
+                            .font(.system(size: 18, weight: .heavy))
+                            .foregroundStyle(slope.functionalDamagePresent ? Theme.crimson : Theme.ember)
+                    }
+                    .frame(width: 64, height: 64)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("\(slope.orientation) slope")
+                            .font(.system(size: 17, weight: .heavy))
+                            .foregroundStyle(Theme.ink)
+                        Text("Pitch \(slope.pitchRiseOver12)/12 · \(String(format: "%.1f", slope.areaSquares)) sq · \(slope.damagedUnitsPerSquare)/sq")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Theme.inkSoft)
+                            .lineLimit(1)
+                        HStack(spacing: 6) {
+                            verdictPill(slope: slope)
+                            if photoCount > 0 {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "photo.fill")
+                                        .font(.system(size: 10, weight: .heavy))
+                                    Text("\(photoCount)")
+                                        .font(.system(size: 12, weight: .heavy))
+                                }
+                                .foregroundStyle(Theme.inkSoft)
+                                .padding(.horizontal, 8).padding(.vertical, 4)
+                                .background(Theme.canvas, in: .capsule)
+                            }
+                        }
+                    }
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(Theme.inkFaint)
+                }
+                .padding(14)
+                .frame(maxWidth: .infinity, minHeight: 92, alignment: .leading)
+                .background(Theme.card, in: .rect(cornerRadius: 18))
+                .overlay(RoundedRectangle(cornerRadius: 18).stroke(Theme.hairline, lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                slopePendingDelete = slope
+            } label: {
+                Image(systemName: "trash.fill")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(Theme.crimson)
+                    .frame(width: 64, height: 64)
+                    .background(Theme.card, in: .rect(cornerRadius: 18))
+                    .overlay(RoundedRectangle(cornerRadius: 18)
+                        .stroke(Theme.crimson.opacity(0.3), lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private func verdictPill(slope: Slope) -> some View {
+        let title: String
+        let bg: Color
+        let fg: Color
+        if slope.functionalDamagePresent {
+            title = "Replace"; bg = Theme.crimson.opacity(0.14); fg = Theme.crimson
+        } else if slope.cosmeticOnly {
+            title = "Repair"; bg = Theme.amberSoft; fg = Theme.amber
+        } else {
+            title = "No damage"; bg = Theme.mintSoft; fg = Theme.mint
+        }
+        return Text(title)
+            .font(.system(size: 12, weight: .heavy))
+            .foregroundStyle(fg)
+            .padding(.horizontal, 10).padding(.vertical, 4)
+            .background(bg, in: .capsule)
+    }
+
+    private func currency(_ value: Double) -> String {
+        let f = NumberFormatter()
+        f.numberStyle = .currency
+        f.maximumFractionDigits = 0
+        return f.string(from: NSNumber(value: value)) ?? "$\(Int(value))"
+    }
+
+    private func addSlopeButton(label: String) -> some View {
         Button {
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
             showAddSlope = true
@@ -124,7 +297,7 @@ struct JobDetailView: View {
             HStack(spacing: 10) {
                 Image(systemName: "plus.circle.fill")
                     .font(.system(size: 22, weight: .bold))
-                Text("Add slope")
+                Text(label)
                     .font(.system(size: 18, weight: .bold))
             }
             .foregroundStyle(.white)
@@ -140,10 +313,12 @@ struct JobDetailView: View {
     }
 
     private var generateReportBar: some View {
-        VStack(spacing: 0) {
+        let hasSlopes = !(inspection?.slopes.isEmpty ?? true)
+        return VStack(spacing: 0) {
             Rectangle().fill(Theme.hairline).frame(height: 0.5)
             Button {
-                // Disabled until first slope is added.
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                showReportPlaceholder = true
             } label: {
                 HStack(spacing: 10) {
                     Image(systemName: "doc.richtext.fill")
@@ -153,16 +328,30 @@ struct JobDetailView: View {
                 }
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity, minHeight: 64)
-                .background(Theme.inkFaint, in: .rect(cornerRadius: 18))
+                .background(
+                    hasSlopes
+                        ? AnyShapeStyle(LinearGradient(
+                            colors: [Theme.ember, Theme.emberDeep],
+                            startPoint: .topLeading, endPoint: .bottomTrailing))
+                        : AnyShapeStyle(Theme.inkFaint),
+                    in: .rect(cornerRadius: 18)
+                )
+                .shadow(color: hasSlopes ? Theme.ember.opacity(0.4) : .clear,
+                        radius: 14, x: 0, y: 6)
             }
             .buttonStyle(.plain)
-            .disabled(true)
+            .disabled(!hasSlopes)
             .padding(.horizontal, 20)
             .padding(.top, 12)
             .padding(.bottom, 20)
         }
         .background(Theme.canvas)
     }
+}
+
+// Allow String to drive .fullScreenCover(item:) for editing-by-orientation.
+extension String: @retroactive Identifiable {
+    public var id: String { self }
 }
 
 private struct FieldLabelInline: View {
@@ -175,14 +364,14 @@ private struct FieldLabelInline: View {
     }
 }
 
-private struct AddSlopePlaceholderSheet: View {
+private struct ReportComingSoonSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         VStack(spacing: 18) {
             ZStack {
                 Circle().fill(Theme.emberSoft)
-                Image(systemName: "house.lodge.fill")
+                Image(systemName: "doc.richtext.fill")
                     .font(.system(size: 30, weight: .bold))
                     .foregroundStyle(Theme.ember)
             }
@@ -194,11 +383,11 @@ private struct AddSlopePlaceholderSheet: View {
                 .foregroundStyle(Theme.ember)
                 .tracking(0.8)
 
-            Text("Slope inspection capture")
+            Text("Haag PDF report")
                 .font(.system(size: 22, weight: .heavy))
                 .foregroundStyle(Theme.ink)
 
-            Text("Walk a slope, mark damaged units per square, and let RoofWise score it against Haag thresholds — coming in the next build.")
+            Text("Roll your slopes into a Haag-formatted PDF and ship it to the carrier — coming in the next build.")
                 .font(.system(size: 15, weight: .medium))
                 .foregroundStyle(Theme.inkSoft)
                 .multilineTextAlignment(.center)

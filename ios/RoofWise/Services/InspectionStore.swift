@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import UIKit
 
 /// Source-of-truth store for Haag `Inspection` records.
 /// Persists the full array as JSON inside the app's Documents directory.
@@ -69,6 +70,66 @@ final class InspectionStore {
 
     func inspection(with reportId: String) -> Inspection? {
         inspections.first { $0.job.reportId == reportId }
+    }
+
+    // MARK: Slope helpers
+
+    /// Append (or replace) a slope on the inspection identified by `reportId`.
+    /// Replaces an existing slope when its `orientation` matches.
+    func upsertSlope(_ slope: Slope, on reportId: String) {
+        guard let idx = inspections.firstIndex(where: { $0.job.reportId == reportId }) else { return }
+        var insp = inspections[idx]
+        if let existing = insp.slopes.firstIndex(where: { $0.orientation == slope.orientation }) {
+            insp.slopes[existing] = slope
+        } else {
+            insp.slopes.append(slope)
+        }
+        recomputeSummary(&insp)
+        inspections[idx] = insp
+        save()
+    }
+
+    func removeSlope(orientation: String, on reportId: String) {
+        guard let idx = inspections.firstIndex(where: { $0.job.reportId == reportId }) else { return }
+        var insp = inspections[idx]
+        insp.slopes.removeAll { $0.orientation == orientation }
+        recomputeSummary(&insp)
+        inspections[idx] = insp
+        sessionPhotos[Self.photoKey(reportId, orientation)] = nil
+        save()
+    }
+
+    /// Recomputes the rolled-up `summary` block from current slopes.
+    private func recomputeSummary(_ insp: inout Inspection) {
+        let slopes = insp.slopes
+        let anyFunctional = slopes.contains { $0.functionalDamagePresent }
+        let replacements = slopes.filter { $0.slopeReplacementRecommended }
+        let repairs = slopes.contains { $0.slopeRepairsRecommended }
+        let allReplace = !slopes.isEmpty && replacements.count == slopes.count
+        insp.summary.roofAnyFunctionalDamage = anyFunctional
+        insp.summary.roofFullReplacementRecommended = allReplace
+        insp.summary.roofPartialReplacementRecommended = !replacements.isEmpty && !allReplace
+        insp.summary.roofRepairsRecommended = repairs
+        insp.summary.replacementSlopesList = replacements.map(\.orientation).joined(separator: ", ")
+    }
+
+    // MARK: Session photos (in-memory, not persisted to JSON)
+
+    /// Reference photos captured per slope. Cleared on app relaunch — schema
+    /// keeps the structured Slope record; raw images live alongside the
+    /// session for review only.
+    private(set) var sessionPhotos: [String: [UIImage]] = [:]
+
+    func setPhotos(_ photos: [UIImage], for reportId: String, orientation: String) {
+        sessionPhotos[Self.photoKey(reportId, orientation)] = photos
+    }
+
+    func photos(for reportId: String, orientation: String) -> [UIImage] {
+        sessionPhotos[Self.photoKey(reportId, orientation)] ?? []
+    }
+
+    private static func photoKey(_ reportId: String, _ orientation: String) -> String {
+        "\(reportId)::\(orientation)"
     }
 
     // MARK: Persistence
