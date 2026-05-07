@@ -9,7 +9,6 @@ struct GeminiAnalysisService {
     private let toolkitURL: String
     private let secret: String
     private static let model = "google/gemini-2.5-flash"
-    static let MIN_CONFIDENCE_THRESHOLD: Double = 0.55
 
     init() {
         self.toolkitURL = Config.EXPO_PUBLIC_TOOLKIT_URL
@@ -42,9 +41,6 @@ struct GeminiAnalysisService {
         var shingleTypeConfidence: Int = 0
         /// AI evidence note for the shingle type classification.
         var shingleTypeNote: String? = nil
-        /// True when the post-confidence-filter marker set looked like a uniform
-        /// grid (likely AI hallucination) and was discarded.
-        var discardedGridHallucination: Bool = false
     }
 
     /// Convenience for legacy callers that only need findings.
@@ -182,14 +178,7 @@ struct GeminiAnalysisService {
         let prompt = """
         You are a forensic roof inspector (HAAG standards). \(intro)
 
-        Identify the roof covering and any visible damage. Empty arrays are correct when nothing is visible.
-
-        DAMAGE DETECTION RULES (read carefully):
-        1. Mark only visible hail strikes that exhibit at least ONE of these specific characteristics: round circular impact spot with granule loss (1/4 inch to 2 inch diameter); exposed black asphalt mat where granules have been knocked away; visible bruise deformation or soft spot; fracture line radiating from impact point; discoloration patch distinct from surrounding granule pattern.
-        2. Do NOT mark damage based on: normal granule color variation across shingles; shingle edge shadows or seam lines; lichen, moss, dirt, or weathering stains; manufacturing pattern or asphalt texture; photo lighting/exposure variation.
-        3. Spatial distribution rules - CRITICAL: real hail damage is RANDOM and CLUSTERED, never evenly spaced. If your detected markers form a uniform grid, repeating pattern, or cover every shingle uniformly: STOP. You are hallucinating. Return an empty markers array and set no_damage_detected: true. Real hailstorms typically produce 0-15 visible strikes per square foot, with high variance - some areas have many, others have none. If you cannot confidently identify specific impact characteristics on this photo, return zero markers.
-        4. Per-marker requirements: each marker MUST include a confidence score 0.0-1.0 reflecting how clearly the damage characteristics are visible; each marker MUST include a 1-sentence specific_evidence field describing what you see (e.g., "exposed black mat with granule scatter, 3/4 inch diameter"). Generic descriptions like "hail damage" or "impact" are not acceptable evidence.
-        5. When in doubt, mark fewer. False positives waste inspector time more than missing borderline cases. A confident no-damage-detected is more valuable than a hallucinated grid.
+        Identify the roof covering and any visible damage. Be conservative — only flag damage you can actually see in the pixels. Empty arrays are correct when nothing is visible.
 
         Return STRICT JSON only (no markdown), with this schema:
         {
@@ -384,31 +373,13 @@ struct GeminiAnalysisService {
         if noRoofFlag {
             print("[Gemini] \u{26A0}\u{FE0F} no_roof_detected — image does not show a roof; suppressing markers.")
         }
-
-        // LAYER 2: confidence threshold gate. Drop low-confidence markers.
-        let originalCount = markers.count
-        markers = markers.filter { Double($0.confidence) / 100.0 >= MIN_CONFIDENCE_THRESHOLD }
-        let keptCount = markers.count
-        if originalCount != keptCount {
-            print("[GeminiAnalysisService] Filtered \(originalCount - keptCount) of \(originalCount) markers below \(MIN_CONFIDENCE_THRESHOLD) confidence")
-        }
-
-        // LAYER 3: grid-pattern sanity check. Discard hallucinated uniform grids.
-        var discardedGrid = false
-        if let evenness = uniformGridEvenness(markers), evenness < 0.20 {
-            print("[GeminiAnalysisService] Grid pattern detected (\(markers.count) markers, evenness=\(evenness)) - discarding as hallucination")
-            markers = []
-            discardedGrid = true
-        }
-
         return AnalysisResult(findings: results,
                               markers: markers,
                               failed: false,
                               noRoofDetected: noRoofFlag,
                               shingleType: shingleTypeName,
                               shingleTypeConfidence: shingleTypeConfidence,
-                              shingleTypeNote: shingleTypeNote,
-                              discardedGridHallucination: discardedGrid)
+                              shingleTypeNote: shingleTypeNote)
     }
 
     /// Strip ```json ... ``` or ``` ... ``` fences if Gemini wraps despite responseMimeType.
@@ -425,33 +396,6 @@ struct GeminiAnalysisService {
             s = s.trimmingCharacters(in: .whitespacesAndNewlines)
         }
         return s
-    }
-
-    /// Returns stddev/mean of pairwise distances between marker centers when the
-    /// set is large enough to evaluate; nil otherwise. Lower values indicate a
-    /// more uniform (grid-like) distribution.
-    private static func looksLikeUniformGrid(_ markers: [DamageMarker]) -> Bool {
-        guard let evenness = uniformGridEvenness(markers) else { return false }
-        return evenness < 0.20
-    }
-
-    private static func uniformGridEvenness(_ markers: [DamageMarker]) -> Double? {
-        guard markers.count >= 6 else { return nil }
-        var distances: [Double] = []
-        distances.reserveCapacity(markers.count * (markers.count - 1) / 2)
-        for i in 0..<markers.count {
-            for j in (i + 1)..<markers.count {
-                let dx = Double(markers[i].x - markers[j].x)
-                let dy = Double(markers[i].y - markers[j].y)
-                distances.append((dx * dx + dy * dy).squareRoot())
-            }
-        }
-        guard !distances.isEmpty else { return nil }
-        let mean = distances.reduce(0, +) / Double(distances.count)
-        guard mean > 0 else { return nil }
-        let variance = distances.reduce(0) { $0 + ($1 - mean) * ($1 - mean) } / Double(distances.count)
-        let stddev = variance.squareRoot()
-        return stddev / mean
     }
 
     private static func markerFromDict(_ dict: [String: Any]) -> DamageMarker? {
