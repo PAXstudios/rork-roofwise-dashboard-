@@ -33,6 +33,9 @@ struct MapHubView: View {
     /// is selected on appear.
     var currentReportId: String? = nil
     var focusedStorm: StormPinEvent? = nil
+    /// When set together with `focusedStorm`, applies a radius filter on appear
+    /// so only impacted leads/jobs show alongside the storm itself.
+    var initialRadiusFilterMiles: Double? = nil
     /// When set, the map recenters on this address on appear.
     var focusedAddress: String? = nil
     /// When set, draws each detected slope as a color-coded MKPolygon around
@@ -83,6 +86,30 @@ struct MapHubView: View {
 
     // Pre-computed entity pins (mock-derived from existing stores).
     private var leadPins: [MapEntityPin] { Self.mockLeadPins }
+    /// Lead pins narrowed to the active radius filter (if any).
+    private var visibleLeadPins: [MapEntityPin] {
+        guard let center = radiusFilterCenter, let miles = radiusFilterMiles else {
+            return leadPins
+        }
+        return leadPins.filter { pin in
+            CLLocation(latitude: pin.latitude, longitude: pin.longitude)
+                .distance(from: CLLocation(latitude: center.latitude, longitude: center.longitude))
+                / 1609.344 <= miles
+        }
+    }
+
+    /// Job pins narrowed to the active radius filter (if any).
+    private var visibleJobPins: [MapEntityPin] {
+        guard let center = radiusFilterCenter, let miles = radiusFilterMiles else {
+            return jobPins
+        }
+        return jobPins.filter { pin in
+            CLLocation(latitude: pin.latitude, longitude: pin.longitude)
+                .distance(from: CLLocation(latitude: center.latitude, longitude: center.longitude))
+                / 1609.344 <= miles
+        }
+    }
+
     private var jobPins: [MapEntityPin] {
         let jobs = InspectionStore.shared.inspections.compactMap { insp -> MapEntityPin? in
             let addr = insp.job.propertyAddress.isEmpty
@@ -251,14 +278,14 @@ struct MapHubView: View {
                     }
                 }
                 if showLeads {
-                    ForEach(leadPins) { p in
+                    ForEach(visibleLeadPins) { p in
                         Annotation(p.title, coordinate: p.coordinate) {
                             entityGlyph(p)
                         }
                     }
                 }
                 if showJobs {
-                    ForEach(jobPins) { p in
+                    ForEach(visibleJobPins) { p in
                         Annotation(p.title, coordinate: p.coordinate) {
                             entityGlyph(p)
                         }
@@ -702,12 +729,18 @@ struct MapHubView: View {
         // mounted before we mutate camera state.
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(120))
-            let region = MKCoordinateRegion(
-                center: pin.coordinate,
-                span: .init(latitudeDelta: 0.08, longitudeDelta: 0.08)
-            )
-            self.lastRegion = region
-            withAnimation(.easeInOut(duration: 0.4)) { self.camera = .region(region) }
+            if let miles = initialRadiusFilterMiles {
+                // Apply radius filter (also recenters camera) — this satisfies
+                // "only impacted Leads/Jobs and the storm itself show".
+                applyRadiusFilter(center: pin.coordinate, miles: miles)
+            } else {
+                let region = MKCoordinateRegion(
+                    center: pin.coordinate,
+                    span: .init(latitudeDelta: 0.08, longitudeDelta: 0.08)
+                )
+                self.lastRegion = region
+                withAnimation(.easeInOut(duration: 0.4)) { self.camera = .region(region) }
+            }
             if !self.storms.contains(where: { $0.id == pin.id }) {
                 self.storms.append(pin)
             }

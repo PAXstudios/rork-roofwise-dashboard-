@@ -118,19 +118,66 @@ struct StormAlertHero: View {
     var onDismiss: (() -> Void)? = nil
 
     @State private var store = StormAlertStore.shared
+    @State private var showDismissConfirm: Bool = false
 
     private var resolvedAlert: StormAlert? { alert ?? store.latestActiveAlert }
 
     var body: some View {
-        if let a = resolvedAlert {
-            Button(action: onView) {
-                cardBody(for: a)
+        Group {
+            if let a = resolvedAlert {
+                ZStack(alignment: .topTrailing) {
+                    cardBody(for: a)
+                    dismissXButton
+                }
+                .contentShape(.rect)
+                .onTapGesture {
+                    UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+                    onView()
+                }
+                .onLongPressGesture(minimumDuration: 1.0) {
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    showDismissConfirm = true
+                }
+                .padding(.horizontal, 20)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+                .animation(.easeInOut(duration: 0.22), value: a.id)
+                .confirmationDialog(
+                    "Dismiss alert",
+                    isPresented: $showDismissConfirm,
+                    titleVisibility: .visible
+                ) {
+                    Button("Dismiss", role: .destructive) {
+                        StormAlertStore.shared.dismiss(id: a.id)
+                        onDismiss?()
+                    }
+                    Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text("Hide this storm alert from Home. New alerts will still come through.")
+                }
             }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 20)
-            .transition(.opacity.combined(with: .move(edge: .top)))
-            .animation(.easeInOut(duration: 0.22), value: a.id)
         }
+    }
+
+    private var dismissXButton: some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+            showDismissConfirm = true
+        } label: {
+            ZStack {
+                Circle().fill(.white.opacity(0.18))
+                    .overlay(Circle().stroke(.white.opacity(0.30), lineWidth: 0.8))
+                Image(systemName: "xmark")
+                    .font(.system(size: Theme.TypeRamp.body, weight: .heavy))
+                    .foregroundStyle(.white)
+            }
+            .frame(width: 40, height: 40)
+            .frame(width: 56, height: 56) // 56×56 hit target around the visual
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .padding(.top, 8)
+        .padding(.trailing, 8)
+        .accessibilityLabel("Dismiss alert")
     }
 
     // MARK: - Card
@@ -213,17 +260,12 @@ struct StormAlertHero: View {
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel("View impacted properties for \(a.areaLabel)")
 
-                // Secondary glove-friendly affordances
-                HStack(spacing: 12) {
-                    secondaryButton("Snooze 4h", icon: "moon.zzz.fill") {
-                        let until = Date().addingTimeInterval(4 * 3600)
-                        StormAlertStore.shared.snooze(id: a.id, until: until)
-                        onSnooze?()
-                    }
-                    secondaryButton("Dismiss", icon: "xmark") {
-                        StormAlertStore.shared.dismiss(id: a.id)
-                        onDismiss?()
-                    }
+                // Secondary glove-friendly affordance: snooze (dismiss is now
+                // the top-right X + long-press confirm flow, per Phase 6D).
+                secondaryButton("Snooze 4h", icon: "moon.zzz.fill") {
+                    let until = Date().addingTimeInterval(4 * 3600)
+                    StormAlertStore.shared.snooze(id: a.id, until: until)
+                    onSnooze?()
                 }
             }
             .padding(.leading, 24)

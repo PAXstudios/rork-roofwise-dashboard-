@@ -10,7 +10,6 @@ struct DashboardView: View {
     @State private var serviceAreaStore = ServiceAreaStore.shared
     @State private var alertStore = StormAlertStore.shared
     @State private var pushRouter = PushAlertRouter.shared
-    @State private var routedAlert: StormAlert? = nil
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -29,8 +28,7 @@ struct DashboardView: View {
                         alert: alertStore.latestActiveAlert,
                         onView: {
                             if let a = alertStore.latestActiveAlert {
-                                alertStore.markRead(id: a.id)
-                                routedAlert = a
+                                routeToImpactedMap(for: a)
                             } else {
                                 onOpenLeads()
                             }
@@ -67,21 +65,33 @@ struct DashboardView: View {
                 case .customer(let id): CustomerProfileView(customerID: id)
                 case .serviceArea: ServiceAreaView()
                 case .pushSettings: PushNotificationSettingsView()
+                case .stormImpact(let alertId):
+                    if let alert = StormAlertStore.shared.alerts.first(where: { $0.id == alertId }) {
+                        MapHubView(
+                            focusedStorm: alert.asPinEvent,
+                            initialRadiusFilterMiles: 5
+                        )
+                    } else {
+                        MapHubView()
+                    }
                 }
             }
         }
         .onChange(of: pushRouter.pendingAlertId) { _, newId in
             guard let newId else { return }
             if let match = StormAlertStore.shared.alerts.first(where: { $0.id == newId }) {
-                routedAlert = match
+                routeToImpactedMap(for: match)
             }
             pushRouter.clear()
         }
-        .sheet(item: $routedAlert) { alert in
-            StormAlertDetailSheet(alert: alert)
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
-        }
+    }
+
+    /// Single helper used by both the hero CTA and PushAlertRouter so push-tap
+    /// and in-app tap converge on the same destination.
+    private func routeToImpactedMap(for alert: StormAlert) {
+        alertStore.markRead(id: alert.id)
+        alertStore.markActedOn(id: alert.id)
+        path.append(.stormImpact(alert.id))
     }
 }
 
@@ -89,6 +99,7 @@ enum DashboardRoute: Hashable {
     case customer(UUID)
     case serviceArea
     case pushSettings
+    case stormImpact(UUID)
 }
 
 struct ServiceAreaBanner: View {

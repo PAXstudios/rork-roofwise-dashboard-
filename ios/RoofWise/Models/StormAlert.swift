@@ -125,4 +125,17 @@ nonisolated struct StormAlert: Codable, Identifiable, Hashable, Sendable {
         case .wind, .tornado: return "mph"
         }
     }
+
+    /// Bridge to the on-map pin model. Used by MapHubView's `focusedStorm`
+    /// param so push/hero taps can drop the user into the impacted area.
+    var asPinEvent: StormPinEvent {
+        StormPinEvent(
+            date: eventDate,
+            hailSizeIn: eventType == .hail ? magnitudeIn : nil,
+            windGustMph: (eventType == .wind || eventType == .tornado) ? windMph : nil,
+            latitude: latitude,
+            longitude: longitude,
+            source: source
+        )
+    }
 }
