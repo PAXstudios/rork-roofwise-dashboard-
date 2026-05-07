@@ -8,7 +8,7 @@ import Foundation
 /// are wired in Phase 4C.
 enum APIKeys {
     // MARK: Raw keys
-    static let googleMapsApiKey: String      = read("GoogleMapsApiKey")
+    static let googleMapsApiKey: String      = "AIzaSyDmnzp1Q23igS3XTPA6BMcIGOygkmyYSBM"
     static let googleSolarApiKey: String     = read("GoogleSolarApiKey")
     static let googleGeocodingApiKey: String = read("GoogleGeocodingApiKey")
     static let noaaUserAgent: String         = read(
@@ -23,7 +23,7 @@ enum APIKeys {
     /// Global mock-mode flag. Toggled by setting `USE_MOCKS = NO` in Info.plist
     /// (or via an Xcode build setting). Defaults to `true` while live services
     /// are still being wired.
-    static let USE_MOCKS: Bool = readBool("USE_MOCKS", default: true)
+    static let USE_MOCKS: Bool = false
 
     // MARK: Live-mode accessors
     static var isLiveGoogleMaps: Bool      { !USE_MOCKS && !googleMapsApiKey.isEmpty }
