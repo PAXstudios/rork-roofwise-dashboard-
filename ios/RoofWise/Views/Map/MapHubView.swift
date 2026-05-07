@@ -36,6 +36,9 @@ struct MapHubView: View {
     /// When set together with `focusedStorm`, applies a radius filter on appear
     /// so only impacted leads/jobs show alongside the storm itself.
     var initialRadiusFilterMiles: Double? = nil
+    /// When set, passed through to DoorKnockingModeView so the route is tagged
+    /// with the originating StormAlert (Phase 6E).
+    var focusedStormAlertId: String? = nil
     /// When set, the map recenters on this address on appear.
     var focusedAddress: String? = nil
     /// When set, draws each detected slope as a color-coded MKPolygon around
@@ -78,6 +81,7 @@ struct MapHubView: View {
     @State private var editingHouse: KnockedHouse?
     @State private var showFloatingScript = false
     @State private var floatingScriptOutcome: KnockOutcome = .interested
+    @State private var showDoorKnockingMode = false
 
     // Services injected from APIKeys flag
     private let mapsService: MapsService = MapsServiceFactory.make()
@@ -238,6 +242,9 @@ struct MapHubView: View {
         .animation(.spring(response: 0.32, dampingFraction: 0.85), value: isKnockMode)
         .animation(.spring(response: 0.32, dampingFraction: 0.85), value: showFloatingScript)
         .animation(.spring(response: 0.3, dampingFraction: 0.85), value: radiusFilterMiles)
+        .fullScreenCover(isPresented: $showDoorKnockingMode) {
+            DoorKnockingModeView(routeStormAlertId: focusedStormAlertId)
+        }
     }
 
     // MARK: - Map canvas
@@ -538,10 +545,7 @@ struct MapHubView: View {
     private var startKnockingCard: some View {
         Button {
             let g = UIImpactFeedbackGenerator(style: .medium); g.impactOccurred()
-            withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
-                isKnockMode = true
-                showKnocks = true
-            }
+            showDoorKnockingMode = true
         } label: {
             HStack(alignment: .top, spacing: 12) {
                 ZStack {
