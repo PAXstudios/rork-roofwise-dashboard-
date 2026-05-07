@@ -2,6 +2,7 @@ import SwiftUI
 
 struct KPIStrip: View {
     var onQuickInspection: () -> Void = {}
+    @State private var showNewJob = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -32,13 +33,16 @@ struct KPIStrip: View {
                                     subtitle: "Create a project",
                                     icon: "plus.rectangle.on.folder.fill",
                                     tint: Theme.sky,
-                                    action: {})
+                                    action: { showNewJob = true })
                     ForEach(MockData.kpis) { metric in
                         KPICard(metric: metric)
                     }
                 }
                 .padding(.horizontal, 20)
             }
+        }
+        .fullScreenCover(isPresented: $showNewJob) {
+            NewJobWizard()
         }
     }
 }
