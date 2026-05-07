@@ -127,6 +127,9 @@ struct ActivityFeedSheet: View {
         case .estimateSaved:               return ("dollarsign.circle.fill", Theme.mint)
         case .estimateConverted:           return ("arrow.triangle.branch", Theme.mint)
         case .noteAdded:                   return ("note.text", Theme.inkSoft)
+        case .knockLogged:                 return ("hand.tap.fill", Theme.sky)
+        case .knockConvertedToLead:        return ("person.crop.circle.badge.checkmark", Theme.mint)
+        case .routeCompleted:              return ("flag.checkered", Theme.ember)
         }
     }
 }
