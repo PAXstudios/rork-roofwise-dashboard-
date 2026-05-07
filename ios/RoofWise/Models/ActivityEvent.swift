@@ -43,6 +43,10 @@ nonisolated struct ActivityEvent: Codable, Identifiable, Hashable, Sendable {
         case knockConvertedToLead = "knock_converted_to_lead"
         case routeCompleted = "route_completed"
         case uiTap = "ui_tap"
+        case proposalDrafted = "proposal_drafted"
+        case proposalSent = "proposal_sent"
+        case proposalViewed = "proposal_viewed"
+        case proposalSigned = "proposal_signed"
     }
 
     enum CodingKeys: String, CodingKey {

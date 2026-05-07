@@ -131,6 +131,10 @@ struct ActivityFeedSheet: View {
         case .knockConvertedToLead:        return ("person.crop.circle.badge.checkmark", Theme.mint)
         case .routeCompleted:              return ("flag.checkered", Theme.ember)
         case .uiTap:                       return ("hand.point.up.left", Theme.inkFaint)
+        case .proposalDrafted:             return ("doc.badge.plus", Theme.inkSoft)
+        case .proposalSent:                return ("paperplane.fill", Theme.amber)
+        case .proposalViewed:              return ("eye.fill", Theme.sky)
+        case .proposalSigned:              return ("checkmark.seal.fill", Theme.mint)
         }
     }
 }

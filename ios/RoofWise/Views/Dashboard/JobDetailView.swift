@@ -19,6 +19,11 @@ struct JobDetailView: View {
     @State private var estimatesStore = EstimatesStore.shared
     @State private var showOriginEstimate = false
     @State private var showActivity = false
+    @State private var proposalStore = ProposalStore.shared
+    @State private var showProposalEditor = false
+    @State private var showProposalSend = false
+    @State private var showHomeownerProposal = false
+    @State private var pendingProposal: Proposal? = nil
 
     let reportId: String
 
@@ -49,6 +54,7 @@ struct JobDetailView: View {
                         addSlopeButton(label: insp.slopes.isEmpty ? "Add slope" : "Add another slope")
                         if !insp.slopes.isEmpty {
                             signReportCard(insp)
+                            proposalSection(insp)
                         }
                         Color.clear.frame(height: 140)
                     } else {
@@ -105,6 +111,29 @@ struct JobDetailView: View {
         }
         .sheet(isPresented: $showActivity) {
             ActivityFeedSheet(reportId: reportId)
+        }
+        .sheet(isPresented: $showProposalEditor) {
+            if let p = pendingProposal, let insp = inspection {
+                ProposalEditorView(proposal: p, inspection: insp)
+            }
+        }
+        .sheet(isPresented: $showProposalSend) {
+            if let p = existingProposal {
+                ProposalSendSheet(proposal: p) { sent in
+                    proposalStore.update(sent)
+                    if let insp = inspection {
+                        ActivityStore.shared.log(.proposalSent,
+                                                 summary: "Proposal resent",
+                                                 detail: sent.sentChannel?.rawValue,
+                                                 on: insp)
+                    }
+                }
+            }
+        }
+        .sheet(isPresented: $showHomeownerProposal) {
+            if let p = existingProposal {
+                NavigationStack { HomeownerProposalView(proposalId: p.id) }
+            }
         }
         .sheet(isPresented: $showOriginEstimate) {
             if let saved = originSavedEstimate {
@@ -568,6 +597,113 @@ struct JobDetailView: View {
         .foregroundStyle(signed ? Theme.mint : Theme.inkSoft)
         .padding(.horizontal, 8).padding(.vertical, 4)
         .background((signed ? Theme.mintSoft : Theme.canvas), in: .capsule)
+    }
+
+    // MARK: Proposal card (Phase 7)
+
+    private var existingProposal: Proposal? {
+        proposalStore.find(byJobId: reportId)
+    }
+
+    @ViewBuilder
+    private func proposalSection(_ insp: Inspection) -> some View {
+        if let p = existingProposal {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 10) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 12).fill(Theme.skySoft)
+                        Image(systemName: "doc.text.fill")
+                            .font(.system(size: Theme.TypeRamp.subhead, weight: .heavy))
+                            .foregroundStyle(Theme.sky)
+                    }
+                    .frame(width: 44, height: 44)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("PROPOSAL")
+                            .font(.system(size: Theme.TypeRamp.captionSm, weight: .heavy))
+                            .tracking(1.2)
+                            .foregroundStyle(Theme.inkSoft)
+                        Text(currency(p.total))
+                            .font(.system(size: Theme.TypeRamp.body, weight: .heavy))
+                            .foregroundStyle(Theme.ink)
+                            .monospacedDigit()
+                    }
+                    Spacer()
+                    proposalStatusPill(p)
+                }
+                HStack(spacing: 8) {
+                    proposalActionButton("Open", icon: "eye.fill") {
+                        showHomeownerProposal = true
+                    }
+                    proposalActionButton("Edit", icon: "pencil") {
+                        pendingProposal = p
+                        showProposalEditor = true
+                    }
+                    proposalActionButton("Resend", icon: "paperplane.fill") {
+                        showProposalSend = true
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .cardStyle(padding: 16, radius: 18)
+        } else {
+            Button {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                let generated = ProposalGenerator.generate(forInspection: insp)
+                _ = proposalStore.create(generated)
+                ActivityStore.shared.log(.proposalDrafted,
+                                         summary: "Proposal drafted",
+                                         on: insp)
+                pendingProposal = generated
+                showProposalEditor = true
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "doc.badge.plus")
+                        .font(.system(size: 22, weight: .bold))
+                    Text("Generate Proposal")
+                        .font(.system(size: Theme.TypeRamp.cta, weight: .bold))
+                }
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity, minHeight: 64)
+                .background(Theme.inkGradient, in: .rect(cornerRadius: 18))
+                .shadow(color: Theme.ink.opacity(0.28), radius: 14, x: 0, y: 6)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private func proposalActionButton(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: Theme.TypeRamp.subhead, weight: .heavy))
+                Text(title)
+                    .font(.system(size: Theme.TypeRamp.subhead, weight: .heavy))
+            }
+            .foregroundStyle(Theme.ink)
+            .frame(maxWidth: .infinity, minHeight: 56)
+            .background(Theme.canvas, in: .rect(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.hairline, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func proposalStatusPill(_ p: Proposal) -> some View {
+        let (bg, fg): (Color, Color) = {
+            switch p.status {
+            case .draft:    return (Theme.canvas, Theme.inkSoft)
+            case .sent:     return (Theme.amberSoft, Theme.amber)
+            case .viewed:   return (Theme.skySoft, Theme.sky)
+            case .signed:   return (Theme.mintSoft, Theme.mint)
+            case .declined: return (Theme.emberSoft, Theme.crimson)
+            case .expired:  return (Theme.canvas, Theme.inkFaint)
+            }
+        }()
+        return Text(p.status.displayName)
+            .font(.system(size: Theme.TypeRamp.captionSm, weight: .heavy))
+            .tracking(1.0)
+            .foregroundStyle(fg)
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .background(bg, in: .capsule)
     }
 
     // MARK: Storm match card
