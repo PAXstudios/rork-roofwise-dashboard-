@@ -623,11 +623,8 @@ private struct ReviewStep: View {
                         .multilineTextAlignment(.leading)
                 }
             }
-            .padding(16)
             .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
-            .background(Theme.card, in: .rect(cornerRadius: 14))
-            .overlay(RoundedRectangle(cornerRadius: 14)
-                .stroke(Theme.hairline, lineWidth: 1))
+            .cardStyle(padding: 16, radius: 14)
         }
         .buttonStyle(.plain)
         .disabled(!tappable)

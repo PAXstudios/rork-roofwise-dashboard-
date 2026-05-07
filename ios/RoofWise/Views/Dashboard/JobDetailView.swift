@@ -101,11 +101,8 @@ struct JobDetailView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.card, in: .rect(cornerRadius: 20))
-        .overlay(RoundedRectangle(cornerRadius: 20).stroke(Theme.hairline, lineWidth: 1))
-        .shadow(color: Theme.ink.opacity(0.05), radius: 14, x: 0, y: 6)
+        .cardStyle(padding: 20, radius: 20)
     }
 
     private func infoChip(text: String, icon: String, tint: Color) -> some View {
@@ -133,10 +130,8 @@ struct JobDetailView: View {
                 .foregroundStyle(Theme.inkSoft)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.card, in: .rect(cornerRadius: 18))
-        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Theme.hairline, lineWidth: 1))
+        .cardStyle(padding: 20, radius: 18)
     }
 
     private func slopesSummaryCard(_ insp: Inspection) -> some View {
@@ -163,10 +158,8 @@ struct JobDetailView: View {
                 }
             }
         }
-        .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.card, in: .rect(cornerRadius: 18))
-        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Theme.hairline, lineWidth: 1))
+        .cardStyle(padding: 20, radius: 18)
     }
 
     private func summaryStat(value: String, label: String, tint: Color) -> some View {
@@ -237,10 +230,8 @@ struct JobDetailView: View {
                         .font(.system(size: 14, weight: .bold))
                         .foregroundStyle(Theme.inkFaint)
                 }
-                .padding(14)
                 .frame(maxWidth: .infinity, minHeight: 92, alignment: .leading)
-                .background(Theme.card, in: .rect(cornerRadius: 18))
-                .overlay(RoundedRectangle(cornerRadius: 18).stroke(Theme.hairline, lineWidth: 1))
+                .cardStyle(padding: 14, radius: 18)
             }
             .buttonStyle(.plain)
 

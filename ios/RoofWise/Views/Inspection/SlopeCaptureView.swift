@@ -251,10 +251,8 @@ struct SlopeCaptureView: View {
                 }
             }
         }
-        .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.card, in: .rect(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Theme.hairline, lineWidth: 1))
+        .cardStyle(padding: 14, radius: 16)
     }
 
     private func miniPhotoButton(icon: String, title: String) -> some View {
@@ -536,17 +534,14 @@ private struct SlopeCard<Content: View>: View {
                 }
                 .frame(width: 36, height: 36)
                 Text(title)
-                    .font(.system(size: 20, weight: .heavy))
+                    .font(.system(size: Theme.TypeRamp.titleSm, weight: .heavy))
                     .foregroundStyle(Theme.ink)
                 Spacer()
             }
             content()
         }
-        .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.card, in: .rect(cornerRadius: 18))
-        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Theme.hairline, lineWidth: 1))
-        .shadow(color: Theme.ink.opacity(0.04), radius: 12, x: 0, y: 4)
+        .cardStyle(padding: 18, radius: 18)
     }
 }
 
