@@ -1,33 +1,5 @@
 import Foundation
 
-struct Knock: Codable, Identifiable {
-    let id: UUID
-    var logged_at: Date
-    var lat: Double?
-    var lng: Double?
-    var outcome: KnockOutcome
-    var notes: String
-    var rep: String
-
-    init(
-        id: UUID = UUID(),
-        logged_at: Date = Date(),
-        lat: Double? = nil,
-        lng: Double? = nil,
-        outcome: KnockOutcome,
-        notes: String = "",
-        rep: String = "Sarah Jenkins"
-    ) {
-        self.id = id
-        self.logged_at = logged_at
-        self.lat = lat
-        self.lng = lng
-        self.outcome = outcome
-        self.notes = notes
-        self.rep = rep
-    }
-}
-
 struct KnockSession: Codable, Identifiable {
     let id: UUID
     var started_at: Date
