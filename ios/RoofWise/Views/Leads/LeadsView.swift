@@ -42,22 +42,11 @@ struct LeadsView: View {
                             .buttonStyle(.plain)
                             .simultaneousGesture(TapGesture().onEnded {
                                 store.setActive(customer.id)
+                                ActivityStore.shared.logTap(target: "Leads.customerCard")
                             })
                         }
                         if filtered.isEmpty {
-                            VStack(spacing: 8) {
-                                Image(systemName: "person.crop.circle.badge.questionmark")
-                                    .font(.system(size: 28))
-                                    .foregroundStyle(Theme.inkFaint)
-                                Text("No customers match")
-                                    .font(.system(size: 13, weight: .heavy))
-                                    .foregroundStyle(Theme.ink)
-                                Text("Adjust filters or add a new customer.")
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(Theme.inkFaint)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 30)
+                            emptyState
                         }
                     }
                     .padding(.horizontal, 20)
@@ -84,30 +73,33 @@ struct LeadsView: View {
     // MARK: Header
 
     private var headerBar: some View {
-        HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Leads")
-                    .font(.system(size: 28, weight: .heavy))
-                    .foregroundStyle(Theme.ink)
-                let stormCount = store.customers.filter(\.stormTagged).count
-                Text("\(store.customers.count) active · \(stormCount) storm-tagged")
-                    .font(.system(size: 13))
-                    .foregroundStyle(Theme.inkFaint)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Leads")
+                        .font(.system(size: Theme.TypeRamp.display, weight: .heavy))
+                        .foregroundStyle(Theme.ink)
+                    let stormCount = store.customers.filter(\.stormTagged).count
+                    Text("\(store.customers.count) active · \(stormCount) storm-tagged")
+                        .font(.system(size: Theme.TypeRamp.metaSm))
+                        .foregroundStyle(Theme.inkFaint)
+                }
+                Spacer()
             }
-            Spacer()
-            Button { showNewCustomer = true } label: {
-                HStack(spacing: 6) {
+            Button {
+                ActivityStore.shared.logTap(target: "Leads.newCustomer")
+                showNewCustomer = true
+            } label: {
+                HStack(spacing: 8) {
                     Image(systemName: "plus")
-                        .font(.system(size: 12, weight: .heavy))
-                    Text("New")
-                        .font(.system(size: 13, weight: .heavy))
+                        .font(.system(size: Theme.TypeRamp.body, weight: .heavy))
+                    Text("New Customer")
+                        .font(.system(size: Theme.TypeRamp.cta, weight: .heavy))
                 }
                 .foregroundStyle(.white)
-                .padding(.horizontal, 14).padding(.vertical, 10)
-                .background(LinearGradient(colors: [Theme.ember, Theme.emberDeep],
-                                           startPoint: .topLeading, endPoint: .bottomTrailing),
-                            in: .capsule)
-                .shadow(color: Theme.ember.opacity(0.35), radius: 10, y: 5)
+                .frame(maxWidth: .infinity, minHeight: 64)
+                .background(Theme.inkGradient, in: .rect(cornerRadius: 16))
+                .shadow(color: Theme.ink.opacity(0.18), radius: 12, y: 4)
             }
             .buttonStyle(.plain)
         }
@@ -117,40 +109,53 @@ struct LeadsView: View {
 
     private var searchBar: some View {
         HStack(spacing: 10) {
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Theme.inkFaint)
-                TextField("Search owner, address, policy #", text: $search)
-                    .font(.system(size: 13))
-                    .foregroundStyle(Theme.ink)
-                    .autocorrectionDisabled()
-                    .textInputAutocapitalization(.words)
-                if !search.isEmpty {
-                    Button { search = "" } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 13))
-                            .foregroundStyle(Theme.inkFaint)
-                    }
-                    .buttonStyle(.plain)
+            Image(systemName: "mic.fill")
+                .font(.system(size: Theme.TypeRamp.body, weight: .semibold))
+                .foregroundStyle(Theme.inkSoft)
+                .frame(width: 28)
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: Theme.TypeRamp.subhead, weight: .semibold))
+                .foregroundStyle(Theme.inkFaint)
+            TextField("Search owner, address, policy #", text: $search)
+                .font(.system(size: Theme.TypeRamp.body))
+                .foregroundStyle(Theme.ink)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.words)
+            if !search.isEmpty {
+                Button {
+                    search = ""
+                    ActivityStore.shared.logTap(target: "Leads.searchClear")
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: Theme.TypeRamp.body))
+                        .foregroundStyle(Theme.inkFaint)
+                        .frame(width: 44, height: 44)
                 }
+                .buttonStyle(.plain)
             }
-            .padding(12)
-            .background(Theme.card, in: .rect(cornerRadius: 14))
-            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.hairline, lineWidth: 0.6))
         }
+        .padding(.horizontal, 14)
+        .frame(minHeight: 56)
+        .background(Theme.card, in: .rect(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Theme.hairline, lineWidth: 0.6))
         .padding(.horizontal, 20)
     }
 
     private var stageFilter: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                FilterChip(label: "All", active: filter == nil, color: Theme.ink) { filter = nil }
+                FilterChip(label: "All", active: filter == nil, color: Theme.ink) {
+                    filter = nil
+                    ActivityStore.shared.logTap(target: "Leads.filter.all")
+                }
                 ForEach(JobPipelineStage.allCases) { stage in
                     let count = store.customers.filter { $0.stage == stage }.count
                     FilterChip(label: "\(stage.shortLabel) · \(count)",
                                active: filter == stage,
-                               color: stage.color) { filter = stage }
+                               color: stage.color) {
+                        filter = stage
+                        ActivityStore.shared.logTap(target: "Leads.filter.\(stage.shortLabel)")
+                    }
                 }
             }
             .padding(.horizontal, 20)
@@ -165,7 +170,7 @@ struct LeadsView: View {
         let total = max(counts.reduce(0, +), 1)
         return VStack(alignment: .leading, spacing: 8) {
             Text("PIPELINE")
-                .font(.system(size: 10, weight: .heavy))
+                .font(.system(size: Theme.TypeRamp.micro, weight: .heavy))
                 .tracking(0.6)
                 .foregroundStyle(Theme.inkFaint)
             GeometryReader { geo in
@@ -175,14 +180,20 @@ struct LeadsView: View {
                         let count = counts[i]
                         let width = geo.size.width * CGFloat(count) / CGFloat(total)
                         if count > 0 {
-                            Rectangle()
-                                .fill(stage.color)
-                                .frame(width: max(width, 12))
-                                .overlay(
-                                    Text("\(count)")
-                                        .font(.system(size: 9, weight: .heavy))
-                                        .foregroundStyle(.white)
-                                )
+                            Button {
+                                filter = stage
+                                ActivityStore.shared.logTap(target: "Leads.pipelineSegment.\(stage.shortLabel)")
+                            } label: {
+                                Rectangle()
+                                    .fill(stage.color)
+                                    .frame(width: max(width, 12))
+                                    .overlay(
+                                        Text("\(count)")
+                                            .font(.system(size: Theme.TypeRamp.microSm, weight: .heavy))
+                                            .foregroundStyle(.white)
+                                    )
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
                 }
@@ -191,6 +202,34 @@ struct LeadsView: View {
             .frame(height: 14)
         }
         .padding(.horizontal, 20)
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "person.crop.circle.badge.questionmark")
+                .font(.system(size: Theme.TypeRamp.display))
+                .foregroundStyle(Theme.inkFaint)
+            Text("No customers match")
+                .font(.system(size: Theme.TypeRamp.body, weight: .heavy))
+                .foregroundStyle(Theme.ink)
+            Text("Adjust filters or add a new customer.")
+                .font(.system(size: Theme.TypeRamp.metaSm))
+                .foregroundStyle(Theme.inkFaint)
+            Button {
+                ActivityStore.shared.logTap(target: "Leads.emptyState.newCustomer")
+                showNewCustomer = true
+            } label: {
+                Text("Add a customer")
+                    .font(.system(size: Theme.TypeRamp.cta, weight: .heavy))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity, minHeight: 64)
+                    .background(Theme.inkGradient, in: .rect(cornerRadius: 16))
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 8)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 30)
     }
 }
 
@@ -204,10 +243,11 @@ private struct FilterChip: View {
     var body: some View {
         Button(action: action) {
             Text(label)
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: Theme.TypeRamp.subhead, weight: .semibold))
                 .foregroundStyle(active ? .white : Theme.ink)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 12)
+                .frame(minHeight: 56)
                 .background(active ? color : Theme.card, in: .capsule)
                 .overlay(Capsule().stroke(active ? Color.clear : Theme.hairline, lineWidth: 0.6))
         }
@@ -226,7 +266,7 @@ private struct CustomerCard: View {
             ZStack {
                 Circle().fill(customer.stage.color.opacity(0.14))
                 Text(customer.initials)
-                    .font(.system(size: 14, weight: .heavy))
+                    .font(.system(size: Theme.TypeRamp.meta, weight: .heavy))
                     .foregroundStyle(customer.stage.color)
             }
             .frame(width: 44, height: 44)
@@ -242,25 +282,25 @@ private struct CustomerCard: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
                     Text(customer.ownerName)
-                        .font(.system(size: 14, weight: .bold))
+                        .font(.system(size: Theme.TypeRamp.body, weight: .bold))
                         .foregroundStyle(Theme.ink)
                         .lineLimit(1)
                     if customer.stormTagged {
                         Image(systemName: "bolt.fill")
-                            .font(.system(size: 9, weight: .bold))
+                            .font(.system(size: Theme.TypeRamp.microSm, weight: .bold))
                             .foregroundStyle(Theme.ember)
                     }
                 }
                 Text(customer.address)
-                    .font(.system(size: 11))
+                    .font(.system(size: Theme.TypeRamp.metaSm))
                     .foregroundStyle(Theme.inkFaint)
                     .lineLimit(1)
                 HStack(spacing: 6) {
                     HStack(spacing: 4) {
                         Image(systemName: customer.stage.icon)
-                            .font(.system(size: 8, weight: .bold))
+                            .font(.system(size: Theme.TypeRamp.microSm, weight: .bold))
                         Text(customer.stage.shortLabel.uppercased())
-                            .font(.system(size: 9, weight: .heavy))
+                            .font(.system(size: Theme.TypeRamp.microSm, weight: .heavy))
                             .tracking(0.4)
                     }
                     .foregroundStyle(customer.stage.color)
@@ -269,7 +309,7 @@ private struct CustomerCard: View {
 
                     if !customer.estimatedValue.isEmpty {
                         Text(customer.estimatedValue)
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.system(size: Theme.TypeRamp.metaSm, weight: .semibold))
                             .foregroundStyle(Theme.ink)
                     }
                 }
@@ -281,14 +321,14 @@ private struct CustomerCard: View {
                 if !customer.photos.isEmpty {
                     HStack(spacing: 3) {
                         Image(systemName: "photo.fill")
-                            .font(.system(size: 9, weight: .bold))
+                            .font(.system(size: Theme.TypeRamp.microSm, weight: .bold))
                         Text("\(customer.photos.count)")
-                            .font(.system(size: 11, weight: .heavy))
+                            .font(.system(size: Theme.TypeRamp.metaSm, weight: .heavy))
                     }
                     .foregroundStyle(Theme.inkSoft)
                 }
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 11, weight: .bold))
+                    .font(.system(size: Theme.TypeRamp.metaSm, weight: .bold))
                     .foregroundStyle(Theme.inkFaint)
             }
         }
@@ -312,6 +352,7 @@ private struct NewCustomerSheet: View {
     @State private var policy = ""
     @State private var stage: JobPipelineStage = .knocked
     @State private var stormTagged = false
+    @State private var showDiscardConfirm = false
 
     let onSave: (Customer) -> Void
     let onCancel: () -> Void
@@ -319,6 +360,11 @@ private struct NewCustomerSheet: View {
     private var canSave: Bool {
         !name.trimmingCharacters(in: .whitespaces).isEmpty &&
         !address.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+
+    private var hasEdits: Bool {
+        !name.isEmpty || !address.isEmpty || !phone.isEmpty || !email.isEmpty ||
+        !insurance.isEmpty || !policy.isEmpty || stormTagged || stage != .knocked
     }
 
     var body: some View {
@@ -332,23 +378,27 @@ private struct NewCustomerSheet: View {
                     field("Insurance Company", text: $insurance)
                     field("Policy Number", text: $policy)
 
-                    VStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: 8) {
                         Text("Initial Stage")
-                            .font(.system(size: 11, weight: .heavy))
+                            .font(.system(size: Theme.TypeRamp.captionSm, weight: .heavy))
                             .tracking(0.5)
                             .foregroundStyle(Theme.inkFaint)
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 8) {
                                 ForEach(JobPipelineStage.allCases) { s in
-                                    Button { stage = s } label: {
-                                        HStack(spacing: 5) {
+                                    Button {
+                                        stage = s
+                                        ActivityStore.shared.logTap(target: "NewCustomerSheet.stage.\(s.shortLabel)")
+                                    } label: {
+                                        HStack(spacing: 6) {
                                             Image(systemName: s.icon)
-                                                .font(.system(size: 9, weight: .bold))
+                                                .font(.system(size: Theme.TypeRamp.metaSm, weight: .bold))
                                             Text(s.shortLabel)
-                                                .font(.system(size: 11, weight: .heavy))
+                                                .font(.system(size: Theme.TypeRamp.subhead, weight: .heavy))
                                         }
                                         .foregroundStyle(stage == s ? .white : s.color)
-                                        .padding(.horizontal, 12).padding(.vertical, 8)
+                                        .padding(.horizontal, 18).padding(.vertical, 12)
+                                        .frame(minHeight: 56)
                                         .background(stage == s ? s.color : s.color.opacity(0.12),
                                                     in: .capsule)
                                     }
@@ -361,13 +411,16 @@ private struct NewCustomerSheet: View {
 
                     Toggle(isOn: $stormTagged) {
                         Label("Storm-tagged lead", systemImage: "bolt.fill")
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(.system(size: Theme.TypeRamp.body, weight: .semibold))
                             .foregroundStyle(Theme.ink)
                     }
                     .tint(Theme.ember)
-                    .padding(12)
-                    .background(Theme.card, in: .rect(cornerRadius: 12))
-                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.hairline, lineWidth: 0.6))
+                    .padding(14)
+                    .frame(minHeight: 56)
+                    .background(Theme.card, in: .rect(cornerRadius: 14))
+                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.hairline, lineWidth: 0.6))
+
+                    saveButton
                 }
                 .padding(20)
             }
@@ -376,49 +429,80 @@ private struct NewCustomerSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Cancel", action: onCancel)
-                        .foregroundStyle(Theme.inkSoft)
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        let c = Customer(
-                            ownerName: name,
-                            address: address,
-                            phone: phone,
-                            email: email,
-                            insuranceCompany: insurance,
-                            policyNumber: policy,
-                            stage: stage,
-                            stormTagged: stormTagged
-                        )
-                        onSave(c)
-                    } label: {
-                        Text("Save")
-                            .font(.system(size: 14, weight: .heavy))
-                            .foregroundStyle(canSave ? Theme.ember : Theme.inkFaint)
+                    Button("Cancel") {
+                        if hasEdits {
+                            showDiscardConfirm = true
+                        } else {
+                            onCancel()
+                        }
                     }
-                    .disabled(!canSave)
+                    .foregroundStyle(Theme.inkSoft)
                 }
             }
+            .confirmationDialog(
+                "Discard this customer? You have unsaved changes.",
+                isPresented: $showDiscardConfirm,
+                titleVisibility: .visible
+            ) {
+                Button("Discard", role: .destructive) {
+                    ActivityStore.shared.logTap(target: "NewCustomerSheet.discard")
+                    onCancel()
+                }
+                Button("Keep editing", role: .cancel) { }
+            }
         }
+    }
+
+    private var saveButton: some View {
+        Button {
+            ActivityStore.shared.logTap(target: "NewCustomerSheet.save")
+            let c = Customer(
+                ownerName: name,
+                address: address,
+                phone: phone,
+                email: email,
+                insuranceCompany: insurance,
+                policyNumber: policy,
+                stage: stage,
+                stormTagged: stormTagged
+            )
+            onSave(c)
+        } label: {
+            Text("Save Customer")
+                .font(.system(size: Theme.TypeRamp.cta, weight: .heavy))
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity, minHeight: 64)
+                .background(canSave ? AnyShapeStyle(Theme.inkGradient) : AnyShapeStyle(Theme.inkFaint),
+                            in: .rect(cornerRadius: 16))
+                .shadow(color: Theme.ink.opacity(canSave ? 0.18 : 0), radius: 12, y: 4)
+        }
+        .buttonStyle(.plain)
+        .disabled(!canSave)
     }
 
     private func field(_ label: String, text: Binding<String>,
                        keyboard: UIKeyboardType = .default) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(label)
-                .font(.system(size: 11, weight: .heavy))
+                .font(.system(size: Theme.TypeRamp.captionSm, weight: .heavy))
                 .tracking(0.5)
                 .foregroundStyle(Theme.inkFaint)
-            TextField(label, text: text)
-                .keyboardType(keyboard)
-                .textInputAutocapitalization(keyboard == .emailAddress ? .never : .words)
-                .autocorrectionDisabled(keyboard == .emailAddress || keyboard == .phonePad)
-                .font(.system(size: 14))
-                .foregroundStyle(Theme.ink)
-                .padding(12)
-                .background(Theme.card, in: .rect(cornerRadius: 12))
-                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.hairline, lineWidth: 0.6))
+            HStack(spacing: 10) {
+                Image(systemName: "mic.fill")
+                    .font(.system(size: Theme.TypeRamp.body, weight: .semibold))
+                    .foregroundStyle(Theme.inkSoft)
+                    .frame(width: 28)
+                TextField(label, text: text)
+                    .keyboardType(keyboard)
+                    .textInputAutocapitalization(keyboard == .emailAddress ? .never : .words)
+                    .autocorrectionDisabled(keyboard == .emailAddress || keyboard == .phonePad)
+                    .font(.system(size: Theme.TypeRamp.body))
+                    .foregroundStyle(Theme.ink)
+            }
+            .padding(.horizontal, 14)
+            .frame(minHeight: 56)
+            .background(Theme.card, in: .rect(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.hairline, lineWidth: 0.6))
         }
     }
 }

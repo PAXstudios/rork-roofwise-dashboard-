@@ -200,9 +200,12 @@ struct DashboardHeader: View {
 
             Spacer()
 
-            iconButton(systemName: "magnifyingglass")
-            iconButton(systemName: "bell.fill", badge: true)
-            iconButton(systemName: "gearshape.fill", action: onOpenSettings)
+            // P2 audit: search/bell icons removed — no destinations existed and
+            // dead controls violate glove rules. Settings stays as the sole header CTA.
+            iconButton(systemName: "gearshape.fill", action: {
+                ActivityStore.shared.logTap(target: "DashboardHeader.settings")
+                onOpenSettings()
+            })
         }
         .padding(.horizontal, 20)
     }

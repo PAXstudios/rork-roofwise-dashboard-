@@ -11,10 +11,10 @@ struct PlanView: View {
             VStack(alignment: .leading, spacing: 18) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Plan")
-                        .font(.system(size: 28, weight: .heavy))
+                        .font(.system(size: Theme.TypeRamp.display, weight: .heavy))
                         .foregroundStyle(Theme.ink)
                     Text("May 2026 · 12 stops this week")
-                        .font(.system(size: 13))
+                        .font(.system(size: Theme.TypeRamp.metaSm))
                         .foregroundStyle(Theme.inkFaint)
                 }
                 .padding(.horizontal, 20)
@@ -25,14 +25,15 @@ struct PlanView: View {
                     ForEach(0..<7) { i in
                         Button {
                             withAnimation(.spring(duration: 0.25)) { selectedDay = i }
+                            ActivityStore.shared.logTap(target: "Plan.day.\(days[i])")
                         } label: {
                             VStack(spacing: 6) {
                                 Text(days[i])
-                                    .font(.system(size: 10, weight: .heavy))
+                                    .font(.system(size: Theme.TypeRamp.micro, weight: .heavy))
                                     .tracking(0.6)
                                     .foregroundStyle(selectedDay == i ? .white : Theme.inkFaint)
                                 Text(dates[i])
-                                    .font(.system(size: 17, weight: .heavy))
+                                    .font(.system(size: Theme.TypeRamp.body, weight: .heavy))
                                     .foregroundStyle(selectedDay == i ? .white : Theme.ink)
                                 Circle()
                                     .fill(selectedDay == i ? Color.white : Theme.ember)
@@ -82,20 +83,18 @@ private struct PlanStat: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Image(systemName: icon)
-                .font(.system(size: 12, weight: .bold))
+                .font(.system(size: Theme.TypeRamp.caption, weight: .bold))
                 .foregroundStyle(tint)
                 .frame(width: 28, height: 28)
                 .background(tint.opacity(0.14), in: .rect(cornerRadius: 8))
             Text(value)
-                .font(.system(size: 18, weight: .heavy))
+                .font(.system(size: Theme.TypeRamp.cta, weight: .heavy))
                 .foregroundStyle(Theme.ink)
             Text(label)
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(size: Theme.TypeRamp.captionSm, weight: .semibold))
                 .foregroundStyle(Theme.inkFaint)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .background(Theme.card, in: .rect(cornerRadius: 16))
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Theme.hairline, lineWidth: 0.6))
+        .cardStyle(padding: 14, radius: 16)
     }
 }

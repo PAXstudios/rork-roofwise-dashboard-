@@ -130,6 +130,7 @@ struct ActivityFeedSheet: View {
         case .knockLogged:                 return ("hand.tap.fill", Theme.sky)
         case .knockConvertedToLead:        return ("person.crop.circle.badge.checkmark", Theme.mint)
         case .routeCompleted:              return ("flag.checkered", Theme.ember)
+        case .uiTap:                       return ("hand.point.up.left", Theme.inkFaint)
         }
     }
 }

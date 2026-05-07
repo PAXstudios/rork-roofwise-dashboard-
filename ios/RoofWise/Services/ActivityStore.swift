@@ -54,6 +54,12 @@ final class ActivityStore {
         return event
     }
 
+    /// Logs a low-priority `.uiTap` event used by the broader tap-trace audit.
+    /// Not bound to any inspection — stored under a shared `ui-tap` bucket.
+    func logTap(target: String) {
+        log(.uiTap, summary: target, reportId: "ui-tap")
+    }
+
     /// Wipes log for a single inspection (used when the inspection itself is
     /// deleted; not currently auto-called).
     func clear(reportId: String) {
