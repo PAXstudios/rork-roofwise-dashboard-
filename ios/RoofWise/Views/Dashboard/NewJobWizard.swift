@@ -41,6 +41,25 @@ struct NewJobWizard: View {
 
     var onCreated: (String) -> Void = { _ in }
 
+    init(onCreated: @escaping (String) -> Void = { _ in }) {
+        self.onCreated = onCreated
+    }
+
+    /// Prefilled initializer used by the Cost Estimator's "Convert to New Job"
+    /// CTA. Drops the user straight into Step 1 with the captured address +
+    /// detected squares + chosen material already populated.
+    init(prefillAddress: String?,
+         prefillMaterial: RoofPrimaryMaterial?,
+         prefillDetectedSquares: Double?,
+         onCreated: @escaping (String) -> Void = { _ in }) {
+        self.onCreated = onCreated
+        var d = InspectionStore.shared.makeDraft()
+        if let a = prefillAddress, !a.isEmpty { d.job.propertyAddress = a }
+        if let m = prefillMaterial { d.roof.primaryMaterial = m }
+        if let sq = prefillDetectedSquares, sq > 0 { d.roof.detectedAreaSquares = sq }
+        _draft = State(initialValue: d)
+    }
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {

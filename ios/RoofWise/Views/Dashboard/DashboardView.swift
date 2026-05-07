@@ -20,6 +20,7 @@ struct DashboardView: View {
                         onSeeAll: onOpenLeads,
                         onOpenJob: { _ in onOpenLeads() }
                     )
+                    SavedEstimatesSection()
                     PipelineMiniSection(
                         onOpenBoard: { onOpenLeadsStage(nil) },
                         onTapStage: { stage in onOpenLeadsStage(stage.mappedStage) }

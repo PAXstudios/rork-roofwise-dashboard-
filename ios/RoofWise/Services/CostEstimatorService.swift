@@ -149,9 +149,77 @@ nonisolated func currency(_ v: Double) -> String {
     _currencyFormatter.string(from: NSNumber(value: v)) ?? "$\(Int(v))"
 }
 
+// MARK: - Material bridge
+
+nonisolated extension EstimateMaterial {
+    /// Project the simpler `RoofPrimaryMaterial` schema enum onto our richer
+    /// estimator material set.
+    static func from(_ m: RoofPrimaryMaterial) -> EstimateMaterial {
+        switch m {
+        case .asphaltShingle:  return .asphaltArch
+        case .threeTabAsphalt: return .asphalt3Tab
+        case .metalPanel:      return .metalStanding
+        case .woodShake:       return .woodShake
+        case .concreteTile:    return .concreteTile
+        case .clayTile:        return .clayTile
+        }
+    }
+
+    /// Reverse projection — used when handing an estimate's material back to
+    /// the Inspection schema (e.g. when converting an estimate into a job).
+    var roofMaterial: RoofPrimaryMaterial {
+        switch self {
+        case .asphalt3Tab:                       return .threeTabAsphalt
+        case .asphaltArch, .asphaltDesigner:     return .asphaltShingle
+        case .metalStanding:                     return .metalPanel
+        case .woodShake:                         return .woodShake
+        case .concreteTile:                      return .concreteTile
+        case .clayTile:                          return .clayTile
+        }
+    }
+}
+
 // MARK: - Engine
 
 nonisolated enum CostEstimator {
+
+    /// Convenience: derive an estimate directly from a SolarService
+    /// `RoofMeasurements` reading + an `Inspection.Roof` material. Uses
+    /// sensible regional defaults so JobDetailView (and any other auto-
+    /// estimate caller) doesn't need to ask the user for tier/complexity.
+    static func estimate(measurement: RoofMeasurements,
+                         material: RoofPrimaryMaterial,
+                         address: String = "",
+                         region: String = "TX") -> CostEstimate {
+        let avgDeg: Double = {
+            guard !measurement.segments.isEmpty else { return 22 }
+            let sum = measurement.segments.map(\.pitchDegrees).reduce(0, +)
+            return sum / Double(measurement.segments.count)
+        }()
+        let pitch = max(0, Int((tan(avgDeg * .pi / 180.0) * 12.0).rounded()))
+        let complexity: EstimateComplexity = {
+            switch measurement.segments.count {
+            case 0...2: return .simple
+            case 3...4: return .average
+            case 5...6: return .complex
+            default:    return .custom
+            }
+        }()
+        let input = CostEstimateInput(
+            address: address,
+            totalSquares: measurement.totalAreaSquares,
+            detectedSegmentCount: measurement.segments.count,
+            avgPitchRiseOver12: pitch,
+            material: EstimateMaterial.from(material),
+            quality: .better,
+            complexity: complexity,
+            tearOffLayers: 1,
+            includePermit: true,
+            includeDisposal: true
+        )
+        _ = region // reserved for future regional cost tables
+        return estimate(input)
+    }
 
     /// Pure function. Same input → same output. No I/O.
     static func estimate(_ input: CostEstimateInput) -> CostEstimate {

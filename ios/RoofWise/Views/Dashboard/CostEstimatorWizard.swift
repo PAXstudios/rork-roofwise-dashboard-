@@ -23,6 +23,32 @@ struct CostEstimatorWizard: View {
 
     @State private var step: CostStep = .address
     @State private var showCancel = false
+    @State private var showConvertJob = false
+    @State private var savedToast = false
+    @State private var estimatesStore = EstimatesStore.shared
+
+    /// When set, the wizard opens straight at the Review step using this
+    /// snapshot — used by the Saved Estimates strip on Home.
+    private let prefilledSaved: SavedEstimate?
+
+    init(prefilledSaved: SavedEstimate? = nil) {
+        self.prefilledSaved = prefilledSaved
+        if let s = prefilledSaved {
+            _step = State(initialValue: .review)
+            _picked = State(initialValue: AddressSuggestion(
+                title: s.address,
+                subtitle: s.region,
+                latitude: 0, longitude: 0
+            ))
+            _squaresOverride = State(initialValue: s.totalSquares)
+            _material = State(initialValue: s.material)
+            _quality = State(initialValue: s.quality)
+            _complexity = State(initialValue: s.complexity)
+            _tearOffLayers = State(initialValue: s.tearOffLayers)
+            _includePermit = State(initialValue: s.includePermit)
+            _includeDisposal = State(initialValue: s.includeDisposal)
+        }
+    }
 
     // Step 1
     @State private var picked: AddressSuggestion? = nil
@@ -103,6 +129,25 @@ struct CostEstimatorWizard: View {
         } message: {
             Text("Anything you've entered will be lost.")
         }
+        .fullScreenCover(isPresented: $showConvertJob) {
+            NewJobWizard(
+                prefillAddress: picked?.title,
+                prefillMaterial: material.roofMaterial,
+                prefillDetectedSquares: effectiveSquares > 0 ? effectiveSquares : nil
+            )
+        }
+        .overlay(alignment: .top) {
+            if savedToast {
+                Text("Estimate saved")
+                    .font(.system(size: Theme.TypeRamp.bodyTight, weight: .heavy))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 16).padding(.vertical, 10)
+                    .background(Theme.mint, in: .capsule)
+                    .shadow(color: Theme.mint.opacity(0.35), radius: 12, y: 6)
+                    .padding(.top, 12)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
     }
 
     // MARK: header / footer
@@ -155,7 +200,16 @@ struct CostEstimatorWizard: View {
         .animation(.spring(response: 0.45, dampingFraction: 0.85), value: step)
     }
 
+    @ViewBuilder
     private var footer: some View {
+        if step == .review {
+            reviewFooter
+        } else {
+            stepFooter
+        }
+    }
+
+    private var stepFooter: some View {
         HStack(spacing: 12) {
             if step.rawValue > 0 {
                 Button {
@@ -174,16 +228,11 @@ struct CostEstimatorWizard: View {
             }
 
             Button {
-                if step == .review {
-                    UINotificationFeedbackGenerator().notificationOccurred(.success)
-                    dismiss()
-                } else {
-                    advance(by: 1)
-                }
+                advance(by: 1)
             } label: {
                 HStack(spacing: 8) {
-                    Text(step == .review ? "Done" : "Next")
-                    Image(systemName: step == .review ? "checkmark" : "arrow.right")
+                    Text("Next")
+                    Image(systemName: "arrow.right")
                 }
                 .font(.system(size: Theme.TypeRamp.cta, weight: .bold))
                 .foregroundStyle(.white)
@@ -206,6 +255,65 @@ struct CostEstimatorWizard: View {
         .padding(.bottom, 20)
         .padding(.top, 12)
         .background(Theme.canvas)
+    }
+
+    private var reviewFooter: some View {
+        VStack(spacing: 10) {
+            Button {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                showConvertJob = true
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "plus.rectangle.on.folder.fill")
+                        .font(.system(size: Theme.TypeRamp.body, weight: .heavy))
+                    Text("Convert to New Job")
+                        .font(.system(size: Theme.TypeRamp.cta, weight: .heavy))
+                }
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity, minHeight: 64)
+                .background(Theme.inkGradient, in: .rect(cornerRadius: 18))
+                .shadow(color: Theme.ink.opacity(0.28), radius: 14, x: 0, y: 6)
+            }
+            .buttonStyle(.plain)
+            .disabled(picked == nil)
+
+            Button {
+                saveCurrentEstimate()
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "tray.and.arrow.down.fill")
+                        .font(.system(size: Theme.TypeRamp.body, weight: .heavy))
+                    Text("Save estimate")
+                        .font(.system(size: Theme.TypeRamp.cta, weight: .heavy))
+                }
+                .foregroundStyle(Theme.ink)
+                .frame(maxWidth: .infinity, minHeight: 56)
+                .background(Theme.card, in: .rect(cornerRadius: 16))
+                .overlay(RoundedRectangle(cornerRadius: 16)
+                    .stroke(Theme.hairline, lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            .disabled(picked == nil || effectiveSquares <= 0)
+        }
+        .padding(.horizontal, 20)
+        .padding(.bottom, 20)
+        .padding(.top, 12)
+        .background(Theme.canvas)
+    }
+
+    private func saveCurrentEstimate() {
+        guard let picked, effectiveSquares > 0 else { return }
+        let est = currentEstimate()
+        let saved = SavedEstimate(from: est, address: picked.title)
+        estimatesStore.save(saved)
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+            savedToast = true
+        }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1.6))
+            withAnimation(.easeOut(duration: 0.25)) { savedToast = false }
+        }
     }
 
     private var canAdvance: Bool {

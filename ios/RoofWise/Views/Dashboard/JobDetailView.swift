@@ -35,6 +35,7 @@ struct JobDetailView: View {
                             stormMatchCard(insp)
                         }
                         roofMeasurementsCard(insp)
+                        replacementCostCard(insp)
                         if insp.slopes.isEmpty {
                             emptySlopesCard
                         } else {
@@ -675,6 +676,57 @@ struct JobDetailView: View {
 
     private func squaresLabel(_ sq: Double) -> String {
         String(format: "%.1f sq", sq)
+    }
+
+    // MARK: Replacement cost (auto)
+
+    @ViewBuilder
+    private func replacementCostCard(_ insp: Inspection) -> some View {
+        if let m = roofMeasurements,
+           insp.roof.detectedAreaSquares != nil {
+            let est = CostEstimator.estimate(
+                measurement: m,
+                material: insp.roof.primaryMaterial,
+                address: insp.job.propertyAddress
+            )
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 10) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 12).fill(Theme.mintSoft)
+                        Image(systemName: "dollarsign.circle.fill")
+                            .font(.system(size: Theme.TypeRamp.subhead, weight: .heavy))
+                            .foregroundStyle(Theme.mint)
+                    }
+                    .frame(width: 44, height: 44)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("REPLACEMENT COST")
+                            .font(.system(size: Theme.TypeRamp.captionSm, weight: .heavy))
+                            .tracking(1.2)
+                            .foregroundStyle(Theme.inkSoft)
+                        Text(est.rangeLabel)
+                            .font(.system(size: Theme.TypeRamp.titleSm, weight: .heavy))
+                            .foregroundStyle(Theme.ink)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                    }
+                    Spacer()
+                    Text("AUTO ESTIMATE")
+                        .font(.system(size: Theme.TypeRamp.captionSm, weight: .heavy))
+                        .tracking(0.8)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(Theme.mint, in: .capsule)
+                }
+                Text(String(format: "%@ / sq \u{00B7} %.1f sq \u{00B7} %@",
+                            currency(est.pricePerSquare),
+                            est.input.totalSquares,
+                            insp.roof.primaryMaterial.displayName))
+                    .font(.system(size: Theme.TypeRamp.metaSm, weight: .semibold))
+                    .foregroundStyle(Theme.inkSoft)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .cardStyle(padding: 16, radius: 18)
+        }
     }
 
     // MARK: Decision banner
