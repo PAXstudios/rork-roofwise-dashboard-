@@ -221,6 +221,8 @@ struct SignaturesView: View {
 
     private func save() {
         guard var insp = inspection else { return }
+        let inspectorWas = insp.inspectorSignaturePng != nil
+        let homeownerWas = insp.homeownerSignaturePng != nil
         if inspectorHasInk {
             insp.inspectorSignaturePng = pngFromCanvas(inspectorCanvas)
         }
@@ -228,6 +230,16 @@ struct SignaturesView: View {
             insp.homeownerSignaturePng = pngFromCanvas(homeownerCanvas)
         }
         store.update(insp)
+        if inspectorHasInk && !inspectorWas {
+            ActivityStore.shared.log(.signatureInspectorCaptured,
+                                     summary: "Inspector signature captured",
+                                     on: insp)
+        }
+        if homeownerHasInk && !homeownerWas {
+            ActivityStore.shared.log(.signatureHomeownerCaptured,
+                                     summary: "Homeowner signature captured",
+                                     on: insp)
+        }
         UINotificationFeedbackGenerator().notificationOccurred(.success)
         dismiss()
     }

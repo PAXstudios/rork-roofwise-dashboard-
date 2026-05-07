@@ -248,6 +248,39 @@ struct NewJobWizard: View {
         UINotificationFeedbackGenerator().notificationOccurred(.success)
         onCreated(saved.job.reportId)
         createdReportId = saved.job.reportId
+        // Activity log — job_created (and address_geocoded if we have one).
+        ActivityStore.shared.log(
+            .jobCreated,
+            summary: "Job created",
+            detail: saved.job.clientName.isEmpty ? saved.job.reportId
+                : "\(saved.job.clientName) \u{00B7} \(saved.job.reportId)",
+            on: saved
+        )
+        if !saved.job.propertyAddress.trimmingCharacters(in: .whitespaces).isEmpty {
+            ActivityStore.shared.log(
+                .addressGeocoded,
+                summary: "Address captured",
+                detail: saved.job.propertyAddress,
+                on: saved
+            )
+        }
+        if saved.roof.detectedAreaSquares != nil {
+            ActivityStore.shared.log(
+                .roofDetected,
+                summary: "Roof measured from satellite",
+                detail: String(format: "%.1f sq detected",
+                               saved.roof.detectedAreaSquares ?? 0),
+                on: saved
+            )
+        }
+        if saved.originEstimateId != nil {
+            ActivityStore.shared.log(
+                .estimateConverted,
+                summary: "Converted from saved estimate",
+                detail: nil,
+                on: saved
+            )
+        }
         // Fire-and-forget: geocode the address and try to auto-fill the
         // event{} fields from NOAA storm history.
         Task.detached {

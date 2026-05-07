@@ -503,6 +503,23 @@ struct SlopeCaptureView: View {
         // so per-slope verdicts and the roof summary stay consistent.
         store.upsertSlope(slope, on: reportId)
         store.setPhotos(photos, for: reportId, orientation: orientation)
+        // Activity log + low-confidence training queue.
+        if let insp = store.inspection(with: reportId) {
+            let kind: ActivityEvent.Kind = existingOrientation == nil ? .slopeAdded : .slopeEdited
+            let damage = slope.damageTypes.hail.asphaltBruise
+                + slope.damageTypes.hail.asphaltMatFracture
+                + slope.damageTypes.hail.asphaltGranuleLossExposed
+                + slope.damageTypes.wind.shingleCrease
+                + slope.damageTypes.wind.shingleMissing
+            ActivityStore.shared.log(
+                kind,
+                summary: "\(slope.orientation) slope \(existingOrientation == nil ? "added" : "edited")",
+                detail: String(format: "%.1f sq \u{00B7} pitch %d/12 \u{00B7} %d damage hits",
+                               slope.areaSquares, slope.pitchRiseOver12, damage),
+                on: insp
+            )
+            TrainingQueueStore.shared.enqueueFromSlope(slope, on: reportId)
+        }
         UINotificationFeedbackGenerator().notificationOccurred(.success)
         dismiss()
     }

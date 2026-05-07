@@ -5,6 +5,8 @@ struct TrainingView: View {
     @State private var selectedLesson: Lesson? = nil
     @State private var showCoach = false
     @State private var showExplainer = false
+    @State private var showQueue = false
+    @State private var queue = TrainingQueueStore.shared
 
     private let curriculum = TrainingCurriculum.lessons
 
@@ -13,6 +15,8 @@ struct TrainingView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     header
+                    pendingReviewCard
+                    reviewStatsCard
                     progressCard
                     aiToolsRow
                     lessonsByCategory
@@ -40,7 +44,98 @@ struct TrainingView: View {
             .sheet(isPresented: $showExplainer) {
                 DamageExplainerView(progress: progress)
             }
+            .navigationDestination(isPresented: $showQueue) {
+                TrainingQueueView()
+            }
         }
+    }
+
+    // MARK: - AI Training Queue
+
+    private var pendingReviewCard: some View {
+        let count = queue.pendingCount
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(count > 0 ? Theme.crimson.opacity(0.15) : Theme.mintSoft)
+                    Image(systemName: count > 0 ? "exclamationmark.triangle.fill" : "checkmark.seal.fill")
+                        .font(.system(size: Theme.TypeRamp.subhead, weight: .heavy))
+                        .foregroundStyle(count > 0 ? Theme.crimson : Theme.mint)
+                }
+                .frame(width: 56, height: 56)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("PENDING REVIEW")
+                        .font(.system(size: Theme.TypeRamp.captionSm, weight: .heavy))
+                        .tracking(0.8)
+                        .foregroundStyle(Theme.inkSoft)
+                    Text(count == 0 ? "All caught up" : "\(count) \(count == 1 ? "detection" : "detections")")
+                        .font(.system(size: Theme.TypeRamp.title, weight: .heavy))
+                        .foregroundStyle(Theme.ink)
+                }
+                Spacer(minLength: 0)
+            }
+            Button {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                showQueue = true
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "checklist")
+                        .font(.system(size: Theme.TypeRamp.body, weight: .heavy))
+                    Text(count > 0 ? "Review queue" : "Open queue")
+                        .font(.system(size: Theme.TypeRamp.cta, weight: .heavy))
+                }
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity, minHeight: 64)
+                .background(Theme.inkGradient, in: .rect(cornerRadius: 16))
+                .shadow(color: Theme.ink.opacity(0.18), radius: 12, y: 4)
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cardStyle(padding: 16, radius: 18)
+    }
+
+    private var reviewStatsCard: some View {
+        let total = queue.totalReviewed
+        let acc = queue.accuracyPercent
+        let last = queue.lastReviewedAt
+        return HStack(spacing: 10) {
+            statTile(label: "Reviewed",
+                     value: "\(total)",
+                     icon: "text.badge.checkmark",
+                     tint: Theme.ink)
+            statTile(label: "Accuracy",
+                     value: acc.map { "\($0)%" } ?? "—",
+                     icon: "target",
+                     tint: Theme.mint)
+            statTile(label: "Last",
+                     value: last.map {
+                        $0.formatted(.relative(presentation: .numeric, unitsStyle: .abbreviated))
+                     } ?? "—",
+                     icon: "clock",
+                     tint: Theme.amber)
+        }
+    }
+
+    private func statTile(label: String, value: String, icon: String, tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Image(systemName: icon)
+                .font(.system(size: Theme.TypeRamp.caption, weight: .heavy))
+                .foregroundStyle(tint)
+            Text(value)
+                .font(.system(size: Theme.TypeRamp.subhead, weight: .heavy))
+                .foregroundStyle(Theme.ink)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            Text(label.uppercased())
+                .font(.system(size: Theme.TypeRamp.captionSm, weight: .heavy))
+                .tracking(0.6)
+                .foregroundStyle(Theme.inkSoft)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(tint.opacity(0.10), in: .rect(cornerRadius: 14))
     }
 
     // MARK: - Header

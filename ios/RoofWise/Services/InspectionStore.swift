@@ -104,6 +104,17 @@ final class InspectionStore {
     /// and the roof-level summary stay in lock-step with the latest data.
     private func recomputeSummary(_ insp: inout Inspection) {
         insp = DecisionEngine.decide(insp)
+        let s = insp.summary
+        let verdict: String
+        if s.roofFullReplacementRecommended { verdict = "Full replacement recommended" }
+        else if s.roofPartialReplacementRecommended { verdict = "Partial replacement recommended" }
+        else if s.roofRepairsRecommended { verdict = "Repairs recommended" }
+        else { verdict = "No storm-related damage" }
+        ActivityStore.shared.log(.decisionComputed,
+                                 summary: verdict,
+                                 detail: s.replacementSlopesList.isEmpty ? nil
+                                     : "Replace: \(s.replacementSlopesList)",
+                                 on: insp)
     }
 
     // MARK: Storm event auto-population
@@ -149,6 +160,15 @@ final class InspectionStore {
         recomputeSummary(&insp)
         inspections[idx] = insp
         save()
+        let mag: String
+        if let h = storm.magnitudeIn { mag = String(format: "%.2f\" hail", h) }
+        else if let w = storm.windMph { mag = "\(w) mph wind" }
+        else { mag = storm.eventType.rawValue }
+        ActivityStore.shared.log(.stormMatched,
+                                 summary: "Storm match: \(mag)",
+                                 detail: storm.eventDate.formatted(date: .abbreviated, time: .omitted)
+                                     + " \u{00B7} " + storm.source,
+                                 on: insp)
         return true
     }
 

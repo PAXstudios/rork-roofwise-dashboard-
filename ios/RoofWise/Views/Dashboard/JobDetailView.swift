@@ -18,6 +18,7 @@ struct JobDetailView: View {
     @State private var showRoofOnMap = false
     @State private var estimatesStore = EstimatesStore.shared
     @State private var showOriginEstimate = false
+    @State private var showActivity = false
 
     let reportId: String
 
@@ -102,6 +103,9 @@ struct JobDetailView: View {
                 SolarMeasurementsSheet(measurements: m, address: insp.job.propertyAddress)
             }
         }
+        .sheet(isPresented: $showActivity) {
+            ActivityFeedSheet(reportId: reportId)
+        }
         .sheet(isPresented: $showOriginEstimate) {
             if let saved = originSavedEstimate {
                 CostEstimatorWizard(prefilledSaved: saved)
@@ -159,6 +163,12 @@ struct JobDetailView: View {
                 Button {
                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
                     showWeather = true
+                    ActivityStore.shared.log(
+                        .weatherSynced,
+                        summary: "Weather pulled for site",
+                        detail: insp.job.propertyAddress.isEmpty ? nil : insp.job.propertyAddress,
+                        on: insp
+                    )
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "cloud.sun.fill")
@@ -175,6 +185,8 @@ struct JobDetailView: View {
                 .buttonStyle(.plain)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+
+            activityButton
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .cardStyle(padding: 20, radius: 20)
@@ -483,6 +495,12 @@ struct JobDetailView: View {
             if let url {
                 pdfShareURL = url
                 UINotificationFeedbackGenerator().notificationOccurred(.success)
+                ActivityStore.shared.log(
+                    .reportGenerated,
+                    summary: "Haag report generated",
+                    detail: url.lastPathComponent,
+                    on: insp
+                )
             } else {
                 UINotificationFeedbackGenerator().notificationOccurred(.error)
             }
@@ -636,7 +654,44 @@ struct JobDetailView: View {
               !address.trimmingCharacters(in: .whitespaces).isEmpty else { return }
         let coord = WeatherServiceFactory.mockCoord(forAddress: address)
         let m = try? await SolarServiceFactory.shared.measurements(at: coord)
-        await MainActor.run { self.roofMeasurements = m }
+        await MainActor.run {
+            let wasNil = self.roofMeasurements == nil
+            self.roofMeasurements = m
+            if wasNil, let m, let insp = self.inspection {
+                ActivityStore.shared.log(
+                    .roofDetected,
+                    summary: String(format: "Roof measured: %.1f sq", m.totalAreaSquares),
+                    detail: "\(m.segments.count) faces \u{00B7} \(m.source)",
+                    on: insp
+                )
+            }
+        }
+    }
+
+    private var activityButton: some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            showActivity = true
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(.system(size: Theme.TypeRamp.body, weight: .heavy))
+                Text("Activity")
+                    .font(.system(size: Theme.TypeRamp.body, weight: .heavy))
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: Theme.TypeRamp.caption, weight: .heavy))
+                    .foregroundStyle(Theme.inkFaint)
+            }
+            .foregroundStyle(Theme.ink)
+            .frame(maxWidth: .infinity, minHeight: 56)
+            .padding(.horizontal, 14)
+            .background(Theme.canvas, in: .rect(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14)
+                .stroke(Theme.hairline, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .padding(.top, 4)
     }
 
     @ViewBuilder
