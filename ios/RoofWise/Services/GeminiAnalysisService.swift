@@ -9,8 +9,8 @@ struct GeminiAnalysisService {
     private let toolkitURL: String
     private let secret: String
     private let geminiAPIKey: String
-    private static let model = "google/gemini-3-flash"
-    private static let directGeminiModel = "gemini-3-flash"
+    private static let model = "google/gemini-2.5-flash"
+    private static let directGeminiModel = "gemini-2.5-flash"
     private static let fallbackModels: [String] = [
         "anthropic/claude-haiku-4.5",
         "alibaba/qwen3-vl-instruct"
@@ -138,6 +138,7 @@ struct GeminiAnalysisService {
         do {
             let (data, response) = try await URLSession.shared.data(for: req)
             if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+                Self.logHTTPFailure(prefix: "[Gemini Live]", statusCode: http.statusCode, data: data)
                 return AnalysisResult(findings: [], markers: [], failed: true)
             }
             guard let parsed = Self.parseResponse(data) else {
@@ -233,8 +234,7 @@ struct GeminiAnalysisService {
             let (data, response) = try await URLSession.shared.data(for: req)
             print("[Gemini] \u{23F1}\u{FE0F} round-trip \(String(format: "%.2f", Date().timeIntervalSince(started)))s, \(data.count) bytes")
             if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-                let bodyStr = String(data: data, encoding: .utf8)?.prefix(800) ?? ""
-                print("[Gemini] \u{274C} HTTP \(http.statusCode): \(bodyStr)")
+                Self.logHTTPFailure(prefix: "[Gemini]", statusCode: http.statusCode, data: data)
                 return AnalysisResult(
                     findings: Self.failureFinding(reason: "AI service returned HTTP \(http.statusCode). Tap retry."),
                     markers: [],
@@ -361,12 +361,17 @@ struct GeminiAnalysisService {
             ]],
             "generationConfig": [
                 "temperature": temperature,
-                "response_mime_type": "application/json"
+                "responseMimeType": "application/json"
             ]
         ]
     }
 
     // MARK: - Parsing
+
+    private static func logHTTPFailure(prefix: String, statusCode: Int, data: Data) {
+        let body = String(data: data, encoding: .utf8) ?? "<non-UTF8 body, \(data.count) bytes>"
+        print("\(prefix) ❌ HTTP \(statusCode) FULL RESPONSE BODY:\n\(body)")
+    }
 
     private static func parseResponse(_ data: Data) -> AnalysisResult? {
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
