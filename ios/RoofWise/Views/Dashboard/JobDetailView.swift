@@ -6,7 +6,6 @@ struct JobDetailView: View {
     @State private var showAddSlope = false
     @State private var editingOrientation: String? = nil
     @State private var slopePendingDelete: Slope? = nil
-    @State private var showReportPlaceholder = false
 
     let reportId: String
 
@@ -25,6 +24,7 @@ struct JobDetailView: View {
                         if insp.slopes.isEmpty {
                             emptySlopesCard
                         } else {
+                            decisionBanner(insp)
                             slopesSummaryCard(insp)
                             slopesList(insp)
                         }
@@ -52,16 +52,11 @@ struct JobDetailView: View {
                     .foregroundStyle(Theme.ember)
             }
         }
-        .fullScreenCover(isPresented: $showAddSlope) {
-            SlopeCaptureSheet(reportId: reportId)
+        .navigationDestination(isPresented: $showAddSlope) {
+            SlopeCaptureView(reportId: reportId)
         }
-        .fullScreenCover(item: $editingOrientation) { orient in
-            SlopeCaptureSheet(reportId: reportId, existingOrientation: orient)
-        }
-        .sheet(isPresented: $showReportPlaceholder) {
-            ReportComingSoonSheet()
-                .presentationDetents([.medium])
-                .presentationDragIndicator(.visible)
+        .navigationDestination(item: $editingOrientation) { orient in
+            SlopeCaptureView(reportId: reportId, existingOrientation: orient)
         }
         .alert("Remove this slope?",
                isPresented: Binding(get: { slopePendingDelete != nil },
@@ -268,12 +263,20 @@ struct JobDetailView: View {
         let title: String
         let bg: Color
         let fg: Color
-        if slope.functionalDamagePresent {
-            title = "Replace"; bg = Theme.crimson.opacity(0.14); fg = Theme.crimson
+        if slope.slopeReplacementRecommended {
+            title = "Full Replacement"
+            bg = Theme.crimson.opacity(0.14); fg = Theme.crimson
+        } else if slope.slopeRepairsRecommended {
+            // Per spec: "yellow repairs" = amber chip.
+            title = "Repairs"
+            bg = Theme.amberSoft; fg = Theme.amber
         } else if slope.cosmeticOnly {
-            title = "Repair"; bg = Theme.amberSoft; fg = Theme.amber
+            // Cosmetic damage shows as orange (partial) per the 4-color scheme.
+            title = "Cosmetic"
+            bg = Theme.emberSoft; fg = Theme.ember
         } else {
-            title = "No damage"; bg = Theme.mintSoft; fg = Theme.mint
+            title = "No damage"
+            bg = Theme.mintSoft; fg = Theme.mint
         }
         return Text(title)
             .font(.system(size: 12, weight: .heavy))
@@ -313,39 +316,98 @@ struct JobDetailView: View {
     }
 
     private var generateReportBar: some View {
-        let hasSlopes = !(inspection?.slopes.isEmpty ?? true)
-        return VStack(spacing: 0) {
+        VStack(spacing: 6) {
             Rectangle().fill(Theme.hairline).frame(height: 0.5)
-            Button {
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                showReportPlaceholder = true
-            } label: {
-                HStack(spacing: 10) {
-                    Image(systemName: "doc.richtext.fill")
-                        .font(.system(size: 18, weight: .bold))
-                    Text("Generate Haag Report (PDF)")
-                        .font(.system(size: 18, weight: .bold))
-                }
-                .foregroundStyle(.white)
-                .frame(maxWidth: .infinity, minHeight: 64)
-                .background(
-                    hasSlopes
-                        ? AnyShapeStyle(LinearGradient(
-                            colors: [Theme.ember, Theme.emberDeep],
-                            startPoint: .topLeading, endPoint: .bottomTrailing))
-                        : AnyShapeStyle(Theme.inkFaint),
-                    in: .rect(cornerRadius: 18)
-                )
-                .shadow(color: hasSlopes ? Theme.ember.opacity(0.4) : .clear,
-                        radius: 14, x: 0, y: 6)
+            HStack(spacing: 6) {
+                Image(systemName: "doc.richtext.fill")
+                    .font(.system(size: 18, weight: .bold))
+                Text("Generate Haag Report (PDF)")
+                    .font(.system(size: 18, weight: .bold))
             }
-            .buttonStyle(.plain)
-            .disabled(!hasSlopes)
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity, minHeight: 64)
+            .background(Theme.inkFaint, in: .rect(cornerRadius: 18))
             .padding(.horizontal, 20)
             .padding(.top, 12)
-            .padding(.bottom, 20)
+
+            Text("Available in Phase 3")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Theme.inkSoft)
+                .padding(.bottom, 18)
         }
         .background(Theme.canvas)
+    }
+
+    // MARK: Decision banner
+
+    private func decisionBanner(_ insp: Inspection) -> some View {
+        let v = decisionVerdict(insp)
+        return HStack(spacing: 12) {
+            Image(systemName: v.icon)
+                .font(.system(size: 22, weight: .heavy))
+                .foregroundStyle(v.fg)
+                .frame(width: 44, height: 44)
+                .background(v.fg.opacity(0.15), in: .circle)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(v.title.uppercased())
+                    .font(.system(size: 11, weight: .heavy))
+                    .tracking(0.7)
+                    .foregroundStyle(v.fg)
+                Text(v.detail)
+                    .font(.system(size: 17, weight: .heavy))
+                    .foregroundStyle(Theme.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(v.bg, in: .rect(cornerRadius: 18))
+        .overlay(RoundedRectangle(cornerRadius: 18)
+            .stroke(v.fg.opacity(0.25), lineWidth: 1))
+    }
+
+    private struct DecisionStyle {
+        let title: String
+        let detail: String
+        let icon: String
+        let fg: Color
+        let bg: Color
+    }
+
+    private func decisionVerdict(_ insp: Inspection) -> DecisionStyle {
+        let s = insp.summary
+        let list = s.replacementSlopesList.isEmpty ? "" : " — \(s.replacementSlopesList)"
+        if s.roofFullReplacementRecommended {
+            return DecisionStyle(
+                title: "Full Replacement Recommended",
+                detail: "Full Replacement Recommended\(list)",
+                icon: "exclamationmark.octagon.fill",
+                fg: Theme.crimson, bg: Theme.crimson.opacity(0.10)
+            )
+        }
+        if s.roofPartialReplacementRecommended {
+            return DecisionStyle(
+                title: "Partial Replacement",
+                detail: "Partial Replacement\(list)",
+                icon: "exclamationmark.triangle.fill",
+                fg: Theme.ember, bg: Theme.emberSoft
+            )
+        }
+        if s.roofRepairsRecommended {
+            return DecisionStyle(
+                title: "Repairs Recommended",
+                detail: "Repairs Recommended",
+                icon: "wrench.and.screwdriver.fill",
+                fg: Theme.amber, bg: Theme.amberSoft
+            )
+        }
+        return DecisionStyle(
+            title: "No Damage",
+            detail: "No storm-related damage found",
+            icon: "checkmark.seal.fill",
+            fg: Theme.mint, bg: Theme.mintSoft
+        )
     }
 }
 

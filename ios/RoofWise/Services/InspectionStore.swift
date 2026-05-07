@@ -99,18 +99,10 @@ final class InspectionStore {
         save()
     }
 
-    /// Recomputes the rolled-up `summary` block from current slopes.
+    /// Re-runs the DecisionEngine across the inspection so per-slope verdicts
+    /// and the roof-level summary stay in lock-step with the latest data.
     private func recomputeSummary(_ insp: inout Inspection) {
-        let slopes = insp.slopes
-        let anyFunctional = slopes.contains { $0.functionalDamagePresent }
-        let replacements = slopes.filter { $0.slopeReplacementRecommended }
-        let repairs = slopes.contains { $0.slopeRepairsRecommended }
-        let allReplace = !slopes.isEmpty && replacements.count == slopes.count
-        insp.summary.roofAnyFunctionalDamage = anyFunctional
-        insp.summary.roofFullReplacementRecommended = allReplace
-        insp.summary.roofPartialReplacementRecommended = !replacements.isEmpty && !allReplace
-        insp.summary.roofRepairsRecommended = repairs
-        insp.summary.replacementSlopesList = replacements.map(\.orientation).joined(separator: ", ")
+        insp = DecisionEngine.decide(insp)
     }
 
     // MARK: Session photos (in-memory, not persisted to JSON)
