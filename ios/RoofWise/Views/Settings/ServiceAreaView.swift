@@ -6,6 +6,7 @@ struct ServiceAreaView: View {
     @State private var errorMessage: String? = nil
     @State private var pendingDelete: ServiceArea? = nil
     @State private var showRationale: Bool = false
+    @State private var syncService = CorrectionsSyncService.shared
     @FocusState private var focused: Bool
 
     private let didAskNotificationsKey = "rw.notifications.didAsk"
@@ -24,6 +25,7 @@ struct ServiceAreaView: View {
                 }
 
                 pushSettingsLink
+                correctionsSyncCard
 
                 if store.areas.isEmpty {
                     emptyState
@@ -200,6 +202,36 @@ struct ServiceAreaView: View {
             .overlay(RoundedRectangle(cornerRadius: 16).stroke(Theme.hairline, lineWidth: 0.6))
         }
         .buttonStyle(.plain)
+    }
+
+    private var correctionsSyncCard: some View {
+        HStack(spacing: 14) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 12).fill(Theme.mintSoft)
+                Image(systemName: "brain.head.profile")
+                    .font(.system(size: Theme.TypeRamp.subhead, weight: .heavy))
+                    .foregroundStyle(Theme.mint)
+            }
+            .frame(width: 44, height: 44)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Help RoofWise improve the AI")
+                    .font(.system(size: Theme.TypeRamp.body, weight: .heavy))
+                    .foregroundStyle(Theme.ink)
+                Text("Sync corrections to cloud")
+                    .font(.system(size: Theme.TypeRamp.metaSm))
+                    .foregroundStyle(Theme.inkSoft)
+            }
+            Spacer(minLength: 8)
+            Toggle("", isOn: Binding(
+                get: { syncService.isSyncEnabled },
+                set: { syncService.isSyncEnabled = $0 }
+            ))
+            .labelsHidden()
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
+        .background(Theme.card, in: .rect(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Theme.hairline, lineWidth: 0.6))
     }
 
     // MARK: - Empty state

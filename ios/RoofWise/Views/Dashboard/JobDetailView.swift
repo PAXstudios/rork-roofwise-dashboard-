@@ -23,6 +23,7 @@ struct JobDetailView: View {
     @State private var showProposalEditor = false
     @State private var showProposalSend = false
     @State private var showHomeownerProposal = false
+    @State private var showSwipeReview = false
     @State private var pendingProposal: Proposal? = nil
 
     let reportId: String
@@ -53,6 +54,7 @@ struct JobDetailView: View {
                         }
                         addSlopeButton(label: insp.slopes.isEmpty ? "Add slope" : "Add another slope")
                         if !insp.slopes.isEmpty {
+                            reviewAIButton(insp)
                             signReportCard(insp)
                             proposalSection(insp)
                         }
@@ -111,6 +113,11 @@ struct JobDetailView: View {
         }
         .sheet(isPresented: $showActivity) {
             ActivityFeedSheet(reportId: reportId)
+        }
+        .fullScreenCover(isPresented: $showSwipeReview) {
+            if let insp = inspection {
+                SwipeReviewView(items: ReviewPhotoFactory.items(for: insp, store: store))
+            }
         }
         .sheet(isPresented: $showProposalEditor) {
             if let p = pendingProposal, let insp = inspection {
@@ -534,6 +541,42 @@ struct JobDetailView: View {
                 UINotificationFeedbackGenerator().notificationOccurred(.error)
             }
         }
+    }
+
+    // MARK: Review AI
+
+    private func reviewAIButton(_ insp: Inspection) -> some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            showSwipeReview = true
+            ActivityStore.shared.logTap(target: "JobDetail.reviewAI")
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "sparkles.rectangle.stack.fill")
+                    .font(.system(size: Theme.TypeRamp.cta, weight: .heavy))
+                    .foregroundStyle(.white)
+                    .frame(width: 56, height: 56)
+                    .background(Theme.ember, in: .rect(cornerRadius: 16))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Review AI")
+                        .font(.system(size: Theme.TypeRamp.body, weight: .heavy))
+                        .foregroundStyle(Theme.ink)
+                    Text("Swipe through analyzed photos and correct overlays")
+                        .font(.system(size: Theme.TypeRamp.metaSm, weight: .semibold))
+                        .foregroundStyle(Theme.inkSoft)
+                        .lineLimit(2)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: Theme.TypeRamp.body, weight: .heavy))
+                    .foregroundStyle(Theme.inkFaint)
+            }
+            .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
+            .cardStyle(padding: 14, radius: 18)
+        }
+        .buttonStyle(.plain)
+        .disabled(ReviewPhotoFactory.items(for: insp, store: store).isEmpty)
+        .opacity(ReviewPhotoFactory.items(for: insp, store: store).isEmpty ? 0.55 : 1)
     }
 
     // MARK: Sign Report card

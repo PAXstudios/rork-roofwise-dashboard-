@@ -51,7 +51,7 @@ final class TrainingQueueStore {
                                 photoPath: String? = nil,
                                 confidenceAvg: Double) -> TrainingItem? {
         guard count > 0 else { return nil }
-        guard confidenceAvg < 0.6 else { return nil }
+        guard confidenceAvg < LocalLearningEngine.shared.autoQueueThreshold else { return nil }
         // Dedup: don't re-enqueue an unresolved item for the same
         // (inspection, slope, kind).
         if items.contains(where: {
@@ -88,7 +88,7 @@ final class TrainingQueueStore {
                              reportId: String,
                              slopeOrientation: String,
                              photoPath: String? = nil) {
-        guard snapshot.confidenceAvg < 0.6 else { return }
+        guard snapshot.confidenceAvg < LocalLearningEngine.shared.autoQueueThreshold else { return }
         for category in snapshot.categories where category.count > 0 {
             _ = enqueueIfLowConfidence(
                 reportId: reportId,
@@ -105,18 +105,30 @@ final class TrainingQueueStore {
     // MARK: Mutations
 
     func accept(_ item: TrainingItem) {
-        update(item.id) { $0.status = .accepted }
+        accept(id: item.id)
+    }
+
+    func accept(id: UUID) {
+        update(id) { $0.status = .accepted }
     }
 
     func correct(_ item: TrainingItem, override: Int) {
-        update(item.id) {
+        correct(id: item.id, override: override)
+    }
+
+    func correct(id: UUID, override: Int) {
+        update(id) {
             $0.status = .corrected
             $0.inspectorCountOverride = override
         }
     }
 
     func reject(_ item: TrainingItem) {
-        update(item.id) { $0.status = .rejected }
+        reject(id: item.id)
+    }
+
+    func reject(id: UUID) {
+        update(id) { $0.status = .rejected }
     }
 
     private func update(_ id: UUID, mutate: (inout TrainingItem) -> Void) {

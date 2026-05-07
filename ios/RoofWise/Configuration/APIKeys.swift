@@ -15,6 +15,10 @@ enum APIKeys {
         "NoaaUserAgent",
         default: "RoofWise/1.0 (contact@roofwise.app)"
     )
+    static let correctionsEndpoint: String   = read(
+        "CorrectionsEndpoint",
+        default: "https://roofwise.app/v1/corrections/batch"
+    )
 
     /// Global mock-mode flag. Toggled by setting `USE_MOCKS = NO` in Info.plist
     /// (or via an Xcode build setting). Defaults to `true` while live services

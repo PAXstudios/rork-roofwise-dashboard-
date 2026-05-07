@@ -194,6 +194,9 @@ struct GeminiAnalysisService {
         let prompt = """
         You are a forensic roof inspector (HAAG standards). \(intro)
 
+        USER-SPECIFIC CALIBRATION:
+        \(LocalLearningEngine.shared.promptHints())
+
         Identify the roof covering and any visible damage. Be conservative — only flag damage you can actually see in the pixels. Empty arrays are correct when nothing is visible.
 
         CRITICAL LOCALIZATION RULES:
@@ -254,7 +257,7 @@ struct GeminiAnalysisService {
                 print("[Gemini] \u{1F4E5} raw response (\(data.count) bytes): \(raw.prefix(1200))")
             }
             if let parsed = Self.parseResponse(data) {
-                let refined = parsed.refiningMarkers(in: image)
+                let refined = parsed.refiningMarkers(in: image).applyingLocalCalibration()
                 print("[VisionAI] \u{2705} parsed: \(parsed.findings.count) findings, \(parsed.markers.count) markers → \(refined.markers.count) pixel-refined markers")
                 return refined
             }
@@ -638,6 +641,18 @@ private extension GeminiAnalysisService.AnalysisResult {
                                                     shingleTypeConfidence: shingleTypeConfidence,
                                                     shingleTypeNote: shingleTypeNote,
                                                     confidenceSnapshot: confidenceSnapshot)
+    }
+
+    func applyingLocalCalibration() -> GeminiAnalysisService.AnalysisResult {
+        GeminiAnalysisService.AnalysisResult(findings: findings,
+                                             markers: markers,
+                                             failed: failed,
+                                             usedMock: usedMock,
+                                             noRoofDetected: noRoofDetected,
+                                             shingleType: shingleType,
+                                             shingleTypeConfidence: shingleTypeConfidence,
+                                             shingleTypeNote: shingleTypeNote,
+                                             confidenceSnapshot: LocalLearningEngine.shared.adjustedSnapshot(confidenceSnapshot))
     }
 }
 

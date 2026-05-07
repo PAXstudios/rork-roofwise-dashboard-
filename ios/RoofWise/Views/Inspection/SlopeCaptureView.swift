@@ -332,6 +332,7 @@ struct SlopeCaptureView: View {
                   confidence: confidence(for: .hail),
                   confidenceCategory: .hail,
                   onConfidenceInfo: { confidenceInfoKind = $0 }) {
+            learningDeltaBadge(for: .hail)
             StepperRow(label: "Bruises",        value: $hailBruise,   range: 0...99)
             StepperRow(label: "Mat Fractures",  value: $hailFracture, range: 0...99)
             StepperRow(label: "Granule Loss with Exposed Mat",
@@ -346,6 +347,7 @@ struct SlopeCaptureView: View {
                   confidence: confidence(for: .wind),
                   confidenceCategory: .wind,
                   onConfidenceInfo: { confidenceInfoKind = $0 }) {
+            learningDeltaBadge(for: .wind)
             StepperRow(label: "Creased Shingles", value: $windCrease,  range: 0...99)
             StepperRow(label: "Lifted / Unsealed", value: $windLifted, range: 0...99)
         }
@@ -358,6 +360,7 @@ struct SlopeCaptureView: View {
                   confidence: confidence(for: .wear),
                   confidenceCategory: .wear,
                   onConfidenceInfo: { confidenceInfoKind = $0 }) {
+            learningDeltaBadge(for: .wear)
             ToggleRow(label: "Natural Weathering",   isOn: $wearNatural)
             ToggleRow(label: "Foot Traffic",         isOn: $wearFoot)
             ToggleRow(label: "Manufacturing Defect", isOn: $wearMfg)
@@ -371,12 +374,30 @@ struct SlopeCaptureView: View {
                   confidence: confidence(for: .missing),
                   confidenceCategory: .missing,
                   onConfidenceInfo: { confidenceInfoKind = $0 }) {
+            learningDeltaBadge(for: .missing)
             StepperRow(label: "Missing Shingles", value: $windMissing, range: 0...99)
         }
     }
 
     private func confidence(for kind: AIDamageCategoryKind) -> Double? {
         aiConfidenceSnapshot?.confidence(for: kind)
+    }
+
+    @ViewBuilder
+    private func learningDeltaBadge(for kind: AIDamageCategoryKind) -> some View {
+        let delta = LocalLearningEngine.shared.thresholdDelta(for: kind)
+        if abs(delta) > 0.005 {
+            HStack(spacing: 6) {
+                Image(systemName: "slider.horizontal.3")
+                    .font(.system(size: Theme.TypeRamp.caption, weight: .heavy))
+                Text("Calibrated \(delta >= 0 ? "+" : "")\(Int((delta * 100).rounded()))pt from your corrections")
+                    .font(.system(size: Theme.TypeRamp.caption, weight: .heavy))
+            }
+            .foregroundStyle(delta >= 0 ? Theme.mint : Theme.ember)
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .padding(.horizontal, 12)
+            .background((delta >= 0 ? Theme.mintSoft : Theme.emberSoft), in: .rect(cornerRadius: 12))
+        }
     }
 
     // MARK: Cost card
@@ -637,7 +658,7 @@ private struct AIConfidenceInfoSheet: View {
     private var explanation: String {
         switch kind {
         case .hail:
-            return "Low hail confidence usually means the photo is soft, over-compressed, shadowed, wet, or the model sees circular granule texture that may not be a true impact bruise."
+            return "Low hail confidence usually means the photo is soft, over-compressed, shadowed, wet, or the model sees circular granule texture that may not be a true impact bruise. Your correction history now shifts this threshold for future captures."
         case .wind:
             return "Low wind confidence is triggered by shallow angles, glare, or edges that look lifted but may be normal shingle overlap."
         case .wear:
@@ -683,7 +704,7 @@ private struct SlopeCard<Content: View>: View {
 
     private func confidenceChip(kind: AIDamageCategoryKind) -> some View {
         let pct = confidence.map { "\(Int(($0 * 100).rounded()))%" } ?? "--"
-        let isLow = (confidence ?? 1) < 0.6
+        let isLow = (confidence ?? 1) < LocalLearningEngine.shared.autoQueueThreshold
         return HStack(spacing: 6) {
             Text("AI confidence: \(pct)")
                 .font(.system(size: Theme.TypeRamp.captionSm, weight: .heavy))

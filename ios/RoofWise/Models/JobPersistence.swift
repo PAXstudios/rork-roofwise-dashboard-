@@ -175,7 +175,8 @@ enum JobPersistence {
         PropertyRecord.self,
         InsuranceRecord.self,
         JobPhotoAttachment.self,
-        JobRecord.self
+        JobRecord.self,
+        Correction.self
     ])
 
     static func makeContainer() -> ModelContainer {

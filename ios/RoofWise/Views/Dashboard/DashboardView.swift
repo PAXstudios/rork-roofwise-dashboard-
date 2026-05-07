@@ -24,6 +24,8 @@ struct DashboardView: View {
                             .padding(.horizontal, 18)
                     }
                     KPIStrip(onQuickInspection: onQuickInspection)
+                    AICalibrationHomeTile()
+                        .padding(.horizontal, 18)
                     StormAlertHero(
                         alert: alertStore.latestActiveAlert,
                         onView: {
@@ -92,6 +94,35 @@ struct DashboardView: View {
         alertStore.markRead(id: alert.id)
         alertStore.markActedOn(id: alert.id)
         path.append(.stormImpact(alert.id))
+    }
+}
+
+struct AICalibrationHomeTile: View {
+    @State private var learning = LocalLearningEngine.shared
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 14).fill(Theme.mintSoft)
+                Image(systemName: "target")
+                    .font(.system(size: Theme.TypeRamp.subhead, weight: .heavy))
+                    .foregroundStyle(Theme.mint)
+            }
+            .frame(width: 56, height: 56)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("AI accuracy on your jobs")
+                    .font(.system(size: Theme.TypeRamp.captionSm, weight: .heavy))
+                    .tracking(0.8)
+                    .foregroundStyle(Theme.inkSoft)
+                Text("\(learning.accuracyPercent)% (+\(learning.weeklyLiftPercent) this week)")
+                    .font(.system(size: Theme.TypeRamp.titleSm, weight: .heavy))
+                    .foregroundStyle(Theme.ink)
+                    .monospacedDigit()
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
+        .cardStyle(padding: 14, radius: 18)
     }
 }
 
