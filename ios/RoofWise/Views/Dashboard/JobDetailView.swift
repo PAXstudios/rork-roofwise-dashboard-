@@ -9,6 +9,7 @@ struct JobDetailView: View {
     @State private var showSignatures = false
     @State private var pdfShareURL: URL? = nil
     @State private var isGenerating = false
+    @State private var showWeather = false
 
     let reportId: String
 
@@ -113,11 +114,34 @@ struct JobDetailView: View {
                              icon: "building.2.fill",
                              tint: Theme.sky)
                 }
+                Button {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    showWeather = true
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "cloud.sun.fill")
+                            .font(.system(size: Theme.TypeRamp.caption, weight: .bold))
+                        Text("Site Weather")
+                            .font(.system(size: Theme.TypeRamp.metaSm, weight: .heavy))
+                            .lineLimit(1)
+                    }
+                    .foregroundStyle(Theme.mint)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .background(Theme.mintSoft, in: .capsule)
+                }
+                .buttonStyle(.plain)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .cardStyle(padding: 20, radius: 20)
+        .sheet(isPresented: $showWeather) {
+            WeatherDetailSheet(
+                coord: WeatherServiceFactory.mockCoord(forAddress: insp.job.propertyAddress),
+                locationLabel: insp.job.propertyAddress.isEmpty ? "Site" : insp.job.propertyAddress
+            )
+        }
     }
 
     private func infoChip(text: String, icon: String, tint: Color) -> some View {

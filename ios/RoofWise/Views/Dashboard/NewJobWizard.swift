@@ -443,6 +443,11 @@ private struct CustomerStep: View {
     @Binding var phone: String
     @Binding var email: String
 
+    @State private var addressSnapshot: WeatherSnapshot? = nil
+    @State private var lookupTask: Task<Void, Never>? = nil
+
+    private let service: WeatherServicing = WeatherServiceFactory.shared
+
     var body: some View {
         WizardSection(
             title: "Customer & Property",
@@ -455,6 +460,21 @@ private struct CustomerStep: View {
             MicField(label: "Property address",
                      text: $draft.job.propertyAddress,
                      placeholder: "1247 Oakridge Ln, Plano TX 75024")
+            if let snap = addressSnapshot {
+                HStack(spacing: 6) {
+                    Image(systemName: weatherSymbol(for: snap.condition))
+                        .font(.system(size: Theme.TypeRamp.caption, weight: .bold))
+                        .foregroundStyle(Theme.sky)
+                    Text("Now: \(snap.temperatureF)° \(snap.condition)")
+                        .font(.system(size: Theme.TypeRamp.metaSm, weight: .heavy))
+                        .foregroundStyle(Theme.ink)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Theme.skySoft, in: .capsule)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .transition(.opacity)
+            }
             MicField(label: "Phone",
                      text: $phone,
                      placeholder: "(555) 555-1234",
@@ -463,6 +483,30 @@ private struct CustomerStep: View {
                      text: $email,
                      placeholder: "owner@example.com",
                      keyboard: .emailAddress)
+        }
+        .onChange(of: draft.job.propertyAddress) { _, newValue in
+            scheduleLookup(for: newValue)
+        }
+        .onAppear { scheduleLookup(for: draft.job.propertyAddress) }
+    }
+
+    private func scheduleLookup(for address: String) {
+        lookupTask?.cancel()
+        let trimmed = address.trimmingCharacters(in: .whitespaces)
+        guard trimmed.count >= 5 else {
+            withAnimation(.easeInOut(duration: 0.2)) { addressSnapshot = nil }
+            return
+        }
+        let coord = WeatherServiceFactory.mockCoord(forAddress: trimmed)
+        lookupTask = Task {
+            try? await Task.sleep(for: .milliseconds(350))
+            if Task.isCancelled { return }
+            let snap = try? await service.currentConditions(at: coord)
+            await MainActor.run {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    self.addressSnapshot = snap
+                }
+            }
         }
     }
 }

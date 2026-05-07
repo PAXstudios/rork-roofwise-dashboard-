@@ -15,6 +15,7 @@ struct DashboardView: View {
                     DashboardHeader()
                     KPIStrip(onQuickInspection: onQuickInspection)
                     StormAlertHero(onView: onOpenLeads)
+                    WeatherTile()
                     RecentJobsHomeSection(
                         onSeeAll: onOpenLeads,
                         onOpenJob: { _ in onOpenLeads() }
