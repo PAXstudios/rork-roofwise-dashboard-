@@ -3,6 +3,7 @@ import SwiftUI
 struct KPIStrip: View {
     var onQuickInspection: () -> Void = {}
     @State private var showNewJob = false
+    @State private var showCostEstimator = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -34,6 +35,11 @@ struct KPIStrip: View {
                                     icon: "plus.rectangle.on.folder.fill",
                                     tint: Theme.sky,
                                     action: { showNewJob = true })
+                    QuickActionCard(title: "Cost Estimator",
+                                    subtitle: "Address → squares → $",
+                                    icon: "dollarsign.circle.fill",
+                                    tint: Theme.mint,
+                                    action: { showCostEstimator = true })
                     ForEach(MockData.kpis) { metric in
                         KPICard(metric: metric)
                     }
@@ -43,6 +49,9 @@ struct KPIStrip: View {
         }
         .fullScreenCover(isPresented: $showNewJob) {
             NewJobWizard()
+        }
+        .fullScreenCover(isPresented: $showCostEstimator) {
+            CostEstimatorWizard()
         }
     }
 }
