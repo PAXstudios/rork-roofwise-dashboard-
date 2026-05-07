@@ -111,6 +111,12 @@ struct ServiceAreaBanner: View {
 struct DashboardHeader: View {
     var onOpenSettings: () -> Void = {}
 
+    #if DEBUG
+    @State private var debugLongPressCount: Int = 0
+    @State private var debugLongPressFirstAt: Date?
+    @State private var debugStormToast: Bool = false
+    #endif
+
     var body: some View {
         HStack(spacing: 14) {
             ZStack {
@@ -134,6 +140,22 @@ struct DashboardHeader: View {
                     .font(.system(size: 19, weight: .bold))
                     .foregroundStyle(Theme.ink)
             }
+            #if DEBUG
+            .contentShape(.rect)
+            .onLongPressGesture(minimumDuration: 0.45) { handleDebugLongPress() }
+            .overlay(alignment: .bottomLeading) {
+                if debugStormToast {
+                    Text("Mock storm injected")
+                        .font(.system(size: 11, weight: .heavy))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Theme.ember, in: .capsule)
+                        .offset(y: 22)
+                        .transition(.opacity)
+                }
+            }
+            #endif
 
             Spacer()
 
@@ -143,6 +165,28 @@ struct DashboardHeader: View {
         }
         .padding(.horizontal, 20)
     }
+
+    #if DEBUG
+    private func handleDebugLongPress() {
+        let now = Date()
+        if let first = debugLongPressFirstAt, now.timeIntervalSince(first) > 4 {
+            debugLongPressCount = 0
+            debugLongPressFirstAt = nil
+        }
+        if debugLongPressFirstAt == nil { debugLongPressFirstAt = now }
+        debugLongPressCount += 1
+        if debugLongPressCount >= 3 {
+            debugLongPressCount = 0
+            debugLongPressFirstAt = nil
+            _ = StormWatchService.shared.injectMockStorm()
+            withAnimation { debugStormToast = true }
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(2))
+                withAnimation { debugStormToast = false }
+            }
+        }
+    }
+    #endif
 
     private func iconButton(systemName: String, badge: Bool = false, action: @escaping () -> Void = {}) -> some View {
         Button(action: action) {

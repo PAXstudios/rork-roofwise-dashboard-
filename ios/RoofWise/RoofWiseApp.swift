@@ -21,6 +21,10 @@ struct RoofWiseApp: App {
         _ = MileageAutoTrackService.shared
 
         Self.bootGoogleMaps()
+
+        // Register the storm-watch BGTask handler. Safe no-op in mock builds
+        // and on simulator where BGTasks are unavailable.
+        StormWatchService.registerBackgroundTasks()
     }
 
     private static func bootGoogleMaps() {
@@ -42,9 +46,16 @@ struct RoofWiseApp: App {
         }
         .modelContainer(modelContainer)
         .onChange(of: scenePhase) { _, phase in
-            guard phase == .active else { return }
-            Task { @MainActor in
-                await StormWatchService.shared.scanIfDue()
+            switch phase {
+            case .active:
+                Task { @MainActor in
+                    _ = await StormWatchService.shared.scanNow()
+                }
+            case .background:
+                StormWatchService.shared.scheduleNextBackgroundRefresh()
+                StormWatchService.shared.stopForegroundPolling()
+            default:
+                break
             }
         }
     }

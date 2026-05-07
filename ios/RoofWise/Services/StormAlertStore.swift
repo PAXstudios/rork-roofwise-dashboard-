@@ -6,12 +6,20 @@ final class StormAlertStore {
     static let shared = StormAlertStore()
 
     private(set) var alerts: [StormAlert] = []
-    private let filename = "storm-alerts.json"
+    private let filename = "storm_alerts.json"
 
     init() { load() }
 
     var unread: [StormAlert] { alerts.filter { !$0.isRead } }
     var unreadCount: Int { unread.count }
+
+    /// Most recent active (.new + not snoozed/dismissed) alert by `createdAt`.
+    var latestActiveAlert: StormAlert? {
+        alerts
+            .filter { $0.isActive }
+            .sorted(by: { $0.createdAt > $1.createdAt })
+            .first
+    }
 
     /// Insert new alerts, deduped by (areaId + eventId). Returns count newly added.
     @discardableResult
@@ -31,6 +39,11 @@ final class StormAlertStore {
         return added
     }
 
+    @discardableResult
+    func append(_ alert: StormAlert) -> Bool {
+        ingest([alert]) > 0
+    }
+
     func markRead(id: UUID) {
         guard let idx = alerts.firstIndex(where: { $0.id == id }) else { return }
         if !alerts[idx].isRead {
@@ -46,6 +59,27 @@ final class StormAlertStore {
             changed = true
         }
         if changed { persist() }
+    }
+
+    func markActedOn(id: UUID) {
+        guard let idx = alerts.firstIndex(where: { $0.id == id }) else { return }
+        alerts[idx].status = .actedOn
+        alerts[idx].isRead = true
+        persist()
+    }
+
+    func dismiss(id: UUID) {
+        guard let idx = alerts.firstIndex(where: { $0.id == id }) else { return }
+        alerts[idx].status = .dismissed
+        alerts[idx].isRead = true
+        persist()
+    }
+
+    func snooze(id: UUID, until: Date) {
+        guard let idx = alerts.firstIndex(where: { $0.id == id }) else { return }
+        alerts[idx].status = .snoozed
+        alerts[idx].snoozedUntil = until
+        persist()
     }
 
     func remove(id: UUID) {
