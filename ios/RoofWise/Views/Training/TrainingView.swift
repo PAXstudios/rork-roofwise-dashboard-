@@ -6,9 +6,7 @@ struct TrainingView: View {
     @State private var showCoach = false
     @State private var showExplainer = false
     @State private var showQueue = false
-    @State private var showSwipeReview = false
     @State private var queue = TrainingQueueStore.shared
-    @State private var learning = LocalLearningEngine.shared
 
     private let curriculum = TrainingCurriculum.lessons
 
@@ -17,7 +15,6 @@ struct TrainingView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     header
-                    calibrationHeader
                     pendingReviewCard
                     reviewStatsCard
                     progressCard
@@ -47,9 +44,6 @@ struct TrainingView: View {
             .sheet(isPresented: $showExplainer) {
                 DamageExplainerView(progress: progress)
             }
-            .fullScreenCover(isPresented: $showSwipeReview) {
-                SwipeReviewView(items: ReviewPhotoFactory.pendingQueueItems())
-            }
             .navigationDestination(isPresented: $showQueue) {
                 TrainingQueueView()
             }
@@ -57,27 +51,6 @@ struct TrainingView: View {
     }
 
     // MARK: - AI Training Queue
-
-    private var calibrationHeader: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "slider.horizontal.below.square.filled.and.square")
-                .font(.system(size: Theme.TypeRamp.subhead, weight: .heavy))
-                .foregroundStyle(Theme.sky)
-                .frame(width: 56, height: 56)
-                .background(Theme.skySoft, in: .rect(cornerRadius: 16))
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Calibrating to your inspection style")
-                    .font(.system(size: Theme.TypeRamp.body, weight: .heavy))
-                    .foregroundStyle(Theme.ink)
-                Text("\(learning.correctionsRecorded) corrections recorded · queue threshold \(Int((learning.autoQueueThreshold * 100).rounded()))%")
-                    .font(.system(size: Theme.TypeRamp.meta, weight: .semibold))
-                    .foregroundStyle(Theme.inkSoft)
-            }
-            Spacer(minLength: 0)
-        }
-        .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
-        .cardStyle(padding: 14, radius: 18)
-    }
 
     private var pendingReviewCard: some View {
         let count = queue.pendingCount
@@ -104,7 +77,7 @@ struct TrainingView: View {
             }
             Button {
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                if count > 0 { showSwipeReview = true } else { showQueue = true }
+                showQueue = true
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "checklist")

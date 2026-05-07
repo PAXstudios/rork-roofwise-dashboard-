@@ -37,10 +37,6 @@ nonisolated struct TrainingItem: Codable, Identifiable, Hashable, Sendable {
     }
 
     enum Kind: String, Codable, Hashable, Sendable, CaseIterable {
-        case hail
-        case wind
-        case wear
-        case missing
         case hailBruise = "hail_bruise"
         case hailFracture = "hail_fracture"
         case hailGranule = "hail_granule"
@@ -50,10 +46,6 @@ nonisolated struct TrainingItem: Codable, Identifiable, Hashable, Sendable {
 
         var displayName: String {
             switch self {
-            case .hail:         return "Hail indicators"
-            case .wind:         return "Wind indicators"
-            case .wear:         return "Wear indicators"
-            case .missing:      return "Missing shingles"
             case .hailBruise:   return "Hail bruise"
             case .hailFracture: return "Hail mat fracture"
             case .hailGranule:  return "Granule loss"
@@ -65,14 +57,8 @@ nonisolated struct TrainingItem: Codable, Identifiable, Hashable, Sendable {
 
         var icon: String {
             switch self {
-            case .hail, .hailBruise, .hailFracture, .hailGranule:
-                return "circle.hexagongrid.fill"
-            case .wind, .windCrease, .windLifted:
-                return "wind"
-            case .wear:
-                return "clock.arrow.circlepath"
-            case .missing, .windMissing:
-                return "square.dashed"
+            case .hailBruise, .hailFracture, .hailGranule: return "circle.hexagongrid.fill"
+            case .windCrease, .windMissing, .windLifted:   return "wind"
             }
         }
     }

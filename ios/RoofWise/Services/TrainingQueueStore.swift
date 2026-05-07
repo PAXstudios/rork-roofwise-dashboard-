@@ -40,18 +40,17 @@ final class TrainingQueueStore {
 
     // MARK: Enqueue
 
-    /// Auto-enqueue rule per Phase 8: the parent `confidence_avg` must be < 0.6.
-    /// Skips zero-count entries after that inspection/slope-level gate passes.
+    /// Auto-enqueue rule per spec: ai_confidence < 0.6 OR ai_count > 10
+    /// (potential hallucination). Skips zero-count entries.
     @discardableResult
     func enqueueIfLowConfidence(reportId: String,
                                 slopeOrientation: String,
                                 kind: TrainingItem.Kind,
                                 count: Int,
                                 confidence: Double,
-                                photoPath: String? = nil,
-                                confidenceAvg: Double) -> TrainingItem? {
+                                photoPath: String? = nil) -> TrainingItem? {
         guard count > 0 else { return nil }
-        guard confidenceAvg < LocalLearningEngine.shared.autoQueueThreshold else { return nil }
+        guard confidence < 0.6 || count > 10 else { return nil }
         // Dedup: don't re-enqueue an unresolved item for the same
         // (inspection, slope, kind).
         if items.contains(where: {
@@ -75,60 +74,70 @@ final class TrainingQueueStore {
         return item
     }
 
-    /// Run after a slope is saved. The old deterministic confidence stub is gone:
-    /// we only enqueue when the AI snapshot's `confidence_avg` is below 0.6.
+    /// Run after a slope is saved. Walks every damage category and feeds
+    /// the auto-enqueue rule. Confidence is derived deterministically from
+    /// the count (the existing capture pipeline does NOT yet surface a per-
+    /// category confidence) so the queue still receives a realistic mix
+    /// without changing the on-disk schema.
     func enqueueFromSlope(_ slope: Slope, on reportId: String) {
-        guard let snapshot = slope.aiConfidenceSnapshot else { return }
-        enqueueFromSnapshot(snapshot,
-                            reportId: reportId,
-                            slopeOrientation: slope.orientation)
-    }
-
-    func enqueueFromSnapshot(_ snapshot: AIDamageConfidenceSnapshot,
-                             reportId: String,
-                             slopeOrientation: String,
-                             photoPath: String? = nil) {
-        guard snapshot.confidenceAvg < LocalLearningEngine.shared.autoQueueThreshold else { return }
-        for category in snapshot.categories where category.count > 0 {
+        let pairs: [(TrainingItem.Kind, Int)] = [
+            (.hailBruise,   slope.damageTypes.hail.asphaltBruise),
+            (.hailFracture, slope.damageTypes.hail.asphaltMatFracture),
+            (.hailGranule,  slope.damageTypes.hail.asphaltGranuleLossExposed),
+            (.windCrease,   slope.damageTypes.wind.shingleCrease),
+            (.windMissing,  slope.damageTypes.wind.shingleMissing),
+            (.windLifted,   slope.damageTypes.wind.shingleLiftedUnsealed)
+        ]
+        for (kind, count) in pairs {
+            guard count > 0 else { continue }
+            let confidence = Self.mockConfidence(for: kind, count: count, orientation: slope.orientation)
             _ = enqueueIfLowConfidence(
                 reportId: reportId,
-                slopeOrientation: slopeOrientation,
-                kind: TrainingItem.Kind(category.kind),
-                count: category.count,
-                confidence: category.confidence,
-                photoPath: photoPath,
-                confidenceAvg: snapshot.confidenceAvg
+                slopeOrientation: slope.orientation,
+                kind: kind,
+                count: count,
+                confidence: confidence
             )
         }
+    }
+
+    /// Deterministic mock confidence: high counts + categories prone to
+    /// false-positives (granule loss, lifted shingles) sit lower. Always in
+    /// (0.30, 0.95).
+    static func mockConfidence(for kind: TrainingItem.Kind,
+                               count: Int,
+                               orientation: String) -> Double {
+        let base: Double
+        switch kind {
+        case .hailBruise:   base = 0.78
+        case .hailFracture: base = 0.82
+        case .hailGranule:  base = 0.55     // intentionally borderline
+        case .windCrease:   base = 0.74
+        case .windMissing:  base = 0.86
+        case .windLifted:   base = 0.52     // intentionally borderline
+        }
+        // Penalty grows with count (very-high counts often == hallucination).
+        let penalty = min(0.35, Double(count) / 30.0)
+        // Tiny jitter from orientation hash so two slopes don't read identical.
+        let jitter = (Double(abs(orientation.hashValue % 17)) - 8) / 200.0
+        return max(0.30, min(0.95, base - penalty + jitter))
     }
 
     // MARK: Mutations
 
     func accept(_ item: TrainingItem) {
-        accept(id: item.id)
-    }
-
-    func accept(id: UUID) {
-        update(id) { $0.status = .accepted }
+        update(item.id) { $0.status = .accepted }
     }
 
     func correct(_ item: TrainingItem, override: Int) {
-        correct(id: item.id, override: override)
-    }
-
-    func correct(id: UUID, override: Int) {
-        update(id) {
+        update(item.id) {
             $0.status = .corrected
             $0.inspectorCountOverride = override
         }
     }
 
     func reject(_ item: TrainingItem) {
-        reject(id: item.id)
-    }
-
-    func reject(id: UUID) {
-        update(id) { $0.status = .rejected }
+        update(item.id) { $0.status = .rejected }
     }
 
     private func update(_ id: UUID, mutate: (inout TrainingItem) -> Void) {
@@ -180,17 +189,6 @@ final class TrainingQueueStore {
             #if DEBUG
             print("TrainingQueueStore persist failed: \(error)")
             #endif
-        }
-    }
-}
-
-private extension TrainingItem.Kind {
-    init(_ category: AIDamageCategoryKind) {
-        switch category {
-        case .hail: self = .hail
-        case .wind: self = .wind
-        case .wear: self = .wear
-        case .missing: self = .missing
         }
     }
 }

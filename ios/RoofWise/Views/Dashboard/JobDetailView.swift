@@ -23,10 +23,7 @@ struct JobDetailView: View {
     @State private var showProposalEditor = false
     @State private var showProposalSend = false
     @State private var showHomeownerProposal = false
-    @State private var showSwipeReview = false
     @State private var pendingProposal: Proposal? = nil
-    @State private var analysisStore = DamageAnalysisStore.shared
-    @State private var showDamageAnalysis = false
 
     let reportId: String
 
@@ -56,10 +53,6 @@ struct JobDetailView: View {
                         }
                         addSlopeButton(label: insp.slopes.isEmpty ? "Add slope" : "Add another slope")
                         if !insp.slopes.isEmpty {
-                            if jobPhotoCount(insp) > 0 {
-                                damageAnalysisButton(insp)
-                            }
-                            reviewAIButton(insp)
                             signReportCard(insp)
                             proposalSection(insp)
                         }
@@ -118,14 +111,6 @@ struct JobDetailView: View {
         }
         .sheet(isPresented: $showActivity) {
             ActivityFeedSheet(reportId: reportId)
-        }
-        .fullScreenCover(isPresented: $showSwipeReview) {
-            if let insp = inspection {
-                SwipeReviewView(items: ReviewPhotoFactory.items(for: insp, store: store))
-            }
-        }
-        .fullScreenCover(isPresented: $showDamageAnalysis) {
-            DamageAnalysisView(reportId: reportId)
         }
         .sheet(isPresented: $showProposalEditor) {
             if let p = pendingProposal, let insp = inspection {
@@ -549,102 +534,6 @@ struct JobDetailView: View {
                 UINotificationFeedbackGenerator().notificationOccurred(.error)
             }
         }
-    }
-
-    // MARK: AI Damage Detection
-
-    private func jobPhotoCount(_ insp: Inspection) -> Int {
-        insp.slopes.reduce(0) { total, slope in
-            total + store.photos(for: reportId, orientation: slope.orientation).count
-        }
-    }
-
-    private func damageAnalysisButton(_ insp: Inspection) -> some View {
-        let run = analysisStore.run(for: reportId)
-        let photoCount = jobPhotoCount(insp)
-        let isRunning = run?.isRunning == true
-        let markerCount = run?.hits.count ?? 0
-        let progress = Int(((run?.progress ?? 0) * 100).rounded())
-        let subtitle: String = {
-            if isRunning { return "Analyzing in background · \(progress)% · you can leave this screen" }
-            if let run, run.completedAt != nil { return "\(markerCount) evidence-backed marker\(markerCount == 1 ? "" : "s") found · tap to review" }
-            return "Run Gemini 3 Flash on \(photoCount) photo\(photoCount == 1 ? "" : "s") after capture"
-        }()
-        return Button {
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            analysisStore.start(reportId: reportId)
-            showDamageAnalysis = true
-            ActivityStore.shared.logTap(target: "JobDetail.analyzeDamage")
-        } label: {
-            HStack(spacing: 12) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 16).fill(Theme.emberSoft)
-                    Image(systemName: isRunning ? "dot.radiowaves.left.and.right" : "sparkles.rectangle.stack.fill")
-                        .font(.system(size: Theme.TypeRamp.cta, weight: .heavy))
-                        .foregroundStyle(Theme.ember)
-                }
-                .frame(width: 56, height: 56)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(isRunning ? "AI Damage Detection Running" : "Analyze Damage")
-                        .font(.system(size: Theme.TypeRamp.body, weight: .heavy))
-                        .foregroundStyle(Theme.ink)
-                    Text(subtitle)
-                        .font(.system(size: Theme.TypeRamp.metaSm, weight: .semibold))
-                        .foregroundStyle(Theme.inkSoft)
-                        .lineLimit(2)
-                }
-                Spacer(minLength: 0)
-                if isRunning {
-                    ProgressView(value: run?.progress ?? 0)
-                        .progressViewStyle(.circular)
-                        .tint(Theme.ember)
-                        .frame(width: 44, height: 44)
-                } else {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: Theme.TypeRamp.body, weight: .heavy))
-                        .foregroundStyle(Theme.inkFaint)
-                }
-            }
-            .frame(maxWidth: .infinity, minHeight: 88, alignment: .leading)
-            .cardStyle(padding: 14, radius: 18)
-        }
-        .buttonStyle(.plain)
-    }
-
-    // MARK: Review AI
-
-    private func reviewAIButton(_ insp: Inspection) -> some View {
-        Button {
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            showSwipeReview = true
-            ActivityStore.shared.logTap(target: "JobDetail.reviewAI")
-        } label: {
-            HStack(spacing: 12) {
-                Image(systemName: "sparkles.rectangle.stack.fill")
-                    .font(.system(size: Theme.TypeRamp.cta, weight: .heavy))
-                    .foregroundStyle(.white)
-                    .frame(width: 56, height: 56)
-                    .background(Theme.ember, in: .rect(cornerRadius: 16))
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Review AI")
-                        .font(.system(size: Theme.TypeRamp.body, weight: .heavy))
-                        .foregroundStyle(Theme.ink)
-                    Text("Swipe through analyzed photos and correct overlays")
-                        .font(.system(size: Theme.TypeRamp.metaSm, weight: .semibold))
-                        .foregroundStyle(Theme.inkSoft)
-                        .lineLimit(2)
-                }
-                Spacer(minLength: 0)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: Theme.TypeRamp.body, weight: .heavy))
-                    .foregroundStyle(Theme.inkFaint)
-            }
-            .frame(maxWidth: .infinity, minHeight: 72, alignment: .leading)
-            .cardStyle(padding: 14, radius: 18)
-        }
-        .buttonStyle(.plain)
-        .disabled(ReviewPhotoFactory.items(for: insp, store: store).isEmpty)
-        .opacity(ReviewPhotoFactory.items(for: insp, store: store).isEmpty ? 0.55 : 1)
     }
 
     // MARK: Sign Report card
@@ -1080,22 +969,15 @@ struct JobDetailView: View {
                 .foregroundStyle(v.fg)
                 .frame(width: 44, height: 44)
                 .background(v.fg.opacity(0.15), in: .circle)
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(v.title.uppercased())
-                    .font(.system(size: Theme.TypeRamp.captionSm, weight: .heavy))
+                    .font(.system(size: 11, weight: .heavy))
                     .tracking(0.7)
                     .foregroundStyle(v.fg)
                 Text(v.detail)
-                    .font(.system(size: Theme.TypeRamp.body, weight: .heavy))
+                    .font(.system(size: 17, weight: .heavy))
                     .foregroundStyle(Theme.ink)
                     .fixedSize(horizontal: false, vertical: true)
-                if !insp.summary.recommendationBadges.isEmpty {
-                    VStack(alignment: .leading, spacing: 6) {
-                        ForEach(insp.summary.recommendationBadges, id: \.self) { badge in
-                            verifyBadge(text: badge)
-                        }
-                    }
-                }
             }
             Spacer(minLength: 0)
         }
@@ -1104,19 +986,6 @@ struct JobDetailView: View {
         .background(v.bg, in: .rect(cornerRadius: 18))
         .overlay(RoundedRectangle(cornerRadius: 18)
             .stroke(v.fg.opacity(0.25), lineWidth: 1))
-    }
-
-    private func verifyBadge(text: String) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: "checkmark.shield.fill")
-                .font(.system(size: Theme.TypeRamp.caption, weight: .heavy))
-            Text(text)
-                .font(.system(size: Theme.TypeRamp.captionSm, weight: .heavy))
-        }
-        .foregroundStyle(Theme.amber)
-        .padding(.horizontal, 10)
-        .frame(minHeight: 56)
-        .background(Theme.amberSoft, in: .capsule)
     }
 
     private struct DecisionStyle {

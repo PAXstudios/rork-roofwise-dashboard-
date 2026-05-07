@@ -250,8 +250,6 @@ struct Slope: Codable, Hashable, Identifiable {
     /// Per-slope detected area (squares) from Google Solar segments. Survives
     /// inspector edits to areaSquares so the report can show both.
     var detectedAreaSquares: Double?
-    /// Latest AI damage-category confidence snapshot for this slope capture.
-    var aiConfidenceSnapshot: AIDamageConfidenceSnapshot?
 
     enum CodingKeys: String, CodingKey {
         case orientation
@@ -269,7 +267,6 @@ struct Slope: Codable, Hashable, Identifiable {
         case slopeRepairsRecommended = "slope_repairs_recommended"
         case damageTypes = "damage_types"
         case detectedAreaSquares = "detected_area_squares"
-        case aiConfidenceSnapshot = "ai_confidence_snapshot"
     }
 
     init(orientation: String,
@@ -286,8 +283,7 @@ struct Slope: Codable, Hashable, Identifiable {
          slopeReplacementRecommended: Bool,
          slopeRepairsRecommended: Bool,
          damageTypes: SlopeDamageTypes,
-         detectedAreaSquares: Double? = nil,
-         aiConfidenceSnapshot: AIDamageConfidenceSnapshot? = nil) {
+         detectedAreaSquares: Double? = nil) {
         self.orientation = orientation
         self.pitchRiseOver12 = pitchRiseOver12
         self.areaSquares = areaSquares
@@ -303,7 +299,6 @@ struct Slope: Codable, Hashable, Identifiable {
         self.slopeRepairsRecommended = slopeRepairsRecommended
         self.damageTypes = damageTypes
         self.detectedAreaSquares = detectedAreaSquares
-        self.aiConfidenceSnapshot = aiConfidenceSnapshot
     }
 
     init(from decoder: Decoder) throws {
@@ -323,7 +318,6 @@ struct Slope: Codable, Hashable, Identifiable {
         slopeRepairsRecommended = try c.decode(Bool.self, forKey: .slopeRepairsRecommended)
         damageTypes = try c.decode(SlopeDamageTypes.self, forKey: .damageTypes)
         detectedAreaSquares = try c.decodeIfPresent(Double.self, forKey: .detectedAreaSquares)
-        aiConfidenceSnapshot = try c.decodeIfPresent(AIDamageConfidenceSnapshot.self, forKey: .aiConfidenceSnapshot)
     }
 
     var id: String { orientation }
@@ -366,7 +360,6 @@ struct InspectionSummary: Codable, Hashable {
     var roofRepairsRecommended: Bool
     var replacementSlopesList: String
     var notes: String
-    var recommendationBadges: [String]
 
     enum CodingKeys: String, CodingKey {
         case roofAnyFunctionalDamage = "roof_any_functional_damage"
@@ -375,34 +368,6 @@ struct InspectionSummary: Codable, Hashable {
         case roofRepairsRecommended = "roof_repairs_recommended"
         case replacementSlopesList = "replacement_slopes_list"
         case notes
-        case recommendationBadges = "recommendation_badges"
-    }
-
-    init(roofAnyFunctionalDamage: Bool,
-         roofFullReplacementRecommended: Bool,
-         roofPartialReplacementRecommended: Bool,
-         roofRepairsRecommended: Bool,
-         replacementSlopesList: String,
-         notes: String,
-         recommendationBadges: [String] = []) {
-        self.roofAnyFunctionalDamage = roofAnyFunctionalDamage
-        self.roofFullReplacementRecommended = roofFullReplacementRecommended
-        self.roofPartialReplacementRecommended = roofPartialReplacementRecommended
-        self.roofRepairsRecommended = roofRepairsRecommended
-        self.replacementSlopesList = replacementSlopesList
-        self.notes = notes
-        self.recommendationBadges = recommendationBadges
-    }
-
-    init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        roofAnyFunctionalDamage = try c.decode(Bool.self, forKey: .roofAnyFunctionalDamage)
-        roofFullReplacementRecommended = try c.decode(Bool.self, forKey: .roofFullReplacementRecommended)
-        roofPartialReplacementRecommended = try c.decode(Bool.self, forKey: .roofPartialReplacementRecommended)
-        roofRepairsRecommended = try c.decode(Bool.self, forKey: .roofRepairsRecommended)
-        replacementSlopesList = try c.decode(String.self, forKey: .replacementSlopesList)
-        notes = try c.decode(String.self, forKey: .notes)
-        recommendationBadges = try c.decodeIfPresent([String].self, forKey: .recommendationBadges) ?? []
     }
 
     static var empty: InspectionSummary {
@@ -433,17 +398,12 @@ struct Inspection: Codable, Hashable, Identifiable {
     /// holds the id of the originating `SavedEstimate` so JobDetailView can
     /// surface a "From estimate" chip and re-open it at Step 4.
     var originEstimateId: UUID?
-    /// Inspection-level rollup of latest per-category AI confidence.
-    var aiConfidenceSnapshot: AIDamageConfidenceSnapshot?
-
-    var confidenceAvg: Double? { aiConfidenceSnapshot?.confidenceAvg }
 
     enum CodingKeys: String, CodingKey {
         case job, event, roof, slopes, collateral, summary
         case inspectorSignaturePng = "inspector_signature_png"
         case homeownerSignaturePng = "homeowner_signature_png"
         case originEstimateId = "origin_estimate_id"
-        case aiConfidenceSnapshot = "ai_confidence_snapshot"
     }
 
     /// Stable identity backed by `report_id`.
@@ -457,8 +417,7 @@ struct Inspection: Codable, Hashable, Identifiable {
          summary: InspectionSummary,
          inspectorSignaturePng: Data? = nil,
          homeownerSignaturePng: Data? = nil,
-         originEstimateId: UUID? = nil,
-         aiConfidenceSnapshot: AIDamageConfidenceSnapshot? = nil) {
+         originEstimateId: UUID? = nil) {
         self.job = job
         self.event = event
         self.roof = roof
@@ -468,7 +427,6 @@ struct Inspection: Codable, Hashable, Identifiable {
         self.inspectorSignaturePng = inspectorSignaturePng
         self.homeownerSignaturePng = homeownerSignaturePng
         self.originEstimateId = originEstimateId
-        self.aiConfidenceSnapshot = aiConfidenceSnapshot
     }
 
     init(from decoder: Decoder) throws {
@@ -482,7 +440,6 @@ struct Inspection: Codable, Hashable, Identifiable {
         inspectorSignaturePng = try c.decodeIfPresent(Data.self, forKey: .inspectorSignaturePng)
         homeownerSignaturePng = try c.decodeIfPresent(Data.self, forKey: .homeownerSignaturePng)
         originEstimateId = try c.decodeIfPresent(UUID.self, forKey: .originEstimateId)
-        aiConfidenceSnapshot = try c.decodeIfPresent(AIDamageConfidenceSnapshot.self, forKey: .aiConfidenceSnapshot)
     }
 }
 

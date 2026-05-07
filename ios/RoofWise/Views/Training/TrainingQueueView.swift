@@ -7,22 +7,11 @@ struct TrainingQueueView: View {
     @State private var queue = TrainingQueueStore.shared
     @State private var correcting: TrainingItem? = nil
     @State private var correctionValue: Int = 0
-    @State private var toast: String? = nil
 
     var body: some View {
         ZStack(alignment: .bottom) {
             Theme.canvas.ignoresSafeArea()
             content
-            if let toast {
-                Text(toast)
-                    .font(.system(size: Theme.TypeRamp.body, weight: .heavy))
-                    .foregroundStyle(.white)
-                    .padding(14)
-                    .background(Theme.mint, in: .rect(cornerRadius: 16))
-                    .padding(.horizontal, 18)
-                    .padding(.bottom, 18)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
         }
         .navigationTitle("Pending Review")
         .navigationBarTitleDisplayMode(.inline)
@@ -32,7 +21,6 @@ struct TrainingQueueView: View {
                 value: $correctionValue,
                 onSave: { newCount in
                     queue.correct(item, override: newCount)
-                    showToast(for: item)
                     UINotificationFeedbackGenerator().notificationOccurred(.success)
                     correcting = nil
                 },
@@ -125,7 +113,6 @@ struct TrainingQueueView: View {
                            icon: "checkmark.circle.fill",
                            tint: Theme.mint) {
                     queue.accept(item)
-                    showToast(for: item)
                     UINotificationFeedbackGenerator().notificationOccurred(.success)
                 }
                 actionChip(label: "Wrong count",
@@ -138,23 +125,12 @@ struct TrainingQueueView: View {
                            icon: "xmark.circle.fill",
                            tint: Theme.crimson) {
                     queue.reject(item)
-                    showToast(for: item)
                     UINotificationFeedbackGenerator().notificationOccurred(.warning)
                 }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .cardStyle(padding: 16, radius: 18)
-    }
-
-    private func showToast(for item: TrainingItem) {
-        let text = LocalLearningEngine.shared.improvementText(for: [item.kind.reviewCategory])
-        guard let text else { return }
-        withAnimation { toast = text }
-        Task { @MainActor in
-            try? await Task.sleep(for: .seconds(2))
-            withAnimation { toast = nil }
-        }
     }
 
     private func actionChip(label: String,

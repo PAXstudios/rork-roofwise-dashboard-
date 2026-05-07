@@ -108,9 +108,6 @@ nonisolated enum DecisionEngine {
         insp.summary.replacementSlopesList = replacements
             .map(\.orientation)
             .joined(separator: ", ")
-        insp.summary.recommendationBadges = (insp.confidenceAvg ?? 1) < 0.5
-            ? ["Verify with inspector"]
-            : []
 
         return insp
     }

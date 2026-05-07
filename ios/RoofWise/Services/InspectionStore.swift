@@ -103,7 +103,6 @@ final class InspectionStore {
     /// Re-runs the DecisionEngine across the inspection so per-slope verdicts
     /// and the roof-level summary stay in lock-step with the latest data.
     private func recomputeSummary(_ insp: inout Inspection) {
-        insp.aiConfidenceSnapshot = AIDamageConfidenceSnapshot.merged(insp.slopes.compactMap(\.aiConfidenceSnapshot))
         insp = DecisionEngine.decide(insp)
         let s = insp.summary
         let verdict: String

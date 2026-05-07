@@ -14,8 +14,6 @@ enum InspectionStep {
 struct QuickInspectionView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(CustomerStore.self) private var customerStore
-    var autoAnalyzeOnDone: Bool = true
-    var onSessionFinished: ([CapturedPhoto], [InspectionFinding]) -> Void = { _, _ in }
     @State private var step: InspectionStep = .capture
     @State private var scanProgress: CGFloat = 0
     @State private var detectedHits: [DetectedHit] = []
@@ -60,9 +58,6 @@ struct QuickInspectionView: View {
     @State private var pendingMarkLocation: CGPoint? = nil
     @State private var showMarkSheet: Bool = false
     @State private var markerPendingDelete: ManualDamageMarker? = nil
-    // Phase: Surface upstream Gemini error.message to the inspector via a
-    // system alert so HTTP failures aren't invisible.
-    @State private var analysisErrorMessage: String? = nil
 
     private var totalSquaresDocumented: Int {
         max(camera.squaresCovered, capturedPhotos.map(\.squaresCovered).max() ?? 0)
@@ -90,10 +85,7 @@ struct QuickInspectionView: View {
                             customer: customerStore.activeCustomer,
                             usdzReportURL: latestUSDZReportURL,
                             manualMarkers: manualMarkers,
-                            onClose: {
-                                onSessionFinished(capturedPhotos, lastFindings)
-                                dismiss()
-                            },
+                            onClose: { dismiss() },
                             onRescan: { resetToCapture() },
                             onCreateClaim: { generateClaimPacket() })
             }
@@ -166,14 +158,6 @@ struct QuickInspectionView: View {
                 .presentationDragIndicator(.visible)
                 .presentationBackground(Color(red: 0.08, green: 0.09, blue: 0.13))
             }
-        }
-        .alert("Analysis failed",
-               isPresented: Binding(get: { analysisErrorMessage != nil },
-                                    set: { if !$0 { analysisErrorMessage = nil } })) {
-            Button("OK", role: .cancel) { analysisErrorMessage = nil }
-                .frame(minHeight: 88)
-        } message: {
-            Text(analysisErrorMessage ?? "")
         }
         .alert("Remove this marker?",
                isPresented: Binding(get: { markerPendingDelete != nil },
@@ -992,13 +976,8 @@ struct QuickInspectionView: View {
 
     private func finishSession() {
         let gen = UIImpactFeedbackGenerator(style: .heavy); gen.impactOccurred()
-        if autoAnalyzeOnDone {
-            withAnimation(.easeInOut(duration: 0.4)) { step = .scanning }
-            runScan()
-        } else {
-            onSessionFinished(capturedPhotos, lastFindings)
-            dismiss()
-        }
+        withAnimation(.easeInOut(duration: 0.4)) { step = .scanning }
+        runScan()
     }
 
     private func runScan() {
@@ -1055,14 +1034,10 @@ struct QuickInspectionView: View {
                     let findings = result.findings
                     capturedPhotos[i].findings = findings
                     capturedPhotos[i].damageMarkers = result.markers
-                    capturedPhotos[i].aiConfidenceSnapshot = result.confidenceSnapshot
                     // Only mark the photo as analyzed when the AI call actually succeeded.
                     // If it failed we leave analyzed=false so the UI can show a retry state
                     // instead of presenting fake markers as real detections.
                     capturedPhotos[i].analyzed = !result.failed
-                    if result.failed, let msg = result.errorMessage, analysisErrorMessage == nil {
-                        analysisErrorMessage = msg
-                    }
 
                     // Stream real AI markers into the live scan overlay.
                     for m in result.markers {
@@ -1089,12 +1064,11 @@ struct QuickInspectionView: View {
                     if result.noRoofDetected {
                         capturedPhotos[i].findings = result.findings
                         capturedPhotos[i].damageMarkers = []
-                        capturedPhotos[i].aiConfidenceSnapshot = result.confidenceSnapshot
                         capturedPhotos[i].analyzed = true
                         continue
                     }
-                    totalHailMarkers += result.markers.filter { $0.type.isHailImpact }.count
-                    totalWindMarkers += result.markers.filter { $0.type.isShingleDamage }.count
+                    totalHailMarkers += result.markers.filter { $0.type == .hailStrike }.count
+                    totalWindMarkers += result.markers.filter { $0.type == .windCrease || $0.type == .missingShingle }.count
 
                     for f in findings {
                         if let existing = results[f.label] {
@@ -1137,7 +1111,7 @@ struct QuickInspectionView: View {
                     : totalWindMarkers > 0 ? .minor : .none
                 let windValue: String = {
                     if totalWindMarkers == 0 { return "No wind damage detected by AI" }
-                    return "\(totalWindMarkers) shingle damage indicator\(totalWindMarkers == 1 ? "" : "s") · creases / lifted / torn / missing tabs"
+                    return "\(totalWindMarkers) wind indicator\(totalWindMarkers == 1 ? "" : "s") · creases / lifted tabs"
                 }()
                 results["wind_damage"] = InspectionFinding(
                     label: "wind_damage",
@@ -1190,11 +1164,7 @@ struct QuickInspectionView: View {
         guard let newIdx = capturedPhotos.firstIndex(where: { $0.id == photoID }) else { return }
         capturedPhotos[newIdx].findings = result.findings
         capturedPhotos[newIdx].damageMarkers = result.markers
-        capturedPhotos[newIdx].aiConfidenceSnapshot = result.confidenceSnapshot
         capturedPhotos[newIdx].analyzed = !result.failed
-        if result.failed, let msg = result.errorMessage {
-            analysisErrorMessage = msg
-        }
         // Refresh the preview sheet so the user sees fresh markers/findings.
         previewPhoto = capturedPhotos[newIdx]
         if let cid = customerStore.activeCustomerID {

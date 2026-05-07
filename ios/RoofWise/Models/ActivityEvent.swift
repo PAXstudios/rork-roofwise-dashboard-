@@ -47,7 +47,6 @@ nonisolated struct ActivityEvent: Codable, Identifiable, Hashable, Sendable {
         case proposalSent = "proposal_sent"
         case proposalViewed = "proposal_viewed"
         case proposalSigned = "proposal_signed"
-        case aiCalibrationUpdated = "ai_calibration_updated"
     }
 
     enum CodingKeys: String, CodingKey {
