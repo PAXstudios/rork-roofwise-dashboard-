@@ -8,6 +8,7 @@ struct DashboardView: View {
 
     @State private var path: [DashboardRoute] = []
     @State private var serviceAreaStore = ServiceAreaStore.shared
+    @State private var alertStore = StormAlertStore.shared
     @State private var pushRouter = PushAlertRouter.shared
     @State private var routedAlert: StormAlert? = nil
 
@@ -24,7 +25,17 @@ struct DashboardView: View {
                             .padding(.horizontal, 18)
                     }
                     KPIStrip(onQuickInspection: onQuickInspection)
-                    StormAlertHero(onView: onOpenLeads)
+                    StormAlertHero(
+                        alert: alertStore.latestActiveAlert,
+                        onView: {
+                            if let a = alertStore.latestActiveAlert {
+                                alertStore.markRead(id: a.id)
+                                routedAlert = a
+                            } else {
+                                onOpenLeads()
+                            }
+                        }
+                    )
                     WeatherTile()
                     RecentJobsHomeSection(
                         onSeeAll: onOpenLeads,

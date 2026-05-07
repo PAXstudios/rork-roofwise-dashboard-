@@ -107,32 +107,40 @@ enum HomeSectionsMock {
     }
 }
 
-// MARK: - 1. Storm Alert Hero
+// MARK: - 1. Storm Alert Hero (dynamic, Phase 6D)
 
 struct StormAlertHero: View {
-    var isActive: Bool = HomeSectionsMock.stormAlertActive
+    /// Optional explicit alert. When nil, the hero observes
+    /// `StormAlertStore.shared.latestActiveAlert` and renders dynamically.
+    var alert: StormAlert? = nil
     var onView: () -> Void = {}
+    var onSnooze: (() -> Void)? = nil
+    var onDismiss: (() -> Void)? = nil
+
+    @State private var store = StormAlertStore.shared
+
+    private var resolvedAlert: StormAlert? { alert ?? store.latestActiveAlert }
 
     var body: some View {
-        if isActive {
+        if let a = resolvedAlert {
             Button(action: onView) {
-                cardBody
+                cardBody(for: a)
             }
             .buttonStyle(.plain)
             .padding(.horizontal, 20)
+            .transition(.opacity.combined(with: .move(edge: .top)))
+            .animation(.easeInOut(duration: 0.22), value: a.id)
         }
     }
 
-    private var cardBody: some View {
-        ZStack(alignment: .leading) {
-            // Deep navy gradient
-            LinearGradient(colors: [
-                Color(red: 0.05, green: 0.09, blue: 0.20),
-                Color(red: 0.10, green: 0.16, blue: 0.32),
-                Color(red: 0.16, green: 0.22, blue: 0.40)
-            ], startPoint: .topLeading, endPoint: .bottomTrailing)
+    // MARK: - Card
 
-            // Faint storm watermark
+    private func cardBody(for a: StormAlert) -> some View {
+        let theme = HeroTheme.theme(for: a.eventType)
+        return ZStack(alignment: .leading) {
+            LinearGradient(colors: theme.gradient,
+                           startPoint: .topLeading, endPoint: .bottomTrailing)
+
             Canvas { ctx, size in
                 let blobs: [(CGFloat, CGFloat, CGFloat, Double)] = [
                     (size.width * 0.20, size.height * 0.30, 80, 0.07),
@@ -145,7 +153,6 @@ struct StormAlertHero: View {
                                       width: b.2 * 2, height: b.2 * 2)
                     ctx.fill(Path(ellipseIn: rect), with: .color(.white.opacity(b.3)))
                 }
-                // Lightning bolt watermark
                 var bolt = Path()
                 bolt.move(to: CGPoint(x: size.width * 0.78, y: size.height * 0.18))
                 bolt.addLine(to: CGPoint(x: size.width * 0.70, y: size.height * 0.48))
@@ -157,57 +164,154 @@ struct StormAlertHero: View {
             }
             .allowsHitTesting(false)
 
-            // Burnt-orange left edge stripe (4pt)
             Rectangle()
-                .fill(Theme.ember)
+                .fill(theme.accent)
                 .frame(width: 4)
                 .frame(maxHeight: .infinity)
 
             VStack(alignment: .leading, spacing: 18) {
-                // Top chip
-                Text("SEVERE HAIL WARNING")
-                    .font(.system(size: 12, weight: .heavy))
-                    .tracking(1.0)
-                    .foregroundStyle(Theme.ember)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 7)
-                    .background(.white, in: .capsule)
+                HStack(spacing: 8) {
+                    Text(theme.badge)
+                        .font(.system(size: Theme.TypeRamp.captionSm, weight: .heavy))
+                        .tracking(1.0)
+                        .foregroundStyle(theme.accent)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .background(.white, in: .capsule)
+                    Spacer(minLength: 0)
+                    Text(a.eventDate.formatted(.relative(presentation: .numeric, unitsStyle: .abbreviated)))
+                        .font(.system(size: Theme.TypeRamp.metaSm, weight: .heavy))
+                        .foregroundStyle(.white.opacity(0.85))
+                }
 
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("4 properties impacted")
-                        .font(.system(size: 28, weight: .bold))
+                    Text("\(a.propertyCount) \(a.propertyCount == 1 ? "property" : "properties") impacted")
+                        .font(.system(size: Theme.TypeRamp.title, weight: .heavy))
                         .foregroundStyle(.white)
                         .lineLimit(1)
-                        .minimumScaleFactor(0.8)
+                        .minimumScaleFactor(0.7)
 
-                    Text("Last 24h · Hail ≥1.25\" · Plano + Frisco")
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.80))
+                    Text(subtitle(for: a))
+                        .font(.system(size: Theme.TypeRamp.body, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.85))
                         .lineLimit(2)
                 }
 
-                // Full-width 64pt CTA
+                // Primary CTA — full-width 64pt
                 HStack(spacing: 8) {
                     Spacer()
                     Text("View Impacted Properties")
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(.system(size: Theme.TypeRamp.cta, weight: .heavy))
                         .foregroundStyle(Theme.ink)
                     Image(systemName: "arrow.right")
-                        .font(.system(size: 16, weight: .heavy))
+                        .font(.system(size: Theme.TypeRamp.body, weight: .heavy))
                         .foregroundStyle(Theme.ink)
                     Spacer()
                 }
                 .frame(maxWidth: .infinity, minHeight: 64)
                 .background(.white, in: .capsule)
                 .accessibilityElement(children: .combine)
-                .accessibilityLabel("View Impacted Properties")
+                .accessibilityLabel("View impacted properties for \(a.areaLabel)")
+
+                // Secondary glove-friendly affordances
+                HStack(spacing: 12) {
+                    secondaryButton("Snooze 4h", icon: "moon.zzz.fill") {
+                        let until = Date().addingTimeInterval(4 * 3600)
+                        StormAlertStore.shared.snooze(id: a.id, until: until)
+                        onSnooze?()
+                    }
+                    secondaryButton("Dismiss", icon: "xmark") {
+                        StormAlertStore.shared.dismiss(id: a.id)
+                        onDismiss?()
+                    }
+                }
             }
-            .padding(.leading, 24) // clear of the orange stripe
+            .padding(.leading, 24)
             .padding(.trailing, 20)
             .padding(.vertical, 22)
         }
         .clipShape(.rect(cornerRadius: 16))
         .shadow(color: Color.black.opacity(0.18), radius: 16, x: 0, y: 8)
+    }
+
+    private func secondaryButton(_ label: String,
+                                 icon: String,
+                                 action: @escaping () -> Void) -> some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+            action()
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: Theme.TypeRamp.metaSm, weight: .heavy))
+                Text(label)
+                    .font(.system(size: Theme.TypeRamp.body, weight: .heavy))
+            }
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity, minHeight: 56)
+            .background(.white.opacity(0.14), in: .capsule)
+            .overlay(
+                Capsule().stroke(.white.opacity(0.25), lineWidth: 0.8)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func subtitle(for a: StormAlert) -> String {
+        let mag: String
+        switch a.eventType {
+        case .hail:
+            mag = a.magnitudeIn.map { String(format: "%.2f″ hail", $0) } ?? "Hail"
+        case .wind:
+            mag = a.windMph.map { "\($0) mph wind" } ?? "High wind"
+        case .tornado:
+            mag = "Tornado"
+        }
+        let dist = String(format: "%.1f mi", a.distanceMi)
+        return "\(mag) · \(dist) · \(a.areaLabel)"
+    }
+
+    // MARK: - Per-event-type theme
+
+    private struct HeroTheme {
+        let badge: String
+        let accent: Color
+        let gradient: [Color]
+
+        static func theme(for kind: StormEventType) -> HeroTheme {
+            switch kind {
+            case .hail:
+                return HeroTheme(
+                    badge: "SEVERE HAIL WARNING",
+                    accent: Theme.ember,
+                    gradient: [
+                        Color(red: 0.05, green: 0.09, blue: 0.20),
+                        Color(red: 0.10, green: 0.16, blue: 0.32),
+                        Color(red: 0.16, green: 0.22, blue: 0.40)
+                    ]
+                )
+            case .wind:
+                return HeroTheme(
+                    badge: "HIGH WIND ALERT",
+                    accent: Theme.amber,
+                    gradient: [
+                        Color(red: 0.10, green: 0.13, blue: 0.22),
+                        Color(red: 0.18, green: 0.20, blue: 0.30),
+                        Color(red: 0.28, green: 0.24, blue: 0.30)
+                    ]
+                )
+            case .tornado:
+                return HeroTheme(
+                    badge: "TORNADO WARNING",
+                    accent: Theme.crimson,
+                    gradient: [
+                        Color(red: 0.16, green: 0.06, blue: 0.10),
+                        Color(red: 0.26, green: 0.10, blue: 0.16),
+                        Color(red: 0.36, green: 0.14, blue: 0.20)
+                    ]
+                )
+            }
+        }
     }
 }
 
@@ -463,3 +567,4 @@ private struct PipelineMiniChip: View {
     }
     .background(Theme.canvas)
 }
+
