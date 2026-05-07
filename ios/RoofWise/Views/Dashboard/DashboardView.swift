@@ -12,6 +12,9 @@ struct DashboardView: View {
                 VStack(spacing: 22) {
                     DashboardHeader()
                     KPIStrip(onQuickInspection: onQuickInspection)
+                    TodaysGoalsCard()
+                    LeaderboardCard()
+                    RecentWinsCard()
                     HomeCardsCarousel(onOpenTraining: onOpenTraining)
                     CoachingActivityCard(onOpenTraining: onOpenTraining)
                     StormAlertSubscriptionCard()
