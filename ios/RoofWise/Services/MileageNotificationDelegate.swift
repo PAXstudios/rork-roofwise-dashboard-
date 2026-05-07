@@ -23,19 +23,45 @@ final class MileageNotificationDelegate: NSObject, UNUserNotificationCenterDeleg
         let info = response.notification.request.content.userInfo
         let action = response.actionIdentifier
         let tripId = info[MileageAutoTrackService.userInfoTripIdKey] as? String
+        let stormAlertId = info[StormPushService.userInfoAlertIdKey] as? String
+        let category = response.notification.request.content.categoryIdentifier
 
         Task { @MainActor in
-            guard let tripId else { completionHandler(); return }
-            switch action {
-            case MileageAutoTrackService.logActionId, UNNotificationDefaultActionIdentifier:
-                AutoTripInbox.shared.presentIfNeeded(idString: tripId)
-            case MileageAutoTrackService.dismissActionId:
-                if let uuid = UUID(uuidString: tripId) {
-                    AutoTripInbox.shared.remove(id: uuid)
+            // Mileage auto-trip notifications
+            if let tripId {
+                switch action {
+                case MileageAutoTrackService.logActionId, UNNotificationDefaultActionIdentifier:
+                    AutoTripInbox.shared.presentIfNeeded(idString: tripId)
+                case MileageAutoTrackService.dismissActionId:
+                    if let uuid = UUID(uuidString: tripId) {
+                        AutoTripInbox.shared.remove(id: uuid)
+                    }
+                default:
+                    break
                 }
-            default:
-                break
             }
+
+            // Storm alert notifications
+            if let stormAlertId, let uuid = UUID(uuidString: stormAlertId),
+               category == StormPushService.categoryId
+                || action == StormPushService.viewActionId
+                || action == StormPushService.snoozeActionId
+                || action == StormPushService.dismissActionId {
+                switch action {
+                case StormPushService.snoozeActionId:
+                    let mins = StormPushService.shared.snoozeMinutes
+                    let until = Date().addingTimeInterval(TimeInterval(mins * 60))
+                    StormAlertStore.shared.snooze(id: uuid, until: until)
+                case StormPushService.dismissActionId:
+                    StormAlertStore.shared.dismiss(id: uuid)
+                case StormPushService.viewActionId, UNNotificationDefaultActionIdentifier:
+                    StormAlertStore.shared.markRead(id: uuid)
+                    PushAlertRouter.shared.present(alertId: uuid)
+                default:
+                    break
+                }
+            }
+
             completionHandler()
         }
     }

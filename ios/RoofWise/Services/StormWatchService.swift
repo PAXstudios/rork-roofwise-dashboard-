@@ -236,6 +236,7 @@ final class StormWatchService {
         if added {
             seenEventIds.insert(event.id)
             persistSeen()
+            StormPushService.shared.notify(for: alert)
             #if DEBUG
             print("[StormWatch] Injected mock storm alert near \(label)")
             #endif
@@ -296,6 +297,13 @@ final class StormWatchService {
         if added > 0 {
             for ev in unseen { seenEventIds.insert(ev.id) }
             persistSeen()
+            // Fire a local push for each freshly-ingested alert. The store
+            // dedups by (areaId+eventId), so newAlerts here may include some
+            // that were already present — filter to ones currently in the
+            // store with a fresh `createdAt`.
+            for a in newAlerts {
+                StormPushService.shared.notify(for: a)
+            }
         }
         areaLastScan[key] = Date()
         return added

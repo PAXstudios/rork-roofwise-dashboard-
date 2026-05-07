@@ -20,6 +20,8 @@ struct ServiceAreaView: View {
                         .padding(.horizontal, 4)
                 }
 
+                pushSettingsLink
+
                 if store.areas.isEmpty {
                     emptyState
                 } else {
@@ -146,6 +148,39 @@ struct ServiceAreaView: View {
         query = ""
         errorMessage = nil
         focused = false
+    }
+
+    // MARK: - Push settings link
+
+    private var pushSettingsLink: some View {
+        NavigationLink(value: DashboardRoute.pushSettings) {
+            HStack(spacing: 14) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12).fill(Theme.emberSoft)
+                    Image(systemName: "bell.badge.fill")
+                        .font(.system(size: Theme.TypeRamp.subhead, weight: .heavy))
+                        .foregroundStyle(Theme.ember)
+                }
+                .frame(width: 44, height: 44)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Notifications")
+                        .font(.system(size: Theme.TypeRamp.body, weight: .heavy))
+                        .foregroundStyle(Theme.ink)
+                    Text("Push alerts, sound, snooze duration")
+                        .font(.system(size: Theme.TypeRamp.metaSm))
+                        .foregroundStyle(Theme.inkSoft)
+                }
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: Theme.TypeRamp.body, weight: .heavy))
+                    .foregroundStyle(Theme.inkFaint)
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
+            .background(Theme.card, in: .rect(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Theme.hairline, lineWidth: 0.6))
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Empty state

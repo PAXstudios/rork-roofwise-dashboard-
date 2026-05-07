@@ -25,6 +25,10 @@ struct RoofWiseApp: App {
         // Register the storm-watch BGTask handler. Safe no-op in mock builds
         // and on simulator where BGTasks are unavailable.
         StormWatchService.registerBackgroundTasks()
+
+        // Register the storm-alert notification category so action buttons
+        // (View / Snooze / Dismiss) appear when an alert push arrives.
+        StormPushService.shared.registerCategory()
     }
 
     private static func bootGoogleMaps() {
@@ -49,6 +53,7 @@ struct RoofWiseApp: App {
             switch phase {
             case .active:
                 Task { @MainActor in
+                    await StormPushService.shared.refreshStatus()
                     _ = await StormWatchService.shared.scanNow()
                 }
             case .background:

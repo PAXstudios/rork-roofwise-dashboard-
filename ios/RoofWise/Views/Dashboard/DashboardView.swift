@@ -8,6 +8,8 @@ struct DashboardView: View {
 
     @State private var path: [DashboardRoute] = []
     @State private var serviceAreaStore = ServiceAreaStore.shared
+    @State private var pushRouter = PushAlertRouter.shared
+    @State private var routedAlert: StormAlert? = nil
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -16,6 +18,9 @@ struct DashboardView: View {
                     DashboardHeader(onOpenSettings: { path.append(.serviceArea) })
                     if !serviceAreaStore.hasConfiguredServiceArea {
                         ServiceAreaBanner(onConfigure: { path.append(.serviceArea) })
+                            .padding(.horizontal, 18)
+                    } else {
+                        StormPushPermissionBanner()
                             .padding(.horizontal, 18)
                     }
                     KPIStrip(onQuickInspection: onQuickInspection)
@@ -50,8 +55,21 @@ struct DashboardView: View {
                 switch route {
                 case .customer(let id): CustomerProfileView(customerID: id)
                 case .serviceArea: ServiceAreaView()
+                case .pushSettings: PushNotificationSettingsView()
                 }
             }
+        }
+        .onChange(of: pushRouter.pendingAlertId) { _, newId in
+            guard let newId else { return }
+            if let match = StormAlertStore.shared.alerts.first(where: { $0.id == newId }) {
+                routedAlert = match
+            }
+            pushRouter.clear()
+        }
+        .sheet(item: $routedAlert) { alert in
+            StormAlertDetailSheet(alert: alert)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
         }
     }
 }
@@ -59,6 +77,7 @@ struct DashboardView: View {
 enum DashboardRoute: Hashable {
     case customer(UUID)
     case serviceArea
+    case pushSettings
 }
 
 struct ServiceAreaBanner: View {
