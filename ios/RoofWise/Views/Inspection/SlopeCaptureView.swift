@@ -62,6 +62,8 @@ struct SlopeCaptureView: View {
     @State private var showDiscardConfirm: Bool = false
     @State private var pitchRiseOver12: Int = 6
     @State private var testSquareCount: Int = 1
+    @State private var aiConfidenceSnapshot: AIDamageConfidenceSnapshot? = nil
+    @State private var confidenceInfoKind: AIDamageCategoryKind? = nil
 
     private let orientationOptions = ["North", "South", "East", "West", "Other"]
     private let difficultyOptions: [(label: String, value: Double)] = [
@@ -85,6 +87,7 @@ struct SlopeCaptureView: View {
                     hailCard
                     windCard
                     wearCard
+                    missingCard
                     costCard
                     functionalCard
                     Color.clear.frame(height: 120)
@@ -138,6 +141,9 @@ struct SlopeCaptureView: View {
         } message: {
             Text("Anything you've entered on this slope will be lost.")
         }
+        .sheet(item: $confidenceInfoKind) { kind in
+            AIConfidenceInfoSheet(kind: kind)
+        }
     }
 
     // MARK: Prefill
@@ -167,6 +173,7 @@ struct SlopeCaptureView: View {
         else if s.cosmeticOnly { functionalChoice = .cosmetic }
         else { functionalChoice = .none }
         photos = store.photos(for: reportId, orientation: s.orientation)
+        aiConfidenceSnapshot = s.aiConfidenceSnapshot
     }
 
     // MARK: Photo card (thin)
@@ -319,7 +326,12 @@ struct SlopeCaptureView: View {
     // MARK: Hail / Wind / Wear
 
     private var hailCard: some View {
-        SlopeCard(title: "Hail Damage", icon: "circle.hexagongrid.fill", tint: Theme.crimson) {
+        SlopeCard(title: "Hail Damage",
+                  icon: "circle.hexagongrid.fill",
+                  tint: Theme.crimson,
+                  confidence: confidence(for: .hail),
+                  confidenceCategory: .hail,
+                  onConfidenceInfo: { confidenceInfoKind = $0 }) {
             StepperRow(label: "Bruises",        value: $hailBruise,   range: 0...99)
             StepperRow(label: "Mat Fractures",  value: $hailFracture, range: 0...99)
             StepperRow(label: "Granule Loss with Exposed Mat",
@@ -328,19 +340,43 @@ struct SlopeCaptureView: View {
     }
 
     private var windCard: some View {
-        SlopeCard(title: "Wind Damage", icon: "wind", tint: Theme.amber) {
+        SlopeCard(title: "Wind Damage",
+                  icon: "wind",
+                  tint: Theme.amber,
+                  confidence: confidence(for: .wind),
+                  confidenceCategory: .wind,
+                  onConfidenceInfo: { confidenceInfoKind = $0 }) {
             StepperRow(label: "Creased Shingles", value: $windCrease,  range: 0...99)
-            StepperRow(label: "Missing Shingles", value: $windMissing, range: 0...99)
             StepperRow(label: "Lifted / Unsealed", value: $windLifted, range: 0...99)
         }
     }
 
     private var wearCard: some View {
-        SlopeCard(title: "Wear", icon: "clock.arrow.circlepath", tint: Theme.inkSoft) {
+        SlopeCard(title: "Wear",
+                  icon: "clock.arrow.circlepath",
+                  tint: Theme.inkSoft,
+                  confidence: confidence(for: .wear),
+                  confidenceCategory: .wear,
+                  onConfidenceInfo: { confidenceInfoKind = $0 }) {
             ToggleRow(label: "Natural Weathering",   isOn: $wearNatural)
             ToggleRow(label: "Foot Traffic",         isOn: $wearFoot)
             ToggleRow(label: "Manufacturing Defect", isOn: $wearMfg)
         }
+    }
+
+    private var missingCard: some View {
+        SlopeCard(title: "Missing Shingles",
+                  icon: "square.dashed",
+                  tint: Theme.sky,
+                  confidence: confidence(for: .missing),
+                  confidenceCategory: .missing,
+                  onConfidenceInfo: { confidenceInfoKind = $0 }) {
+            StepperRow(label: "Missing Shingles", value: $windMissing, range: 0...99)
+        }
+    }
+
+    private func confidence(for kind: AIDamageCategoryKind) -> Double? {
+        aiConfidenceSnapshot?.confidence(for: kind)
     }
 
     // MARK: Cost card
@@ -497,7 +533,8 @@ struct SlopeCaptureView: View {
                     footTraffic: wearFoot,
                     manufacturingDefect: wearMfg
                 )
-            )
+            ),
+            aiConfidenceSnapshot: aiConfidenceSnapshot
         )
         // upsertSlope re-runs DecisionEngine.decide on the inspection,
         // so per-slope verdicts and the roof summary stay consistent.
@@ -534,10 +571,90 @@ struct SlopeCaptureView: View {
 
 // MARK: - Reusable subviews
 
+private struct AIConfidenceInfoSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let kind: AIDamageCategoryKind
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "info.circle.fill")
+                            .font(.system(size: Theme.TypeRamp.title, weight: .heavy))
+                            .foregroundStyle(Theme.amber)
+                            .frame(width: 56, height: 56)
+                            .background(Theme.amberSoft, in: .circle)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("AI confidence")
+                                .font(.system(size: Theme.TypeRamp.titleSm, weight: .heavy))
+                                .foregroundStyle(Theme.ink)
+                            Text(kind.displayName)
+                                .font(.system(size: Theme.TypeRamp.captionSm, weight: .heavy))
+                                .tracking(1.0)
+                                .foregroundStyle(Theme.inkSoft)
+                        }
+                    }
+                    .cardStyle(padding: 16, radius: 18)
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("What lowers confidence")
+                            .font(.system(size: Theme.TypeRamp.body, weight: .heavy))
+                            .foregroundStyle(Theme.ink)
+                        Text(explanation)
+                            .font(.system(size: Theme.TypeRamp.body, weight: .semibold))
+                            .foregroundStyle(Theme.inkSoft)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .cardStyle(padding: 16, radius: 18)
+
+                    Text("If the chip is below 60%, RoofWise sends the detection to Training Queue for inspector review before relying on it in recommendations.")
+                        .font(.system(size: Theme.TypeRamp.subhead, weight: .semibold))
+                        .foregroundStyle(Theme.inkSoft)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .cardStyle(padding: 16, radius: 18)
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 18)
+            }
+            .background(Theme.canvas)
+            .navigationTitle("Low confidence")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                        .font(.system(size: Theme.TypeRamp.body, weight: .heavy))
+                        .foregroundStyle(Theme.ember)
+                        .frame(minHeight: 56)
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+        .presentationContentInteraction(.scrolls)
+    }
+
+    private var explanation: String {
+        switch kind {
+        case .hail:
+            return "Low hail confidence usually means the photo is soft, over-compressed, shadowed, wet, or the model sees circular granule texture that may not be a true impact bruise."
+        case .wind:
+            return "Low wind confidence is triggered by shallow angles, glare, or edges that look lifted but may be normal shingle overlap."
+        case .wear:
+            return "Wear confidence drops when aging, algae, foot traffic, and storm scuffing overlap visually in the same area."
+        case .missing:
+            return "Missing-shingle confidence drops when the tab boundary is cropped, blocked by debris, or could be a shadow between courses."
+        }
+    }
+}
+
 private struct SlopeCard<Content: View>: View {
     let title: String
     let icon: String
     var tint: Color = Theme.ink
+    var confidence: Double? = nil
+    var confidenceCategory: AIDamageCategoryKind? = nil
+    var onConfidenceInfo: (AIDamageCategoryKind) -> Void = { _ in }
     @ViewBuilder var content: () -> Content
 
     var body: some View {
@@ -546,7 +663,7 @@ private struct SlopeCard<Content: View>: View {
                 ZStack {
                     RoundedRectangle(cornerRadius: 10).fill(tint.opacity(0.12))
                     Image(systemName: icon)
-                        .font(.system(size: 16, weight: .bold))
+                        .font(.system(size: Theme.TypeRamp.subhead, weight: .bold))
                         .foregroundStyle(tint)
                 }
                 .frame(width: 36, height: 36)
@@ -554,11 +671,37 @@ private struct SlopeCard<Content: View>: View {
                     .font(.system(size: Theme.TypeRamp.titleSm, weight: .heavy))
                     .foregroundStyle(Theme.ink)
                 Spacer()
+                if let confidenceCategory {
+                    confidenceChip(kind: confidenceCategory)
+                }
             }
             content()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .cardStyle(padding: 18, radius: 18)
+    }
+
+    private func confidenceChip(kind: AIDamageCategoryKind) -> some View {
+        let pct = confidence.map { "\(Int(($0 * 100).rounded()))%" } ?? "--"
+        let isLow = (confidence ?? 1) < 0.6
+        return HStack(spacing: 6) {
+            Text("AI confidence: \(pct)")
+                .font(.system(size: Theme.TypeRamp.captionSm, weight: .heavy))
+                .foregroundStyle(isLow ? Theme.crimson : Theme.inkSoft)
+            Button {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                onConfidenceInfo(kind)
+            } label: {
+                Image(systemName: "info.circle.fill")
+                    .font(.system(size: Theme.TypeRamp.body, weight: .heavy))
+                    .foregroundStyle(isLow ? Theme.crimson : Theme.inkSoft)
+                    .frame(width: 44, height: 44)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.leading, 10)
+        .frame(minHeight: 56)
+        .background((isLow ? Theme.crimson.opacity(0.10) : Theme.canvas), in: .capsule)
     }
 }
 

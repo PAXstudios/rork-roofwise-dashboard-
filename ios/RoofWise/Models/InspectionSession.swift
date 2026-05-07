@@ -31,7 +31,10 @@ struct CapturedPhoto: Identifiable {
     let timestamp: Date = Date()
     var findings: [InspectionFinding] = []
     var damageMarkers: [DamageMarker] = []
+    var aiConfidenceSnapshot: AIDamageConfidenceSnapshot? = nil
     var analyzed: Bool = false
+
+    var confidenceAvg: Double? { aiConfidenceSnapshot?.confidenceAvg }
 
     // MARK: - Pertinent info derived from analysis
 

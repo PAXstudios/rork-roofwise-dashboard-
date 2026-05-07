@@ -969,15 +969,22 @@ struct JobDetailView: View {
                 .foregroundStyle(v.fg)
                 .frame(width: 44, height: 44)
                 .background(v.fg.opacity(0.15), in: .circle)
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 8) {
                 Text(v.title.uppercased())
-                    .font(.system(size: 11, weight: .heavy))
+                    .font(.system(size: Theme.TypeRamp.captionSm, weight: .heavy))
                     .tracking(0.7)
                     .foregroundStyle(v.fg)
                 Text(v.detail)
-                    .font(.system(size: 17, weight: .heavy))
+                    .font(.system(size: Theme.TypeRamp.body, weight: .heavy))
                     .foregroundStyle(Theme.ink)
                     .fixedSize(horizontal: false, vertical: true)
+                if !insp.summary.recommendationBadges.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(insp.summary.recommendationBadges, id: \.self) { badge in
+                            verifyBadge(text: badge)
+                        }
+                    }
+                }
             }
             Spacer(minLength: 0)
         }
@@ -986,6 +993,19 @@ struct JobDetailView: View {
         .background(v.bg, in: .rect(cornerRadius: 18))
         .overlay(RoundedRectangle(cornerRadius: 18)
             .stroke(v.fg.opacity(0.25), lineWidth: 1))
+    }
+
+    private func verifyBadge(text: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "checkmark.shield.fill")
+                .font(.system(size: Theme.TypeRamp.caption, weight: .heavy))
+            Text(text)
+                .font(.system(size: Theme.TypeRamp.captionSm, weight: .heavy))
+        }
+        .foregroundStyle(Theme.amber)
+        .padding(.horizontal, 10)
+        .frame(minHeight: 56)
+        .background(Theme.amberSoft, in: .capsule)
     }
 
     private struct DecisionStyle {

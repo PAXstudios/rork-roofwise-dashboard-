@@ -1034,6 +1034,7 @@ struct QuickInspectionView: View {
                     let findings = result.findings
                     capturedPhotos[i].findings = findings
                     capturedPhotos[i].damageMarkers = result.markers
+                    capturedPhotos[i].aiConfidenceSnapshot = result.confidenceSnapshot
                     // Only mark the photo as analyzed when the AI call actually succeeded.
                     // If it failed we leave analyzed=false so the UI can show a retry state
                     // instead of presenting fake markers as real detections.
@@ -1064,6 +1065,7 @@ struct QuickInspectionView: View {
                     if result.noRoofDetected {
                         capturedPhotos[i].findings = result.findings
                         capturedPhotos[i].damageMarkers = []
+                        capturedPhotos[i].aiConfidenceSnapshot = result.confidenceSnapshot
                         capturedPhotos[i].analyzed = true
                         continue
                     }
@@ -1164,6 +1166,7 @@ struct QuickInspectionView: View {
         guard let newIdx = capturedPhotos.firstIndex(where: { $0.id == photoID }) else { return }
         capturedPhotos[newIdx].findings = result.findings
         capturedPhotos[newIdx].damageMarkers = result.markers
+        capturedPhotos[newIdx].aiConfidenceSnapshot = result.confidenceSnapshot
         capturedPhotos[newIdx].analyzed = !result.failed
         // Refresh the preview sheet so the user sees fresh markers/findings.
         previewPhoto = capturedPhotos[newIdx]

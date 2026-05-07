@@ -128,6 +128,7 @@ struct CustomerProfileView: View {
                     if let idx = c.photos.firstIndex(where: { $0.id == photo.id }) {
                         c.photos[idx].findings = result.findings
                         c.photos[idx].damageMarkers = result.markers
+                        c.photos[idx].aiConfidenceSnapshot = result.confidenceSnapshot
                         c.photos[idx].analyzed = !result.failed
                         store.update(c)
                         previewPhoto = c.photos[idx]

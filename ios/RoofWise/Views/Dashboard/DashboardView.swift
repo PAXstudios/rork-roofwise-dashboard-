@@ -155,7 +155,10 @@ struct DashboardHeader: View {
     #if DEBUG
     @State private var debugLongPressCount: Int = 0
     @State private var debugLongPressFirstAt: Date?
-    @State private var debugStormToast: Bool = false
+    @State private var debugToast: String? = nil
+    @State private var showDebugMenu: Bool = false
+    @State private var showDebugHomeownerProposal: Bool = false
+    @State private var proposalStore = ProposalStore.shared
     #endif
 
     var body: some View {
@@ -185,9 +188,9 @@ struct DashboardHeader: View {
             .contentShape(.rect)
             .onLongPressGesture(minimumDuration: 0.45) { handleDebugLongPress() }
             .overlay(alignment: .bottomLeading) {
-                if debugStormToast {
-                    Text("Mock storm injected")
-                        .font(.system(size: 11, weight: .heavy))
+                if let debugToast {
+                    Text(debugToast)
+                        .font(.system(size: Theme.TypeRamp.captionSm, weight: .heavy))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
@@ -208,6 +211,20 @@ struct DashboardHeader: View {
             })
         }
         .padding(.horizontal, 20)
+        #if DEBUG
+        .confirmationDialog("Debug", isPresented: $showDebugMenu, titleVisibility: .visible) {
+            Button("Inject Mock Storm") { injectMockStormDebug() }
+            Button("Open as Homeowner") { openLatestProposalDebug() }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Choose a local debug action.")
+        }
+        .sheet(isPresented: $showDebugHomeownerProposal) {
+            if let proposal = proposalStore.proposals.first {
+                NavigationStack { HomeownerProposalView(proposalId: proposal.id) }
+            }
+        }
+        #endif
     }
 
     #if DEBUG
@@ -222,12 +239,28 @@ struct DashboardHeader: View {
         if debugLongPressCount >= 3 {
             debugLongPressCount = 0
             debugLongPressFirstAt = nil
-            _ = StormWatchService.shared.injectMockStorm()
-            withAnimation { debugStormToast = true }
-            Task { @MainActor in
-                try? await Task.sleep(for: .seconds(2))
-                withAnimation { debugStormToast = false }
-            }
+            showDebugMenu = true
+        }
+    }
+
+    private func injectMockStormDebug() {
+        _ = StormWatchService.shared.injectMockStorm()
+        showDebugToast("Mock storm injected")
+    }
+
+    private func openLatestProposalDebug() {
+        guard proposalStore.proposals.first != nil else {
+            showDebugToast("No proposals yet")
+            return
+        }
+        showDebugHomeownerProposal = true
+    }
+
+    private func showDebugToast(_ text: String) {
+        withAnimation { debugToast = text }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2))
+            withAnimation { debugToast = nil }
         }
     }
     #endif

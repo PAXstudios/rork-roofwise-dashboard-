@@ -45,6 +45,9 @@ struct GeminiAnalysisService {
         var shingleTypeConfidence: Int = 0
         /// AI evidence note for the shingle type classification.
         var shingleTypeNote: String? = nil
+        /// Structured Phase 8 category confidence snapshot from Gemini.
+        var confidenceSnapshot: AIDamageConfidenceSnapshot = .empty
+        var confidenceAvg: Double { confidenceSnapshot.confidenceAvg }
     }
 
     /// Convenience for legacy callers that only need findings.
@@ -70,6 +73,9 @@ struct GeminiAnalysisService {
     /// Lightweight live camera damage check. Reuses the same parsing pipeline, but
     /// prompts Gemini to return only roof-gated damage markers for the current frame.
     func analyzeLiveDamage(image: UIImage) async -> AnalysisResult {
+        if APIKeys.USE_MOCKS {
+            return Self.mockAnalysisResult()
+        }
         guard !secret.isEmpty, let url = chatCompletionsURL else {
             return AnalysisResult(findings: [], markers: [], failed: true)
         }
@@ -152,6 +158,9 @@ struct GeminiAnalysisService {
                      slope: SlopeType,
                      mode: CaptureMode = .square,
                      squaresCovered: Int = 0) async -> AnalysisResult {
+        if APIKeys.USE_MOCKS {
+            return Self.mockAnalysisResult()
+        }
         guard !secret.isEmpty, let url = chatCompletionsURL else {
             return AnalysisResult(findings: Self.failureFinding(reason: "Rork toolkit not configured. Tap retry."),
                                   markers: [],
@@ -198,6 +207,10 @@ struct GeminiAnalysisService {
         {
           "analyzed": true|false,
           "shingle_type": { "type": "3-tab asphalt|architectural asphalt|luxury asphalt|wood shake|wood shingle|metal standing seam|metal shingle|clay tile|concrete tile|slate|synthetic slate|composite|rolled roofing|TPO|EPDM|unknown", "confidence": 0-100, "note": "<short evidence>" },
+          "categories": [
+            { "kind": "hail|wind|wear|missing", "count": <int>, "confidence": 0.0-1.0, "severity": "minor|moderate|severe" }
+          ],
+          "confidence_avg": 0.0-1.0,
           "findings": [
             { "label": "hail_damage|granule_loss|missing_shingles|wind_creasing|blistering|cracking_splitting|flashing_damage|algae_moss|bruising|structural_sagging", "detected": true|false, "severity": "none|minor|moderate|severe", "confidence": 0-100, "count": <int>, "note": "<short evidence>" }
           ],
@@ -208,7 +221,7 @@ struct GeminiAnalysisService {
 
         Coordinates MUST be normalized fractions of the image: x = (pixel_x / image_width), y = (pixel_y / image_height). 0.0 = left/top, 1.0 = right/bottom, top-left origin. (x,y) is the CENTER of the feature; width/height/radius describe only that damaged feature, not the entire shingle. NEVER return pixel values. NEVER return values outside [0, 1]. Measure coordinates against THIS image as you see it (do not rotate).
 
-        Include all 10 damage categories in `findings` (set detected=false for ones not present). Mark each visible hail strike and each visible shingle defect individually only when exact pixel evidence is present. If the image is NOT a roof (grass, sky, indoors, person, vehicle), set analyzed=false, return empty `damage_markers`, and add a finding with label="no_roof_detected".
+        Include all 10 damage categories in `findings` (set detected=false for ones not present). Always include exactly four `categories` entries: hail, wind, wear, missing. `confidence` and `confidence_avg` MUST be normalized floats from 0.0 to 1.0, not percentages. Mark each visible hail strike and each visible shingle defect individually only when exact pixel evidence is present. If the image is NOT a roof (grass, sky, indoors, person, vehicle), set analyzed=false, return empty `damage_markers`, and add a finding with label="no_roof_detected".
         """
 
         let body = Self.chatCompletionBody(systemPrompt: prompt,
@@ -275,6 +288,7 @@ struct GeminiAnalysisService {
                     "models": Self.fallbackModels
                 ]
             ],
+            "response_format": ["type": "json_object"],
             "messages": [
                 ["role": "system", "content": systemPrompt],
                 ["role": "user", "content": [
@@ -359,6 +373,7 @@ struct GeminiAnalysisService {
            topConf > shingleTypeConfidence {
             shingleTypeConfidence = max(0, min(100, topConf))
         }
+        let confidenceSnapshot = confidenceSnapshot(from: payload)
         var noRoofFlag = false
         if let analyzed = payload["analyzed"] as? Bool, analyzed == false {
             noRoofFlag = true
@@ -399,7 +414,71 @@ struct GeminiAnalysisService {
                               noRoofDetected: noRoofFlag,
                               shingleType: shingleTypeName,
                               shingleTypeConfidence: shingleTypeConfidence,
-                              shingleTypeNote: shingleTypeNote)
+                              shingleTypeNote: shingleTypeNote,
+                              confidenceSnapshot: confidenceSnapshot)
+    }
+
+    private static func confidenceSnapshot(from payload: [String: Any]) -> AIDamageConfidenceSnapshot {
+        let rawCategories = payload["categories"] as? [[String: Any]] ?? []
+        let categories: [AIDamageCategoryConfidence] = AIDamageCategoryKind.allCases.map { kind in
+            if let dict = rawCategories.first(where: { ($0["kind"] as? String) == kind.rawValue }) {
+                return categoryConfidence(kind: kind, dict: dict)
+            }
+            return AIDamageCategoryConfidence(kind: kind, count: 0, confidence: 0, severity: .minor)
+        }
+        let avg = normalizedConfidence(payload["confidence_avg"]) ?? (categories.isEmpty ? 0 : categories.reduce(0) { $0 + $1.confidence } / Double(categories.count))
+        return AIDamageConfidenceSnapshot(categories: categories, confidenceAvg: avg)
+    }
+
+    private static func categoryConfidence(kind: AIDamageCategoryKind,
+                                           dict: [String: Any]) -> AIDamageCategoryConfidence {
+        let count = (dict["count"] as? Int) ?? (dict["count"] as? NSNumber)?.intValue ?? 0
+        let confidence = normalizedConfidence(dict["confidence"]) ?? 0
+        let severityRaw = (dict["severity"] as? String) ?? "minor"
+        let severity = AIDamageCategorySeverity(rawValue: severityRaw) ?? .minor
+        return AIDamageCategoryConfidence(kind: kind,
+                                          count: max(0, count),
+                                          confidence: confidence,
+                                          severity: severity)
+    }
+
+    private static func normalizedConfidence(_ raw: Any?) -> Double? {
+        let value = (raw as? Double) ?? (raw as? NSNumber)?.doubleValue
+        guard let value else { return nil }
+        return max(0, min(1, value > 1 ? value / 100 : value))
+    }
+
+    private static func mockAnalysisResult() -> AnalysisResult {
+        let categories = [
+            AIDamageCategoryConfidence(kind: .hail, count: 3, confidence: 0.82, severity: .moderate),
+            AIDamageCategoryConfidence(kind: .wind, count: 1, confidence: 0.74, severity: .minor),
+            AIDamageCategoryConfidence(kind: .wear, count: 2, confidence: 0.68, severity: .minor),
+            AIDamageCategoryConfidence(kind: .missing, count: 0, confidence: 0.91, severity: .minor)
+        ]
+        let snapshot = AIDamageConfidenceSnapshot(categories: categories)
+        let findings: [InspectionFinding] = [
+            InspectionFinding(label: "bruising",
+                              display: "Bruising",
+                              value: "Mock hail bruising confidence sample",
+                              confidence: 82,
+                              icon: "circle.hexagongrid.fill",
+                              tint: Theme.ember,
+                              detected: true,
+                              severity: .moderate),
+            InspectionFinding(label: "wind_creasing",
+                              display: "Wind Creasing",
+                              value: "Mock edge lift confidence sample",
+                              confidence: 74,
+                              icon: "wind",
+                              tint: Theme.amber,
+                              detected: true,
+                              severity: .minor)
+        ]
+        return AnalysisResult(findings: findings,
+                              markers: [],
+                              failed: false,
+                              usedMock: true,
+                              confidenceSnapshot: snapshot)
     }
 
     /// Strip ```json ... ``` or ``` ... ``` fences if Gemini wraps despite responseMimeType.
@@ -557,7 +636,8 @@ private extension GeminiAnalysisService.AnalysisResult {
                                                     noRoofDetected: noRoofDetected,
                                                     shingleType: shingleType,
                                                     shingleTypeConfidence: shingleTypeConfidence,
-                                                    shingleTypeNote: shingleTypeNote)
+                                                    shingleTypeNote: shingleTypeNote,
+                                                    confidenceSnapshot: confidenceSnapshot)
     }
 }
 

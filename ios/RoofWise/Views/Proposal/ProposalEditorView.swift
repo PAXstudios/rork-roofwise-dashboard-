@@ -604,6 +604,8 @@ struct LineItemEditSheet: View {
     @State var item: ProposalLineItem
     let onSave: (ProposalLineItem) -> Void
     @State private var showKindMenu = false
+    @State private var pendingKind: ProposalLineItemKind? = nil
+    @State private var showKindSwapConfirm = false
 
     init(item: ProposalLineItem, onSave: @escaping (ProposalLineItem) -> Void) {
         _item = State(initialValue: item)
@@ -634,16 +636,34 @@ struct LineItemEditSheet: View {
                             .stroke(Theme.hairline, lineWidth: 1))
                     }
                     .buttonStyle(.plain)
-                    .confirmationDialog("Change kind",
+                    .confirmationDialog("Choose replacement kind",
                                         isPresented: $showKindMenu,
                                         titleVisibility: .visible) {
                         ForEach(ProposalLineItemKind.allCases, id: \.self) { k in
                             Button(k.displayName) {
-                                item.kind = k
-                                if item.label.isEmpty { item.label = k.displayName }
+                                pendingKind = k
+                                showKindSwapConfirm = true
                             }
                         }
                         Button("Cancel", role: .cancel) {}
+                    } message: {
+                        Text("Pick the line-item type, then confirm the swap.")
+                    }
+                    .confirmationDialog("Swap line item kind?",
+                                        isPresented: $showKindSwapConfirm,
+                                        titleVisibility: .visible) {
+                        Button("Swap Kind") {
+                            guard let kind = pendingKind else { return }
+                            let previousLabel = item.kind.displayName
+                            item.kind = kind
+                            if item.label.isEmpty || item.label == previousLabel {
+                                item.label = kind.displayName
+                            }
+                            pendingKind = nil
+                        }
+                        Button("Cancel", role: .cancel) { pendingKind = nil }
+                    } message: {
+                        Text("This keeps quantity and pricing but changes the proposal category.")
                     }
 
                     sectionLabel("Label")
