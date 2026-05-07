@@ -305,11 +305,7 @@ struct JobDetailView: View {
             }
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity, minHeight: 64)
-            .background(
-                LinearGradient(colors: [Theme.ink, Color(red: 0.12, green: 0.20, blue: 0.42)],
-                               startPoint: .topLeading, endPoint: .bottomTrailing),
-                in: .rect(cornerRadius: 18)
-            )
+            .background(Theme.inkGradient, in: .rect(cornerRadius: 18))
             .shadow(color: Theme.ink.opacity(0.28), radius: 14, x: 0, y: 6)
         }
         .buttonStyle(.plain)

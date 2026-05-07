@@ -173,7 +173,7 @@ struct NewJobWizard: View {
                 .background(
                     LinearGradient(
                         colors: canAdvance
-                            ? [Theme.ink, Color(red: 0.12, green: 0.20, blue: 0.42)]
+                            ? [Theme.ink, Theme.inkRaised]
                             : [Theme.inkFaint, Theme.inkFaint],
                         startPoint: .topLeading, endPoint: .bottomTrailing),
                     in: .rect(cornerRadius: 18)

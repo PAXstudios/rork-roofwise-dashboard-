@@ -289,7 +289,7 @@ struct SlopeCaptureView: View {
                     .font(.system(size: 11, weight: .heavy))
                     .foregroundStyle(.white)
                     .frame(width: 24, height: 24)
-                    .background(Color.black.opacity(0.65), in: .circle)
+                    .background(Theme.scrim, in: .circle)
             }
             .buttonStyle(.plain)
             .padding(4)
@@ -450,11 +450,7 @@ struct SlopeCaptureView: View {
                 }
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity, minHeight: 64)
-                .background(
-                    LinearGradient(colors: [Theme.ink, Color(red: 0.12, green: 0.20, blue: 0.42)],
-                                   startPoint: .topLeading, endPoint: .bottomTrailing),
-                    in: .rect(cornerRadius: 18)
-                )
+                .background(Theme.inkGradient, in: .rect(cornerRadius: 18))
                 .shadow(color: Theme.ink.opacity(0.3), radius: 14, x: 0, y: 6)
             }
             .buttonStyle(.plain)

@@ -3,8 +3,10 @@ import SwiftUI
 enum Theme {
     // Brand palette — deep storm navy + warm rooftop ember on ivory canvas.
     static let ink = Color(red: 0.058, green: 0.106, blue: 0.231)        // #0F1B3B
+    static let inkRaised = Color(red: 0.12, green: 0.20, blue: 0.42)      // gradient companion
     static let inkSoft = Color(red: 0.27, green: 0.32, blue: 0.43)        // muted slate
     static let inkFaint = Color(red: 0.55, green: 0.59, blue: 0.67)
+    static let scrim = Color.black.opacity(0.65)                          // photo overlay scrim
     static let canvas = Color(red: 0.973, green: 0.965, blue: 0.949)      // ivory #F8F6F2
     static let card = Color.white
     static let hairline = Color(red: 0.91, green: 0.90, blue: 0.88)
@@ -40,5 +42,13 @@ extension View {
                     .stroke(Theme.hairline, lineWidth: 0.6)
             )
             .shadow(color: Theme.ink.opacity(0.04), radius: 14, x: 0, y: 6)
+    }
+}
+
+extension Theme {
+    /// Primary navy CTA gradient (top-leading -> bottom-trailing).
+    static var inkGradient: LinearGradient {
+        LinearGradient(colors: [ink, inkRaised],
+                       startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 }
