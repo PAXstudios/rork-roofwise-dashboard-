@@ -1,5 +1,6 @@
 import Foundation
 import UIKit
+import CoreImage
 
 /// Compression ladder used when uploading photos to the Rork toolkit proxy.
 /// Two paths:
@@ -16,7 +17,8 @@ enum ImageResize {
     }
 
     private static let fullLadder: [(maxPixel: CGFloat, quality: CGFloat)] = [
-        (1280, 0.80), (1024, 0.78), (832, 0.74), (640, 0.70)
+        (2048, 0.90), (1792, 0.88), (1536, 0.86), (1280, 0.82),
+        (1024, 0.80), (832, 0.76), (640, 0.72)
     ]
     private static let liveLadder: [(maxPixel: CGFloat, quality: CGFloat)] = [
         (768, 0.70), (640, 0.65), (512, 0.60)
@@ -26,10 +28,11 @@ enum ImageResize {
                                   profile: Profile = .full,
                                   maxBytes: Int? = nil) -> String? {
         let normalized = image.normalizedOrientation()
+        let aiReady = profile == .full ? damageAnalysisOptimizedImage(from: normalized) : normalized
         let ladder = profile == .full ? fullLadder : liveLadder
         let cap = maxBytes ?? (profile == .full ? 3_000_000 : 600_000)
         for step in ladder {
-            guard let resized = resize(image: normalized, maxEdge: step.maxPixel) else { continue }
+            guard let resized = resize(image: aiReady, maxEdge: step.maxPixel) else { continue }
             guard let data = resized.jpegData(compressionQuality: step.quality) else { continue }
             if data.count <= cap { return data.base64EncodedString() }
         }
@@ -41,14 +44,49 @@ enum ImageResize {
         let scale = min(maxEdge / max(size.width, size.height), 1.0)
         if scale >= 1.0 {
             // Still re-render so EXIF orientation is baked into pixels.
-            return image
+            return render(image: image, size: size)
         }
         let newSize = CGSize(width: size.width * scale, height: size.height * scale)
-        UIGraphicsBeginImageContextWithOptions(newSize, false, 1.0)
-        image.draw(in: CGRect(origin: .zero, size: newSize))
-        let out = UIGraphicsGetImageFromCurrentImageContext()
-        UIGraphicsEndImageContext()
-        return out
+        return render(image: image, size: newSize)
+    }
+
+    /// Prepares roof photos for visual damage localization without changing the
+    /// aspect ratio, so normalized AI coordinates still map back onto the original
+    /// photo. The goal is to preserve granule texture, expose dark bruising, and
+    /// sharpen shingle edges rather than over-compressing into a blurry bitmap.
+    private static func damageAnalysisOptimizedImage(from image: UIImage) -> UIImage {
+        guard let cgImage = image.cgImage else { return image }
+        let input = CIImage(cgImage: cgImage)
+        let context = CIContext(options: [.workingColorSpace: CGColorSpaceCreateDeviceRGB()])
+
+        let colorAdjusted: CIImage = {
+            guard let filter = CIFilter(name: "CIColorControls") else { return input }
+            filter.setValue(input, forKey: kCIInputImageKey)
+            filter.setValue(1.16, forKey: kCIInputContrastKey)
+            filter.setValue(1.04, forKey: kCIInputSaturationKey)
+            filter.setValue(0.015, forKey: kCIInputBrightnessKey)
+            return filter.outputImage ?? input
+        }()
+
+        let sharpened: CIImage = {
+            guard let filter = CIFilter(name: "CISharpenLuminance") else { return colorAdjusted }
+            filter.setValue(colorAdjusted, forKey: kCIInputImageKey)
+            filter.setValue(0.42, forKey: kCIInputSharpnessKey)
+            return filter.outputImage ?? colorAdjusted
+        }()
+
+        guard let output = context.createCGImage(sharpened, from: input.extent) else { return image }
+        return UIImage(cgImage: output, scale: 1.0, orientation: .up)
+    }
+
+    private static func render(image: UIImage, size: CGSize) -> UIImage? {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1.0
+        format.opaque = true
+        let renderer = UIGraphicsImageRenderer(size: size, format: format)
+        return renderer.image { _ in
+            image.draw(in: CGRect(origin: .zero, size: size))
+        }
     }
 }
 

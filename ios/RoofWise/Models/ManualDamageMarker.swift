@@ -47,8 +47,9 @@ struct ManualDamageMarker: Identifiable, Equatable {
 }
 
 extension ManualDamageMarker {
-    /// The four damage types selectable in the manual marker sheet.
+    /// Inspector-selectable damage types for manual marking.
     static let allowedTypes: [DamageMarkerType] = [
-        .hailStrike, .windCrease, .crack, .missingShingle
+        .hailStrike, .shingleBruise, .windCrease, .crack,
+        .missingShingle, .liftedShingle, .tornShingle, .exposedMat
     ]
 }

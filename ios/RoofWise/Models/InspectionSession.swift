@@ -351,7 +351,7 @@ enum HaagGrader {
             totalSquares += squares
 
             let markerHits = photo.damageMarkers.filter {
-                ($0.type == .hailStrike || $0.type == .windCrease || $0.type == .crack || $0.type == .missingShingle) &&
+                ($0.type.isHailImpact || $0.type.isShingleDamage) &&
                 ($0.severity == .moderate || $0.severity == .severe)
             }.count
 
@@ -404,7 +404,7 @@ enum HaagGrader {
 
             // Each marker that indicates a broken/missing/cracked tile counts as one damaged tile.
             let markerHits = photo.damageMarkers.filter {
-                $0.type == .crack || $0.type == .missingShingle || $0.type == .other
+                $0.type == .crack || $0.type == .missingShingle || $0.type == .liftedShingle || $0.type == .tornShingle || $0.type == .exposedMat || $0.type == .other
             }.count
 
             // Fallback if no markers: derive from findings counts/severity.

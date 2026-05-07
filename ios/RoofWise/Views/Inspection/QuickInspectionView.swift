@@ -1067,8 +1067,8 @@ struct QuickInspectionView: View {
                         capturedPhotos[i].analyzed = true
                         continue
                     }
-                    totalHailMarkers += result.markers.filter { $0.type == .hailStrike }.count
-                    totalWindMarkers += result.markers.filter { $0.type == .windCrease || $0.type == .missingShingle }.count
+                    totalHailMarkers += result.markers.filter { $0.type.isHailImpact }.count
+                    totalWindMarkers += result.markers.filter { $0.type.isShingleDamage }.count
 
                     for f in findings {
                         if let existing = results[f.label] {
@@ -1111,7 +1111,7 @@ struct QuickInspectionView: View {
                     : totalWindMarkers > 0 ? .minor : .none
                 let windValue: String = {
                     if totalWindMarkers == 0 { return "No wind damage detected by AI" }
-                    return "\(totalWindMarkers) wind indicator\(totalWindMarkers == 1 ? "" : "s") · creases / lifted tabs"
+                    return "\(totalWindMarkers) shingle damage indicator\(totalWindMarkers == 1 ? "" : "s") · creases / lifted / torn / missing tabs"
                 }()
                 results["wind_damage"] = InspectionFinding(
                     label: "wind_damage",

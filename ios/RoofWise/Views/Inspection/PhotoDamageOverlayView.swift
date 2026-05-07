@@ -681,25 +681,26 @@ private struct MarkerPin: View {
     var onTap: () -> Void
 
     var body: some View {
-        let baseSize: CGFloat = max(22, min(72, marker.radius * 320))
+        let visibleSize: CGFloat = max(10, min(28, marker.radius * 520))
         Button(action: onTap) {
             ZStack {
                 Circle()
-                    .stroke(marker.type.color.opacity(pulsing ? 0.0 : 0.55),
-                            lineWidth: 1.2)
-                    .frame(width: baseSize * 1.6, height: baseSize * 1.6)
-                    .scaleEffect(pulsing ? 1.15 : 0.85)
+                    .fill(marker.type.color)
+                    .frame(width: max(5, visibleSize * 0.34), height: max(5, visibleSize * 0.34))
+                    .shadow(color: .black.opacity(0.65), radius: 1.5)
 
                 Circle()
-                    .stroke(marker.type.color, lineWidth: isSelected ? 3 : 2)
-                    .background(Circle().fill(marker.type.color.opacity(0.12)))
-                    .frame(width: baseSize, height: baseSize)
+                    .stroke(marker.type.color.opacity(pulsing ? 0.0 : 0.45),
+                            lineWidth: 1.2)
+                    .frame(width: visibleSize, height: visibleSize)
+                    .scaleEffect(pulsing ? 1.25 : 0.9)
 
-                Image(systemName: marker.type.icon)
-                    .font(.system(size: max(9, baseSize * 0.35), weight: .heavy))
-                    .foregroundStyle(marker.type.color)
-                    .shadow(color: .black.opacity(0.5), radius: 2)
+                Circle()
+                    .stroke(.white.opacity(0.92), lineWidth: isSelected ? 2.4 : 1.3)
+                    .frame(width: visibleSize, height: visibleSize)
             }
+            .frame(width: 44, height: 44)
+            .contentShape(Circle())
         }
         .buttonStyle(.plain)
     }

@@ -125,9 +125,13 @@ struct StructuralInput: Identifiable {
 
 enum DamageMarkerType: String, CaseIterable {
     case hailStrike = "hail_strike"
+    case shingleBruise = "shingle_bruise"
+    case exposedMat = "exposed_mat"
     case crack = "crack"
     case granuleLoss = "granule_loss"
     case missingShingle = "missing_shingle"
+    case liftedShingle = "lifted_shingle"
+    case tornShingle = "torn_shingle"
     case windCrease = "wind_crease"
     case blister = "blister"
     case flashing = "flashing"
@@ -137,9 +141,13 @@ enum DamageMarkerType: String, CaseIterable {
     var display: String {
         switch self {
         case .hailStrike: return "Hail Strike"
+        case .shingleBruise: return "Shingle Bruise"
+        case .exposedMat: return "Exposed Mat"
         case .crack: return "Crack"
         case .granuleLoss: return "Granule Loss"
         case .missingShingle: return "Missing Shingle"
+        case .liftedShingle: return "Lifted Shingle"
+        case .tornShingle: return "Torn Shingle"
         case .windCrease: return "Wind Crease"
         case .blister: return "Blister"
         case .flashing: return "Flashing"
@@ -151,9 +159,13 @@ enum DamageMarkerType: String, CaseIterable {
     var pluralDisplay: String {
         switch self {
         case .hailStrike: return "hail strikes"
+        case .shingleBruise: return "shingle bruises"
+        case .exposedMat: return "exposed mat spots"
         case .crack: return "cracks"
         case .granuleLoss: return "granule loss spots"
         case .missingShingle: return "missing shingles"
+        case .liftedShingle: return "lifted shingles"
+        case .tornShingle: return "torn shingles"
         case .windCrease: return "wind creases"
         case .blister: return "blisters"
         case .flashing: return "flashing issues"
@@ -165,9 +177,13 @@ enum DamageMarkerType: String, CaseIterable {
     var icon: String {
         switch self {
         case .hailStrike: return "circle.hexagongrid.fill"
+        case .shingleBruise: return "circle.lefthalf.filled"
+        case .exposedMat: return "viewfinder.circle.fill"
         case .crack: return "bolt.horizontal.fill"
         case .granuleLoss: return "circle.dotted"
         case .missingShingle: return "square.dashed"
+        case .liftedShingle: return "square.stack.3d.up.fill"
+        case .tornShingle: return "rectangle.split.3x1.fill"
         case .windCrease: return "wind"
         case .blister: return "circle.grid.cross.fill"
         case .flashing: return "square.stack.3d.up.slash.fill"
@@ -178,15 +194,49 @@ enum DamageMarkerType: String, CaseIterable {
 
     var color: Color {
         switch self {
-        case .hailStrike: return Theme.crimson                              // RED
-        case .windCrease: return Color(red: 1.00, green: 0.55, blue: 0.10)   // ORANGE
-        case .crack: return Color(red: 0.98, green: 0.82, blue: 0.10)        // YELLOW
-        case .missingShingle: return Color(red: 0.62, green: 0.32, blue: 0.86) // PURPLE
+        case .hailStrike, .shingleBruise: return Theme.crimson
+        case .exposedMat: return Theme.ember
+        case .windCrease, .liftedShingle, .tornShingle: return Theme.ember
+        case .crack: return Theme.amber
+        case .missingShingle: return Theme.sky
         case .granuleLoss: return Theme.amber
         case .blister: return Theme.amber
         case .flashing: return Theme.ember
         case .algae: return Theme.mint
         case .other: return Theme.amber
+        }
+    }
+
+    var isHailImpact: Bool {
+        switch self {
+        case .hailStrike, .shingleBruise, .exposedMat, .granuleLoss:
+            return true
+        default:
+            return false
+        }
+    }
+
+    var isShingleDamage: Bool {
+        switch self {
+        case .missingShingle, .liftedShingle, .tornShingle, .windCrease, .crack, .exposedMat:
+            return true
+        default:
+            return false
+        }
+    }
+
+    static func alias(for rawValue: String) -> DamageMarkerType {
+        let value = rawValue.lowercased().replacingOccurrences(of: "-", with: "_")
+        switch value {
+        case "bruise", "bruising", "hail_bruise", "impact_bruise", "shingle_damage": return .shingleBruise
+        case "mat_exposure", "exposed_fiberglass", "bare_mat": return .exposedMat
+        case "missing_shingles", "missing_tab", "missing_tabs": return .missingShingle
+        case "lifted_tab", "lifted_tabs", "lifted_shingles": return .liftedShingle
+        case "torn_tab", "torn_tabs", "torn_shingles", "tear": return .tornShingle
+        case "wind_damage", "crease", "creased_shingle": return .windCrease
+        case "granule_displacement", "granule_scuff": return .granuleLoss
+        case "split", "splitting", "cracking": return .crack
+        default: return .other
         }
     }
 }

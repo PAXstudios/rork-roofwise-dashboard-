@@ -2,13 +2,17 @@ import Foundation
 import UIKit
 import SwiftUI
 
-/// Gemini 2.5 Flash Vision integration via the Rork toolkit proxy.
+/// Multimodal roof-damage analysis via the Rork toolkit proxy.
 /// Requests are sent to the OpenAI-compatible chat completions endpoint and
 /// authenticated with `EXPO_PUBLIC_RORK_TOOLKIT_SECRET_KEY`.
 struct GeminiAnalysisService {
     private let toolkitURL: String
     private let secret: String
-    private static let model = "google/gemini-2.5-flash"
+    private static let model = "google/gemini-3-flash"
+    private static let fallbackModels: [String] = [
+        "anthropic/claude-haiku-4.5",
+        "alibaba/qwen3-vl-instruct"
+    ]
 
     init() {
         self.toolkitURL = Config.EXPO_PUBLIC_TOOLKIT_URL
@@ -90,7 +94,7 @@ struct GeminiAnalysisService {
           ],
           "damage_markers": [
             {
-              "type": "hail_strike|crack|missing_shingle|wind_crease|granule_loss|other",
+              "type": "hail_strike|shingle_bruise|exposed_mat|crack|granule_loss|missing_shingle|lifted_shingle|torn_shingle|wind_crease|other",
               "x": 0.0-1.0,
               "y": 0.0-1.0,
               "width": 0.0-1.0,
@@ -112,7 +116,7 @@ struct GeminiAnalysisService {
 
         CRITICAL: If the image does NOT clearly show a roof surface, asphalt shingles, tile, metal panels, or any roofing material — for example if it shows grass, sky, ground, indoors, a person, a vehicle, or any non-roof scene — you MUST set analyzed=false, return an empty damage_markers array, and add a finding with label="no_roof_detected" and note="No roof or shingles visible in this photo". Do not fabricate damage findings on non-roof images.
 
-        Mark only visible damage locations. Do NOT generate random or evenly spaced markers. If no damage is clearly visible, return "damage_markers": []. Coordinates are normalized from top-left.
+        Mark only visible damage locations. A marker is valid only when its center sits on visible pixel evidence: dark circular bruising, exposed mat, displaced granules, a crack, missing/lifted/torn shingle edge, or flashing defect. Shingle seams, tab boundaries, clean granule texture, shadows, and repeating rows are NOT damage. Do NOT generate random, evenly spaced, grid-like, or per-shingle markers. Include shingle damage beyond hail: lifted tabs, torn tabs, missing tabs, cracks, exposed mat, and wind creases. If no damage is clearly visible, return "damage_markers": []. Coordinates are normalized from top-left.
         """
 
         let body = Self.chatCompletionBody(systemPrompt: prompt,
@@ -132,7 +136,10 @@ struct GeminiAnalysisService {
             if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
                 return AnalysisResult(findings: [], markers: [], failed: true)
             }
-            return Self.parseResponse(data) ?? AnalysisResult(findings: [], markers: [], failed: true)
+            guard let parsed = Self.parseResponse(data) else {
+                return AnalysisResult(findings: [], markers: [], failed: true)
+            }
+            return parsed.refiningMarkers(in: image)
         } catch {
             return AnalysisResult(findings: [], markers: [], failed: true)
         }
@@ -150,7 +157,7 @@ struct GeminiAnalysisService {
                                   markers: [],
                                   failed: true)
         }
-        print("[Gemini] \u{2705} Using Rork toolkit proxy (\(Self.model)) — image \(Int(image.size.width))x\(Int(image.size.height)) slope=\(slope.rawValue) mode=\(mode.rawValue)")
+        print("[VisionAI] \u{2705} Using Rork toolkit proxy (\(Self.model), fallbacks: \(Self.fallbackModels.joined(separator: ", "))) — image \(Int(image.size.width))x\(Int(image.size.height)) slope=\(slope.rawValue) mode=\(mode.rawValue)")
 
         guard let base64 = ImageResize.encodedJPEGBase64(from: image, profile: .full) else {
             return AnalysisResult(findings: Self.failureFinding(reason: "Could not encode photo for analysis."),
@@ -180,6 +187,13 @@ struct GeminiAnalysisService {
 
         Identify the roof covering and any visible damage. Be conservative — only flag damage you can actually see in the pixels. Empty arrays are correct when nothing is visible.
 
+        CRITICAL LOCALIZATION RULES:
+        - Every marker center must land on the actual damaged pixel, not the center of a shingle, not a grid cell, and not an approximate region.
+        - Do NOT mark every shingle, every tab, or every stain. Repeating rows/columns of markers are invalid.
+        - Hail markers require visible circular/oval impact evidence: bruising, crushed granules, exposed mat, pitting, or dark impact ring.
+        - Shingle damage markers must include missing tabs, lifted/torn shingle edges, punctures, cracks, exposed mat, or wind creases. Do not ignore these.
+        - If the photo is too blurry or low-resolution to localize a spot, skip that marker instead of guessing.
+
         Return STRICT JSON only (no markdown), with this schema:
         {
           "analyzed": true|false,
@@ -188,13 +202,13 @@ struct GeminiAnalysisService {
             { "label": "hail_damage|granule_loss|missing_shingles|wind_creasing|blistering|cracking_splitting|flashing_damage|algae_moss|bruising|structural_sagging", "detected": true|false, "severity": "none|minor|moderate|severe", "confidence": 0-100, "count": <int>, "note": "<short evidence>" }
           ],
           "damage_markers": [
-            { "type": "hail_strike|crack|granule_loss|missing_shingle|wind_crease|blister|flashing|algae|other", "x": 0.0-1.0, "y": 0.0-1.0, "radius": 0.0-1.0, "severity": "minor|moderate|severe", "confidence": 0-100, "note": "<short pixel evidence>" }
+            { "type": "hail_strike|shingle_bruise|exposed_mat|crack|granule_loss|missing_shingle|lifted_shingle|torn_shingle|wind_crease|blister|flashing|algae|other", "x": 0.0-1.0, "y": 0.0-1.0, "width": 0.0-1.0, "height": 0.0-1.0, "radius": 0.0-1.0, "severity": "minor|moderate|severe", "confidence": 0-100, "note": "<short pixel evidence visible exactly at x/y>" }
           ]
         }
 
-        Coordinates MUST be normalized fractions of the image: x = (pixel_x / image_width), y = (pixel_y / image_height). 0.0 = left/top, 1.0 = right/bottom, top-left origin. (x,y) is the CENTER of the feature; radius is roughly half the feature size relative to the shorter image edge. NEVER return pixel values. NEVER return values outside [0, 1]. Measure coordinates against THIS image as you see it (do not rotate).
+        Coordinates MUST be normalized fractions of the image: x = (pixel_x / image_width), y = (pixel_y / image_height). 0.0 = left/top, 1.0 = right/bottom, top-left origin. (x,y) is the CENTER of the feature; width/height/radius describe only that damaged feature, not the entire shingle. NEVER return pixel values. NEVER return values outside [0, 1]. Measure coordinates against THIS image as you see it (do not rotate).
 
-        Include all 10 damage categories in `findings` (set detected=false for ones not present). Mark each visible hail strike individually. If the image is NOT a roof (grass, sky, indoors, person, vehicle), set analyzed=false, return empty `damage_markers`, and add a finding with label="no_roof_detected".
+        Include all 10 damage categories in `findings` (set detected=false for ones not present). Mark each visible hail strike and each visible shingle defect individually only when exact pixel evidence is present. If the image is NOT a roof (grass, sky, indoors, person, vehicle), set analyzed=false, return empty `damage_markers`, and add a finding with label="no_roof_detected".
         """
 
         let body = Self.chatCompletionBody(systemPrompt: prompt,
@@ -227,8 +241,9 @@ struct GeminiAnalysisService {
                 print("[Gemini] \u{1F4E5} raw response (\(data.count) bytes): \(raw.prefix(1200))")
             }
             if let parsed = Self.parseResponse(data) {
-                print("[Gemini] \u{2705} parsed: \(parsed.findings.count) findings, \(parsed.markers.count) markers")
-                return parsed
+                let refined = parsed.refiningMarkers(in: image)
+                print("[VisionAI] \u{2705} parsed: \(parsed.findings.count) findings, \(parsed.markers.count) markers → \(refined.markers.count) pixel-refined markers")
+                return refined
             }
             print("[Gemini] \u{274C} Could not parse response JSON.")
             return AnalysisResult(
@@ -255,6 +270,11 @@ struct GeminiAnalysisService {
         return [
             "model": Self.model,
             "temperature": temperature,
+            "providerOptions": [
+                "gateway": [
+                    "models": Self.fallbackModels
+                ]
+            ],
             "messages": [
                 ["role": "system", "content": systemPrompt],
                 ["role": "user", "content": [
@@ -399,8 +419,8 @@ struct GeminiAnalysisService {
     }
 
     private static func markerFromDict(_ dict: [String: Any]) -> DamageMarker? {
-        let typeRaw = (dict["type"] as? String) ?? "other"
-        let type = DamageMarkerType(rawValue: typeRaw) ?? .other
+        let typeRaw = ((dict["type"] as? String) ?? "other").trimmingCharacters(in: .whitespacesAndNewlines)
+        let type = DamageMarkerType(rawValue: typeRaw) ?? DamageMarkerType.alias(for: typeRaw)
         guard let xVal = (dict["x"] as? Double) ?? (dict["x"] as? NSNumber)?.doubleValue,
               let yVal = (dict["y"] as? Double) ?? (dict["y"] as? NSNumber)?.doubleValue else {
             return nil
@@ -517,4 +537,230 @@ struct GeminiAnalysisService {
         )]
     }
 
+}
+
+private extension GeminiAnalysisService.AnalysisResult {
+    /// Moves AI markers onto the nearest visible damage-like pixel cluster and
+    /// suppresses grid-style hallucinations that do not have local pixel evidence.
+    func refiningMarkers(in image: UIImage) -> GeminiAnalysisService.AnalysisResult {
+        guard !markers.isEmpty else { return self }
+        guard let refiner = DamageMarkerPixelRefiner(image: image) else { return self }
+        let looksLikeGrid = DamageMarkerPixelRefiner.isLikelyUniformGrid(markers)
+        let candidates: [DamageMarker] = markers.compactMap { marker in
+            refiner.refined(marker: marker, requireStrongEvidence: looksLikeGrid)
+        }
+        let refinedMarkers = DamageMarkerPixelRefiner.deduplicated(candidates)
+        return GeminiAnalysisService.AnalysisResult(findings: findings,
+                                                    markers: refinedMarkers,
+                                                    failed: failed,
+                                                    usedMock: usedMock,
+                                                    noRoofDetected: noRoofDetected,
+                                                    shingleType: shingleType,
+                                                    shingleTypeConfidence: shingleTypeConfidence,
+                                                    shingleTypeNote: shingleTypeNote)
+    }
+}
+
+private struct DamageMarkerPixelRefiner {
+    private struct PixelCandidate {
+        let x: Int
+        let y: Int
+        let score: Double
+        let radius: CGFloat
+    }
+
+    private let width: Int
+    private let height: Int
+    private let bytesPerRow: Int
+    private let data: [UInt8]
+
+    init?(image: UIImage) {
+        guard let cgImage = image.normalizedOrientation().cgImage else { return nil }
+        width = cgImage.width
+        height = cgImage.height
+        bytesPerRow = width * 4
+        var buffer = [UInt8](repeating: 0, count: height * bytesPerRow)
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        guard let context = CGContext(data: &buffer,
+                                      width: width,
+                                      height: height,
+                                      bitsPerComponent: 8,
+                                      bytesPerRow: bytesPerRow,
+                                      space: colorSpace,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
+            return nil
+        }
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+        data = buffer
+    }
+
+    func refined(marker: DamageMarker, requireStrongEvidence: Bool) -> DamageMarker? {
+        guard width > 0, height > 0 else { return marker }
+        guard let candidate = bestCandidate(near: marker) else {
+            return requireStrongEvidence ? nil : marker
+        }
+
+        let minimumScore = requireStrongEvidence ? 0.145 : evidenceThreshold(for: marker.type)
+        guard candidate.score >= minimumScore else {
+            return requireStrongEvidence ? nil : marker
+        }
+
+        return DamageMarker(x: CGFloat(candidate.x) / CGFloat(max(width - 1, 1)),
+                            y: CGFloat(candidate.y) / CGFloat(max(height - 1, 1)),
+                            radius: max(0.008, min(0.035, candidate.radius)),
+                            type: marker.type,
+                            severity: marker.severity,
+                            note: marker.note,
+                            confidence: marker.confidence)
+    }
+
+    private func bestCandidate(near marker: DamageMarker) -> PixelCandidate? {
+        let centerX = Int(max(0, min(1, marker.x)) * CGFloat(max(width - 1, 1)))
+        let centerY = Int(max(0, min(1, marker.y)) * CGFloat(max(height - 1, 1)))
+        let normalizedSearch = max(0.025, min(0.075, marker.radius * 2.25))
+        let baseRadius = max(16, min(104, Int(CGFloat(min(width, height)) * normalizedSearch)))
+        let step = max(1, baseRadius / 24)
+        var best: PixelCandidate?
+
+        for y in stride(from: max(2, centerY - baseRadius), through: min(height - 3, centerY + baseRadius), by: step) {
+            for x in stride(from: max(2, centerX - baseRadius), through: min(width - 3, centerX + baseRadius), by: step) {
+                let distance = hypot(Double(x - centerX), Double(y - centerY)) / Double(max(baseRadius, 1))
+                guard distance <= 1.0 else { continue }
+                let score = damageEvidenceScore(x: x, y: y, type: marker.type) - distance * 0.035
+                if score > (best?.score ?? -.greatestFiniteMagnitude) {
+                    let visualRadius = CGFloat(max(5, min(18, baseRadius / 4))) / CGFloat(min(width, height))
+                    best = PixelCandidate(x: x, y: y, score: score, radius: visualRadius)
+                }
+            }
+        }
+        return best
+    }
+
+    private func damageEvidenceScore(x: Int, y: Int, type: DamageMarkerType) -> Double {
+        let inner = meanLuma(centerX: x, centerY: y, radius: 3)
+        let outer = meanLuma(centerX: x, centerY: y, radius: 13)
+        let edge = localEdgeEnergy(x: x, y: y)
+        let darkImpact = max(0, outer - inner)
+        let circularDarkImpact = darkCircularEvidence(x: x, y: y, centerLuma: inner)
+        let brightExposure = max(0, inner - outer)
+        let lumaContrast = abs(outer - inner)
+
+        switch type {
+        case .hailStrike, .shingleBruise:
+            return circularDarkImpact * 1.85 + darkImpact * 0.45 + edge * 0.28
+        case .granuleLoss, .exposedMat:
+            return max(darkImpact, brightExposure) * 0.95 + edge * 0.85
+        case .crack, .windCrease, .liftedShingle, .tornShingle, .missingShingle:
+            return lumaContrast * 0.85 + edge * 1.25
+        case .flashing, .blister, .algae, .other:
+            return lumaContrast * 0.85 + edge * 0.8
+        }
+    }
+
+    private func evidenceThreshold(for type: DamageMarkerType) -> Double {
+        switch type {
+        case .hailStrike, .shingleBruise: return 0.085
+        case .missingShingle, .liftedShingle, .tornShingle, .windCrease, .crack: return 0.065
+        default: return 0.055
+        }
+    }
+
+    private func meanLuma(centerX: Int, centerY: Int, radius: Int) -> Double {
+        var total: Double = 0
+        var count: Double = 0
+        let minY = max(0, centerY - radius)
+        let maxY = min(height - 1, centerY + radius)
+        let minX = max(0, centerX - radius)
+        let maxX = min(width - 1, centerX + radius)
+        for y in minY...maxY {
+            for x in minX...maxX {
+                total += luma(x: x, y: y)
+                count += 1
+            }
+        }
+        return count > 0 ? total / count : 0
+    }
+
+    private func localEdgeEnergy(x: Int, y: Int) -> Double {
+        let left = luma(x: max(0, x - 2), y: y)
+        let right = luma(x: min(width - 1, x + 2), y: y)
+        let top = luma(x: x, y: max(0, y - 2))
+        let bottom = luma(x: x, y: min(height - 1, y + 2))
+        return (abs(left - right) + abs(top - bottom)) / 2
+    }
+
+    private func darkCircularEvidence(x: Int, y: Int, centerLuma: Double) -> Double {
+        let r = 9
+        let samples = [
+            luma(x: max(0, x - r), y: y),
+            luma(x: min(width - 1, x + r), y: y),
+            luma(x: x, y: max(0, y - r)),
+            luma(x: x, y: min(height - 1, y + r))
+        ]
+        let directionalLift = samples.map { max(0, $0 - centerLuma) }
+        let weakestDirection = directionalLift.min() ?? 0
+        let averageLift = directionalLift.reduce(0, +) / Double(max(directionalLift.count, 1))
+        return weakestDirection * 0.7 + averageLift * 0.3
+    }
+
+    private func luma(x: Int, y: Int) -> Double {
+        let offset = y * bytesPerRow + x * 4
+        guard offset + 2 < data.count else { return 0 }
+        let r = Double(data[offset]) / 255
+        let g = Double(data[offset + 1]) / 255
+        let b = Double(data[offset + 2]) / 255
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b
+    }
+
+    static func deduplicated(_ markers: [DamageMarker]) -> [DamageMarker] {
+        var accepted: [DamageMarker] = []
+        for marker in markers.sorted(by: { $0.confidence > $1.confidence }) {
+            let minimumDistance: CGFloat = marker.type == .hailStrike || marker.type == .shingleBruise ? 0.026 : 0.018
+            let isDuplicate = accepted.contains { existing in
+                existing.type == marker.type && hypot(existing.x - marker.x, existing.y - marker.y) < minimumDistance
+            }
+            if !isDuplicate { accepted.append(marker) }
+        }
+        return accepted
+    }
+
+    static func isLikelyUniformGrid(_ markers: [DamageMarker]) -> Bool {
+        guard markers.count >= 16 else { return false }
+        let hailLike = markers.filter { $0.type == .hailStrike || $0.type == .shingleBruise }
+        guard hailLike.count >= 12 else { return false }
+        let xBuckets = bucketCenters(hailLike.map { Double($0.x) })
+        let yBuckets = bucketCenters(hailLike.map { Double($0.y) })
+        guard xBuckets.count >= 4, yBuckets.count >= 4 else { return false }
+        let xRegularity = regularityScore(xBuckets)
+        let yRegularity = regularityScore(yBuckets)
+        let latticeCapacity = xBuckets.count * yBuckets.count
+        let fill = Double(hailLike.count) / Double(max(latticeCapacity, 1))
+        return xRegularity > 0.72 && yRegularity > 0.72 && fill > 0.45
+    }
+
+    private static func bucketCenters(_ values: [Double]) -> [Double] {
+        let sorted = values.sorted()
+        var buckets: [[Double]] = []
+        for value in sorted {
+            if let last = buckets.indices.last,
+               let currentMean = buckets[last].isEmpty ? nil : buckets[last].reduce(0, +) / Double(buckets[last].count),
+               abs(value - currentMean) < 0.035 {
+                buckets[last].append(value)
+            } else {
+                buckets.append([value])
+            }
+        }
+        return buckets.map { $0.reduce(0, +) / Double(max($0.count, 1)) }
+    }
+
+    private static func regularityScore(_ centers: [Double]) -> Double {
+        guard centers.count >= 4 else { return 0 }
+        let gaps = zip(centers.dropLast(), centers.dropFirst()).map { $1 - $0 }.filter { $0 > 0.01 }
+        guard gaps.count >= 3 else { return 0 }
+        let mean = gaps.reduce(0, +) / Double(gaps.count)
+        guard mean > 0 else { return 0 }
+        let variance = gaps.map { pow($0 - mean, 2) }.reduce(0, +) / Double(gaps.count)
+        let coefficient = sqrt(variance) / mean
+        return max(0, min(1, 1 - coefficient * 3))
+    }
 }
