@@ -1,4 +1,5 @@
 import SwiftUI
+import CoreLocation
 
 struct JobDetailView: View {
     @Environment(\.dismiss) private var dismiss
@@ -10,6 +11,8 @@ struct JobDetailView: View {
     @State private var pdfShareURL: URL? = nil
     @State private var isGenerating = false
     @State private var showWeather = false
+    @State private var stormMatchFocus: StormPinEvent? = nil
+    @State private var showStormOnMap = false
 
     let reportId: String
 
@@ -25,6 +28,9 @@ struct JobDetailView: View {
                 VStack(alignment: .leading, spacing: 20) {
                     if let insp = inspection {
                         header(insp)
+                        if !insp.event.weatherSources.isEmpty {
+                            stormMatchCard(insp)
+                        }
                         if insp.slopes.isEmpty {
                             emptySlopesCard
                         } else {
@@ -67,6 +73,12 @@ struct JobDetailView: View {
         }
         .navigationDestination(isPresented: $showSignatures) {
             SignaturesView(reportId: reportId)
+        }
+        .navigationDestination(isPresented: $showStormOnMap) {
+            MapHubView(currentReportId: reportId, focusedStorm: stormMatchFocus)
+        }
+        .task(id: reportId) {
+            await store.autoPopulateEvent(for: reportId)
         }
         .sheet(item: Binding(
             get: { pdfShareURL.map(IdentifiableURL.init) },
@@ -479,6 +491,83 @@ struct JobDetailView: View {
         .foregroundStyle(signed ? Theme.mint : Theme.inkSoft)
         .padding(.horizontal, 8).padding(.vertical, 4)
         .background((signed ? Theme.mintSoft : Theme.canvas), in: .capsule)
+    }
+
+    // MARK: Storm match card
+
+    private func stormMatchCard(_ insp: Inspection) -> some View {
+        let event = insp.event
+        let dateText = event.eventDate?.formatted(date: .abbreviated, time: .omitted) ?? "—"
+        let magText: String = {
+            if let h = event.hailMaxSizeIn { return String(format: "%.2f\" hail", h) }
+            if let w = event.windMaxGustMph { return "\(Int(w)) mph wind" }
+            return "Storm event"
+        }()
+        let isHail = event.hailMaxSizeIn != nil
+        let tint: Color = isHail ? Theme.sky : Theme.ember
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12).fill(tint.opacity(0.15))
+                    Image(systemName: isHail ? "cloud.hail.fill" : "wind")
+                        .font(.system(size: Theme.TypeRamp.subhead, weight: .heavy))
+                        .foregroundStyle(tint)
+                }
+                .frame(width: 44, height: 44)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("STORM MATCH")
+                        .font(.system(size: Theme.TypeRamp.captionSm, weight: .heavy))
+                        .tracking(1.2)
+                        .foregroundStyle(Theme.inkSoft)
+                    Text("\(dateText) · \(magText)")
+                        .font(.system(size: Theme.TypeRamp.body, weight: .heavy))
+                        .foregroundStyle(Theme.ink)
+                }
+                Spacer()
+                ForEach(event.weatherSources, id: \.self) { src in
+                    Text(src)
+                        .font(.system(size: Theme.TypeRamp.captionSm, weight: .heavy))
+                        .tracking(0.8)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(Theme.ink, in: .capsule)
+                }
+            }
+            Button {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                stormMatchFocus = stormPin(from: event)
+                showStormOnMap = true
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "map.fill")
+                        .font(.system(size: Theme.TypeRamp.body, weight: .heavy))
+                    Text("View on Map")
+                        .font(.system(size: Theme.TypeRamp.cta, weight: .heavy))
+                }
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity, minHeight: 64)
+                .background(Theme.inkGradient, in: .rect(cornerRadius: 16))
+                .shadow(color: Theme.ink.opacity(0.18), radius: 12, y: 4)
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cardStyle(padding: 16, radius: 18)
+    }
+
+    private func stormPin(from event: InspectionEvent) -> StormPinEvent {
+        // Reuse the same stable-coord helper MapHubView uses for jobs so the
+        // pin lands where the job marker already does.
+        let address = inspection?.job.propertyAddress ?? ""
+        let coord = GeocodingServiceFactory.eagerCoord(forAddress: address)
+        return StormPinEvent(
+            date: event.eventDate ?? .now,
+            hailSizeIn: event.hailMaxSizeIn,
+            windGustMph: event.windMaxGustMph.map { Int($0.rounded()) },
+            latitude: coord.latitude,
+            longitude: coord.longitude,
+            source: event.weatherSources.first ?? "NOAA"
+        )
     }
 
     // MARK: Decision banner

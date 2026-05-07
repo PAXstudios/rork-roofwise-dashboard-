@@ -1,4 +1,5 @@
 import Foundation
+import CoreLocation
 import Observation
 import UIKit
 
@@ -103,6 +104,105 @@ final class InspectionStore {
     /// and the roof-level summary stay in lock-step with the latest data.
     private func recomputeSummary(_ insp: inout Inspection) {
         insp = DecisionEngine.decide(insp)
+    }
+
+    // MARK: Storm event auto-population
+
+    /// Fills `event` on the inspection identified by `reportId` from the
+    /// supplied storm match. Skips fields that are already populated unless
+    /// `overwrite` is true. Always dedupes `weather_sources`.
+    @discardableResult
+    func applyStormMatch(_ storm: NoaaStormEvent,
+                         to reportId: String,
+                         overwrite: Bool = false) -> Bool {
+        guard let idx = inspections.firstIndex(where: { $0.job.reportId == reportId }) else {
+            return false
+        }
+        var insp = inspections[idx]
+        var event = insp.event
+        let alreadyHasData = event.hasHail || event.hasWind
+            || event.hailMaxSizeIn != nil || event.windMaxGustMph != nil
+            || event.eventDate != nil
+        if alreadyHasData && !overwrite { return false }
+
+        if event.eventDate == nil || overwrite {
+            event.eventDate = storm.eventDate
+        }
+        switch storm.eventType {
+        case .hail:
+            event.hasHail = true
+            if let mag = storm.magnitudeIn,
+               overwrite || (event.hailMaxSizeIn ?? 0) < mag {
+                event.hailMaxSizeIn = mag
+            }
+        case .wind, .tornado:
+            event.hasWind = true
+            if let mph = storm.windMph.map(Double.init),
+               overwrite || (event.windMaxGustMph ?? 0) < mph {
+                event.windMaxGustMph = mph
+            }
+        }
+        if !event.weatherSources.contains(storm.source) {
+            event.weatherSources.append(storm.source)
+        }
+        insp.event = event
+        recomputeSummary(&insp)
+        inspections[idx] = insp
+        save()
+        return true
+    }
+
+    /// Geocodes the inspection's property address and pulls NOAA storm events
+    /// near it, auto-populating `event` if a hail or wind match falls within
+    /// 30 days of the inspection_date. No-op if `event` is already populated.
+    func autoPopulateEvent(for reportId: String,
+                           geocoder: GeocodingService = GeocodingServiceFactory.shared,
+                           stormService: StormEventsServicing = StormEventsServiceFactory.shared) async {
+        guard let insp = inspection(with: reportId) else { return }
+        let event = insp.event
+        let alreadyHasData = event.hasHail || event.hasWind
+            || event.hailMaxSizeIn != nil || event.windMaxGustMph != nil
+            || event.eventDate != nil
+        if alreadyHasData { return }
+
+        let address = insp.job.propertyAddress.trimmingCharacters(in: .whitespaces)
+        guard !address.isEmpty else { return }
+
+        let coord: CLLocationCoordinate2D? = (try? await geocoder.geocode(address)) ?? nil
+        guard let coord else { return }
+
+        let events: [NoaaStormEvent]
+        do {
+            events = try await stormService.events(near: coord, radiusMi: 5, sinceMonthsBack: 24)
+        } catch {
+            return
+        }
+        guard !events.isEmpty else { return }
+
+        let inspectionDate = insp.job.inspectionDate
+        let window: TimeInterval = 30 * 24 * 60 * 60
+        let inWindow = events.filter {
+            abs($0.eventDate.timeIntervalSince(inspectionDate)) <= window
+        }
+        guard !inWindow.isEmpty else { return }
+
+        let bestHail = inWindow
+            .filter { $0.eventType == .hail }
+            .min(by: {
+                abs($0.eventDate.timeIntervalSince(inspectionDate)) <
+                    abs($1.eventDate.timeIntervalSince(inspectionDate))
+            })
+        let bestWind = inWindow
+            .filter { $0.eventType == .wind || $0.eventType == .tornado }
+            .min(by: {
+                abs($0.eventDate.timeIntervalSince(inspectionDate)) <
+                    abs($1.eventDate.timeIntervalSince(inspectionDate))
+            })
+
+        await MainActor.run {
+            if let h = bestHail { _ = self.applyStormMatch(h, to: reportId) }
+            if let w = bestWind { _ = self.applyStormMatch(w, to: reportId) }
+        }
     }
 
     // MARK: Session photos (in-memory, not persisted to JSON)

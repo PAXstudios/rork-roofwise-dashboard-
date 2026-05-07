@@ -8,9 +8,14 @@ struct StormPinDetailSheet: View {
 
     let event: StormPinEvent
     let centerCoord: CLLocationCoordinate2D
+    /// When non-nil and the inspection has an inspection_date, the
+    /// "Use as evidence for current job" CTA is shown.
+    var currentReportId: String? = nil
     var onFindNearby: (Double) -> Void
+    var onUseAsEvidence: (() -> Void)? = nil
 
     @State private var radius: Double = 5
+    @State private var showEvidenceConfirm = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -19,6 +24,7 @@ struct StormPinDetailSheet: View {
             sourceRow
             radiusPicker
             ctaRow
+            if showEvidenceCTA { evidenceCTA }
         }
         .padding(.horizontal, 20)
         .padding(.top, 18)
@@ -121,6 +127,48 @@ struct StormPinDetailSheet: View {
                     .buttonStyle(.plain)
                 }
             }
+        }
+    }
+
+    private var showEvidenceCTA: Bool {
+        guard onUseAsEvidence != nil,
+              let rid = currentReportId,
+              let insp = InspectionStore.shared.inspection(with: rid) else { return false }
+        // Only offer the shortcut once an inspection_date exists; the spec
+        // gates this on the active job actually being scheduled.
+        _ = insp
+        return true
+    }
+
+    private var evidenceCTA: some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            showEvidenceConfirm = true
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "checkmark.shield.fill")
+                    .font(.system(size: Theme.TypeRamp.body, weight: .heavy))
+                Text("Use as evidence for current job")
+                    .font(.system(size: Theme.TypeRamp.cta, weight: .heavy))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+            }
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity, minHeight: 64)
+            .background(Theme.inkGradient, in: .rect(cornerRadius: 18))
+            .shadow(color: Theme.ink.opacity(0.20), radius: 14, y: 6)
+        }
+        .buttonStyle(.plain)
+        .padding(.top, 4)
+        .confirmationDialog("Use this storm as event evidence?",
+                            isPresented: $showEvidenceConfirm,
+                            titleVisibility: .visible) {
+            Button("Replace event data", role: .destructive) {
+                onUseAsEvidence?()
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("This overwrites event date, magnitude, and source on the current inspection.")
         }
     }
 

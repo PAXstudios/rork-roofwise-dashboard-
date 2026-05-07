@@ -227,6 +227,11 @@ struct NewJobWizard: View {
         UINotificationFeedbackGenerator().notificationOccurred(.success)
         onCreated(saved.job.reportId)
         createdReportId = saved.job.reportId
+        // Fire-and-forget: geocode the address and try to auto-fill the
+        // event{} fields from NOAA storm history.
+        Task.detached {
+            await InspectionStore.shared.autoPopulateEvent(for: saved.job.reportId)
+        }
     }
 }
 

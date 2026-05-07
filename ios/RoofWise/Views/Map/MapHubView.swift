@@ -28,11 +28,20 @@ struct MapEntityPin: Identifiable, Hashable {
 // MARK: - Hub view
 
 struct MapHubView: View {
+    /// Optional inspection context. When set, the storm detail sheet exposes
+    /// the "Use as evidence for current job" CTA, and an initial focus pin
+    /// is selected on appear.
+    var currentReportId: String? = nil
+    var focusedStorm: StormPinEvent? = nil
+
     // Layer toggles
     @State private var showLeads  = true
     @State private var showJobs   = true
     @State private var showStorms = true
     @State private var showKnocks = true
+
+    // Storms date-range scrubber (months back).
+    @State private var stormMonthsBack: Int = 24
 
     // Camera
     @State private var camera: MapCameraPosition = .region(
@@ -46,6 +55,7 @@ struct MapHubView: View {
 
     // Data
     @State private var storms: [StormPinEvent] = []
+    @State private var stormEvents: [NoaaStormEvent] = []
     @State private var radiusFilterMiles: Double? = nil
     @State private var radiusFilterCenter: CLLocationCoordinate2D? = nil
 
@@ -61,8 +71,10 @@ struct MapHubView: View {
     @State private var showFloatingScript = false
     @State private var floatingScriptOutcome: KnockOutcome = .interested
 
-    // Service injected from APIKeys flag
+    // Services injected from APIKeys flag
     private let mapsService: MapsService = MapsServiceFactory.make()
+    private let stormService: StormEventsServicing = StormEventsServiceFactory.shared
+    private let geocoder: GeocodingService = GeocodingServiceFactory.shared
 
     // Pre-computed entity pins (mock-derived from existing stores).
     private var leadPins: [MapEntityPin] { Self.mockLeadPins }
@@ -146,6 +158,10 @@ struct MapHubView: View {
             }
         }
         .task { await loadStorms() }
+        .onAppear { presentFocusedStormIfNeeded() }
+        .onChange(of: stormMonthsBack) { _, _ in
+            Task { await loadStorms() }
+        }
         .sheet(item: $editingHouse) { h in
             KnockOutcomeSheet(store: knockStore, houseID: h.id)
                 .presentationDetents([.large])
@@ -155,12 +171,18 @@ struct MapHubView: View {
             StormPinDetailSheet(
                 event: storm,
                 centerCoord: lastRegion.center,
+                currentReportId: currentReportId,
                 onFindNearby: { miles in
                     selectedStorm = nil
                     applyRadiusFilter(center: storm.coordinate, miles: miles)
+                },
+                onUseAsEvidence: currentReportId.map { rid in
+                    {
+                        applyEvidence(storm: storm, reportId: rid)
+                    }
                 }
             )
-            .presentationDetents([.medium])
+            .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showAddressPicker) {
@@ -306,6 +328,42 @@ struct MapHubView: View {
                 }
                 .padding(.horizontal, 16)
             }
+
+            if showStorms {
+                stormDateScrubber
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: showStorms)
+    }
+
+    private var stormDateScrubber: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 12) {
+                ForEach([3, 6, 12, 24], id: \.self) { m in
+                    Button {
+                        let g = UISelectionFeedbackGenerator(); g.selectionChanged()
+                        stormMonthsBack = m
+                    } label: {
+                        Text("\(m)m")
+                            .font(.system(size: Theme.TypeRamp.bodyTight, weight: .heavy))
+                            .foregroundStyle(stormMonthsBack == m ? .white : Theme.ink)
+                            .frame(minWidth: 64, minHeight: 56)
+                            .padding(.horizontal, 14)
+                            .background(
+                                stormMonthsBack == m
+                                    ? AnyShapeStyle(Theme.crimson)
+                                    : AnyShapeStyle(.ultraThinMaterial),
+                                in: .capsule
+                            )
+                            .overlay(Capsule()
+                                .stroke(stormMonthsBack == m ? .clear : Theme.hairline,
+                                        lineWidth: 0.6))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 16)
         }
     }
 
@@ -535,8 +593,56 @@ struct MapHubView: View {
     // MARK: - Data
 
     private func loadStorms() async {
-        let fresh = await mapsService.recentStorms()
-        await MainActor.run { self.storms = fresh }
+        // Use NOAA-backed storm events. Region is the current camera center,
+        // padded so the user always sees a reasonable spread when zoomed in.
+        let center = lastRegion.center
+        let radius = max(50.0, Double(lastRegion.span.latitudeDelta) * 70.0)
+        let fresh = (try? await stormService.events(
+            near: center, radiusMi: radius, sinceMonthsBack: stormMonthsBack
+        )) ?? []
+        await MainActor.run {
+            self.stormEvents = fresh
+            self.storms = fresh.map { $0.asPin }
+        }
+    }
+
+    private func presentFocusedStormIfNeeded() {
+        guard let pin = focusedStorm else { return }
+        // Recenter and pop the detail sheet on the next runloop so the map is
+        // mounted before we mutate camera state.
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(120))
+            let region = MKCoordinateRegion(
+                center: pin.coordinate,
+                span: .init(latitudeDelta: 0.08, longitudeDelta: 0.08)
+            )
+            self.lastRegion = region
+            withAnimation(.easeInOut(duration: 0.4)) { self.camera = .region(region) }
+            if !self.storms.contains(where: { $0.id == pin.id }) {
+                self.storms.append(pin)
+            }
+            self.selectedStorm = pin
+        }
+    }
+
+    private func applyEvidence(storm: StormPinEvent, reportId: String) {
+        // Convert the on-map StormPinEvent into the canonical StormEvent that
+        // InspectionStore knows how to apply.
+        let kind: StormEventType = storm.isHail ? .hail
+            : (storm.windGustMph != nil ? .wind : .hail)
+        let evt = NoaaStormEvent(
+            id: storm.id.uuidString,
+            eventDate: storm.date,
+            eventType: kind,
+            magnitudeIn: storm.hailSizeIn,
+            windMph: storm.windGustMph,
+            latitude: storm.latitude,
+            longitude: storm.longitude,
+            source: storm.source
+        )
+        _ = InspectionStore.shared.applyStormMatch(evt, to: reportId, overwrite: true)
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        selectedStorm = nil
     }
 
     // MARK: - Mock geo helpers
