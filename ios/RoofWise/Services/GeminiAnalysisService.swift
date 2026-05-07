@@ -57,6 +57,20 @@ struct GeminiAnalysisService {
         /// Structured Phase 8 category confidence snapshot from Gemini.
         var confidenceSnapshot: AIDamageConfidenceSnapshot = .empty
         var confidenceAvg: Double { confidenceSnapshot.confidenceAvg }
+        /// Literal error message surfaced from the upstream Gemini / toolkit
+        /// response (e.g. the `error.message` field) when `failed == true`.
+        /// Callers (QuickInspectionView, SlopeCaptureView) present this as an
+        /// alert so the inspector sees the actual reason instead of a generic
+        /// 'something went wrong'. nil on success.
+        var errorMessage: String? = nil
+    }
+
+    /// Thrown by callers that want a structured failure carrying the literal
+    /// upstream Gemini error message.
+    struct AnalysisError: LocalizedError {
+        let message: String
+        let statusCode: Int?
+        var errorDescription: String? { message }
     }
 
     /// Convenience for legacy callers that only need findings.
@@ -234,11 +248,13 @@ struct GeminiAnalysisService {
             let (data, response) = try await URLSession.shared.data(for: req)
             print("[Gemini] \u{23F1}\u{FE0F} round-trip \(String(format: "%.2f", Date().timeIntervalSince(started)))s, \(data.count) bytes")
             if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-                Self.logHTTPFailure(prefix: "[Gemini]", statusCode: http.statusCode, data: data)
+                let upstream = Self.logHTTPFailure(prefix: "[GeminiAnalysisService]", statusCode: http.statusCode, data: data)
+                let message = upstream ?? "AI service returned HTTP \(http.statusCode)."
                 return AnalysisResult(
-                    findings: Self.failureFinding(reason: "AI service returned HTTP \(http.statusCode). Tap retry."),
+                    findings: Self.failureFinding(reason: message),
                     markers: [],
-                    failed: true
+                    failed: true,
+                    errorMessage: message
                 )
             }
             // Log raw response (truncated) so we can debug what Gemini actually returned.
@@ -257,11 +273,13 @@ struct GeminiAnalysisService {
                 failed: true
             )
         } catch {
-            print("[Gemini] \u{274C} Request failed: \(error.localizedDescription)")
+            let msg = "Network error during AI analysis: \(error.localizedDescription)"
+            print("[GeminiAnalysisService] \u{274C} Request failed: \(error.localizedDescription)")
             return AnalysisResult(
-                findings: Self.failureFinding(reason: "Network error during AI analysis. Tap retry."),
+                findings: Self.failureFinding(reason: msg),
                 markers: [],
-                failed: true
+                failed: true,
+                errorMessage: msg
             )
         }
     }
@@ -368,9 +386,22 @@ struct GeminiAnalysisService {
 
     // MARK: - Parsing
 
-    private static func logHTTPFailure(prefix: String, statusCode: Int, data: Data) {
+    /// Unconditionally prints the FULL response body (status + body) on a
+    /// single tagged print line so it shows up in Rork's log panel, and
+    /// returns the parsed upstream `error.message` string (Gemini /
+    /// toolkit / OpenAI-style) when present, else the raw body.
+    @discardableResult
+    private static func logHTTPFailure(prefix: String, statusCode: Int, data: Data) -> String? {
         let body = String(data: data, encoding: .utf8) ?? "<non-UTF8 body, \(data.count) bytes>"
-        print("\(prefix) ❌ HTTP \(statusCode) FULL RESPONSE BODY:\n\(body)")
+        print("[GeminiAnalysisService] \u{274C} HTTP \(statusCode) FULL RESPONSE BODY: \(body)")
+        // Try to parse a literal upstream error.message string.
+        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            if let err = json["error"] as? [String: Any], let m = err["message"] as? String, !m.isEmpty {
+                return m
+            }
+            if let m = json["message"] as? String, !m.isEmpty { return m }
+        }
+        return body.isEmpty ? nil : body
     }
 
     private static func parseResponse(_ data: Data) -> AnalysisResult? {
@@ -473,7 +504,8 @@ struct GeminiAnalysisService {
                               shingleType: shingleTypeName,
                               shingleTypeConfidence: shingleTypeConfidence,
                               shingleTypeNote: shingleTypeNote,
-                              confidenceSnapshot: confidenceSnapshot)
+                              confidenceSnapshot: confidenceSnapshot,
+                              errorMessage: nil)
     }
 
     private static func confidenceSnapshot(from payload: [String: Any]) -> AIDamageConfidenceSnapshot {
@@ -802,7 +834,8 @@ private extension GeminiAnalysisService.AnalysisResult {
                                                     shingleType: shingleType,
                                                     shingleTypeConfidence: shingleTypeConfidence,
                                                     shingleTypeNote: shingleTypeNote,
-                                                    confidenceSnapshot: confidenceSnapshot)
+                                                    confidenceSnapshot: confidenceSnapshot,
+                                                    errorMessage: errorMessage)
     }
 
     func applyingLocalCalibration() -> GeminiAnalysisService.AnalysisResult {
@@ -814,7 +847,8 @@ private extension GeminiAnalysisService.AnalysisResult {
                                              shingleType: shingleType,
                                              shingleTypeConfidence: shingleTypeConfidence,
                                              shingleTypeNote: shingleTypeNote,
-                                             confidenceSnapshot: LocalLearningEngine.shared.adjustedSnapshot(confidenceSnapshot))
+                                             confidenceSnapshot: LocalLearningEngine.shared.adjustedSnapshot(confidenceSnapshot),
+                                             errorMessage: errorMessage)
     }
 }
 

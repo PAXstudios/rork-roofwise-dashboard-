@@ -60,6 +60,9 @@ struct QuickInspectionView: View {
     @State private var pendingMarkLocation: CGPoint? = nil
     @State private var showMarkSheet: Bool = false
     @State private var markerPendingDelete: ManualDamageMarker? = nil
+    // Phase: Surface upstream Gemini error.message to the inspector via a
+    // system alert so HTTP failures aren't invisible.
+    @State private var analysisErrorMessage: String? = nil
 
     private var totalSquaresDocumented: Int {
         max(camera.squaresCovered, capturedPhotos.map(\.squaresCovered).max() ?? 0)
@@ -163,6 +166,14 @@ struct QuickInspectionView: View {
                 .presentationDragIndicator(.visible)
                 .presentationBackground(Color(red: 0.08, green: 0.09, blue: 0.13))
             }
+        }
+        .alert("Analysis failed",
+               isPresented: Binding(get: { analysisErrorMessage != nil },
+                                    set: { if !$0 { analysisErrorMessage = nil } })) {
+            Button("OK", role: .cancel) { analysisErrorMessage = nil }
+                .frame(minHeight: 88)
+        } message: {
+            Text(analysisErrorMessage ?? "")
         }
         .alert("Remove this marker?",
                isPresented: Binding(get: { markerPendingDelete != nil },
@@ -1049,6 +1060,9 @@ struct QuickInspectionView: View {
                     // If it failed we leave analyzed=false so the UI can show a retry state
                     // instead of presenting fake markers as real detections.
                     capturedPhotos[i].analyzed = !result.failed
+                    if result.failed, let msg = result.errorMessage, analysisErrorMessage == nil {
+                        analysisErrorMessage = msg
+                    }
 
                     // Stream real AI markers into the live scan overlay.
                     for m in result.markers {
@@ -1178,6 +1192,9 @@ struct QuickInspectionView: View {
         capturedPhotos[newIdx].damageMarkers = result.markers
         capturedPhotos[newIdx].aiConfidenceSnapshot = result.confidenceSnapshot
         capturedPhotos[newIdx].analyzed = !result.failed
+        if result.failed, let msg = result.errorMessage {
+            analysisErrorMessage = msg
+        }
         // Refresh the preview sheet so the user sees fresh markers/findings.
         previewPhoto = capturedPhotos[newIdx]
         if let cid = customerStore.activeCustomerID {
