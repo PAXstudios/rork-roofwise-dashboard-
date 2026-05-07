@@ -9,8 +9,8 @@ import Foundation
 enum APIKeys {
     // MARK: Raw keys
     static let googleMapsApiKey: String      = "AIzaSyDmnzp1Q23igS3XTPA6BMcIGOygkmyYSBM"
-    static let googleSolarApiKey: String     = read("GoogleSolarApiKey")
-    static let googleGeocodingApiKey: String = read("GoogleGeocodingApiKey")
+    static let googleSolarApiKey: String     = "AIzaSyDmnzp1Q23igS3XTPA6BMcIGOygkmyYSBM"
+    static let googleGeocodingApiKey: String = "AIzaSyDmnzp1Q23igS3XTPA6BMcIGOygkmyYSBM"
     static let noaaUserAgent: String         = read(
         "NoaaUserAgent",
         default: "RoofWise/1.0 (contact@roofwise.app)"
