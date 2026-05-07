@@ -11,20 +11,38 @@ final class KnockStore {
 
     init() {
         // Seed with a few canvassed houses so the screen feels alive.
+        // Coordinates are real DFW lat/lngs so they render on the live map.
         self.houses = [
-            KnockedHouse(x: 0.22, y: 0.34, outcome: .interested,
-                         notes: "Owner has hail damage, wants Tuesday inspection."),
-            KnockedHouse(x: 0.41, y: 0.28, outcome: .noAnswer,
-                         notes: "Drove by 2x, no one home. Door hanger left."),
-            KnockedHouse(x: 0.55, y: 0.46, outcome: .notInterested,
-                         notes: "Just had roof done in 2023."),
-            KnockedHouse(x: 0.68, y: 0.36, outcome: .scheduled,
-                         notes: "Inspection booked Thu 9am. State Farm policy."),
-            KnockedHouse(x: 0.30, y: 0.58, outcome: .notKnocked,
-                         notes: ""),
-            KnockedHouse(x: 0.74, y: 0.62, outcome: .interested,
-                         notes: "Ask about granddaughter's policy too.")
+            Self.seed(lat: 33.0631, lng: -96.7517, .interested,
+                      notes: "Owner has hail damage, wants Tuesday inspection."),
+            Self.seed(lat: 33.0712, lng: -96.7388, .noAnswer,
+                      notes: "Drove by 2x, no one home. Door hanger left."),
+            Self.seed(lat: 33.0584, lng: -96.7402, .notInterested,
+                      notes: "Just had roof done in 2023."),
+            Self.seed(lat: 33.0668, lng: -96.7321, .scheduled,
+                      notes: "Inspection booked Thu 9am. State Farm policy."),
+            Self.seed(lat: 33.0511, lng: -96.7458, .notKnocked,
+                      notes: ""),
+            Self.seed(lat: 33.0742, lng: -96.7234, .interested,
+                      notes: "Ask about granddaughter's policy too.")
         ]
+    }
+
+    private static func seed(lat: Double, lng: Double, _ outcome: KnockOutcome, notes: String) -> KnockedHouse {
+        var h = KnockedHouse(x: 0, y: 0, outcome: outcome, notes: notes)
+        h.latitude = lat
+        h.longitude = lng
+        return h
+    }
+
+    /// Place a house pin at a real-world coordinate (used by the live map).
+    @discardableResult
+    func add(coord: CLLocationCoordinate2D, outcome: KnockOutcome = .notKnocked) -> KnockedHouse {
+        var h = KnockedHouse(x: 0, y: 0, outcome: outcome)
+        h.latitude = coord.latitude
+        h.longitude = coord.longitude
+        houses.append(h)
+        return h
     }
 
     func add(at point: CGPoint, outcome: KnockOutcome = .notKnocked) -> KnockedHouse {

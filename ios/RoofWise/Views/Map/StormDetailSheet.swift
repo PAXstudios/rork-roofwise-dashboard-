@@ -1,0 +1,146 @@
+import SwiftUI
+import CoreLocation
+
+/// Bottom sheet shown when a storm pin is tapped. Glove-friendly stack with
+/// a 64pt navy "Find inspections nearby" CTA.
+struct StormPinDetailSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let event: StormPinEvent
+    let centerCoord: CLLocationCoordinate2D
+    var onFindNearby: (Double) -> Void
+
+    @State private var radius: Double = 5
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            header
+            statRow
+            sourceRow
+            radiusPicker
+            ctaRow
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 18)
+        .padding(.bottom, 8)
+    }
+
+    private var header: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(event.isHail ? Theme.sky.opacity(0.18) : Theme.ember.opacity(0.18))
+                Image(systemName: event.isHail ? "cloud.hail.fill" : "wind")
+                    .font(.system(size: Theme.TypeRamp.title, weight: .heavy))
+                    .foregroundStyle(event.isHail ? Theme.sky : Theme.ember)
+            }
+            .frame(width: 56, height: 56)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(event.headline)
+                    .font(.system(size: Theme.TypeRamp.title, weight: .heavy))
+                    .foregroundStyle(Theme.ink)
+                Text(event.date.formatted(date: .abbreviated, time: .omitted))
+                    .font(.system(size: Theme.TypeRamp.metaSm))
+                    .foregroundStyle(Theme.inkSoft)
+            }
+            Spacer()
+        }
+    }
+
+    private var statRow: some View {
+        HStack(spacing: 10) {
+            stat(label: event.isHail ? "Hail Size" : "Peak Gust",
+                 value: event.isHail
+                    ? String(format: "%.2f\"", event.hailSizeIn ?? 0)
+                    : "\(event.windGustMph ?? 0) mph",
+                 tint: event.isHail ? Theme.sky : Theme.ember)
+            stat(label: "Distance",
+                 value: String(format: "%.1f mi", event.distanceMiles(from: centerCoord)),
+                 tint: Theme.amber)
+        }
+    }
+
+    private func stat(label: String, value: String, tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label.uppercased())
+                .font(.system(size: Theme.TypeRamp.captionSm, weight: .heavy))
+                .tracking(1.2)
+                .foregroundStyle(Theme.inkFaint)
+            Text(value)
+                .font(.system(size: Theme.TypeRamp.title, weight: .heavy))
+                .foregroundStyle(Theme.ink)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(tint.opacity(0.08), in: .rect(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(tint.opacity(0.25), lineWidth: 0.6))
+    }
+
+    private var sourceRow: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "doc.badge.gearshape")
+                .font(.system(size: Theme.TypeRamp.metaSm, weight: .heavy))
+                .foregroundStyle(Theme.inkSoft)
+            Text("Source · \(event.source)")
+                .font(.system(size: Theme.TypeRamp.metaSm, weight: .heavy))
+                .foregroundStyle(Theme.inkSoft)
+            Spacer()
+        }
+        .padding(.horizontal, 4)
+    }
+
+    private var radiusPicker: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("RADIUS")
+                    .font(.system(size: Theme.TypeRamp.captionSm, weight: .heavy))
+                    .tracking(1.2)
+                    .foregroundStyle(Theme.inkFaint)
+                Spacer()
+                Text("\(Int(radius)) mi")
+                    .font(.system(size: Theme.TypeRamp.body, weight: .heavy))
+                    .foregroundStyle(Theme.ink)
+            }
+            HStack(spacing: 8) {
+                ForEach([2.0, 5.0, 10.0, 20.0], id: \.self) { v in
+                    Button {
+                        let g = UISelectionFeedbackGenerator(); g.selectionChanged()
+                        radius = v
+                    } label: {
+                        Text("\(Int(v)) mi")
+                            .font(.system(size: Theme.TypeRamp.bodyTight, weight: .heavy))
+                            .foregroundStyle(radius == v ? .white : Theme.ink)
+                            .frame(maxWidth: .infinity, minHeight: 48)
+                            .background(
+                                radius == v ? AnyShapeStyle(Theme.ink) : AnyShapeStyle(Theme.card),
+                                in: .capsule
+                            )
+                            .overlay(Capsule().stroke(radius == v ? .clear : Theme.hairline, lineWidth: 0.6))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    private var ctaRow: some View {
+        Button {
+            let g = UIImpactFeedbackGenerator(style: .medium); g.impactOccurred()
+            onFindNearby(radius)
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "scope")
+                    .font(.system(size: Theme.TypeRamp.body, weight: .heavy))
+                Text("Find inspections nearby")
+                    .font(.system(size: Theme.TypeRamp.cta, weight: .heavy))
+            }
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity, minHeight: 64)
+            .background(Theme.inkGradient, in: .rect(cornerRadius: 18))
+            .shadow(color: Theme.ink.opacity(0.20), radius: 14, y: 6)
+        }
+        .buttonStyle(.plain)
+        .padding(.top, 4)
+    }
+}
