@@ -15,6 +15,7 @@ struct JobDetailView: View {
     @State private var showStormOnMap = false
     @State private var roofMeasurements: RoofMeasurements? = nil
     @State private var showSolarSheet = false
+    @State private var showRoofOnMap = false
 
     let reportId: String
 
@@ -79,6 +80,13 @@ struct JobDetailView: View {
         }
         .navigationDestination(isPresented: $showStormOnMap) {
             MapHubView(currentReportId: reportId, focusedStorm: stormMatchFocus)
+        }
+        .navigationDestination(isPresented: $showRoofOnMap) {
+            MapHubView(
+                currentReportId: reportId,
+                focusedAddress: inspection?.job.propertyAddress,
+                focusedRoof: roofMeasurements
+            )
         }
         .task(id: reportId) {
             await store.autoPopulateEvent(for: reportId)
@@ -593,10 +601,10 @@ struct JobDetailView: View {
 
     @ViewBuilder
     private func roofMeasurementsCard(_ insp: Inspection) -> some View {
-        if let m = roofMeasurements {
+        if let m = roofMeasurements, insp.roof.detectedAreaSquares != nil {
             Button {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                showSolarSheet = true
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                showRoofOnMap = true
             } label: {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(spacing: 10) {

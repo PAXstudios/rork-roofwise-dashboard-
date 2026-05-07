@@ -16,6 +16,8 @@ nonisolated struct RoofSegmentMeasurement: Identifiable, Hashable, Sendable {
 
     /// "Roof squares" = 100 sq ft (industry-standard estimating unit).
     var areaSquares: Double { areaSqFt / 100.0 }
+    /// Convenience m² view for callers that want SI units.
+    var areaM2: Double { areaSqFt / 10.7639 }
 
     /// Pitch expressed as rise-over-12 (rounded to nearest int).
     var pitchRiseOver12: Int {
@@ -36,6 +38,8 @@ nonisolated struct RoofMeasurements: Hashable, Sendable {
     let updatedAt: Date
 
     var totalAreaSquares: Double { totalAreaSqFt / 100.0 }
+    /// Convenience m² view for callers that want SI units.
+    var totalAreaM2: Double { totalAreaSqFt / 10.7639 }
 
     var dominantSegment: RoofSegmentMeasurement? {
         segments.max(by: { $0.areaSqFt < $1.areaSqFt })

@@ -581,12 +581,21 @@ private struct InsuranceStep: View {
 private struct RoofStep: View {
     @Binding var draft: Inspection
 
+    @State private var measurements: RoofMeasurements? = nil
+    @State private var detectionFailed: Bool = false
+    @State private var didDismissCard: Bool = false
+    @State private var loadTask: Task<Void, Never>? = nil
+
+    private let solar: SolarServicing = SolarServiceFactory.shared
+
     var body: some View {
         WizardSection(
             title: "Roof System",
             subtitle: "Pre-storm baseline used for Haag scoring.",
             icon: "house.lodge.fill"
         ) {
+            detectedRoofCard
+
             ChipGrid(label: "Primary material",
                      options: RoofPrimaryMaterial.allCases,
                      selection: $draft.roof.primaryMaterial,
@@ -614,6 +623,169 @@ private struct RoofStep: View {
                      selection: $draft.roof.overallConditionPreStorm,
                      minimum: 140,
                      title: { $0.displayName })
+        }
+        .onAppear { fetchMeasurements() }
+    }
+
+    @ViewBuilder
+    private var detectedRoofCard: some View {
+        if didDismissCard && draft.roof.detectedAreaSquares == nil {
+            EmptyView()
+        } else if let m = measurements {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 10) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 12).fill(Theme.amberSoft)
+                        Image(systemName: "square.3.layers.3d.top.filled")
+                            .font(.system(size: Theme.TypeRamp.subhead, weight: .heavy))
+                            .foregroundStyle(Theme.amber)
+                    }
+                    .frame(width: 44, height: 44)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("DETECTED ROOF")
+                            .font(.system(size: Theme.TypeRamp.captionSm, weight: .heavy))
+                            .tracking(1.2)
+                            .foregroundStyle(Theme.inkSoft)
+                        Text(String(format: "Total: %.1f squares", m.totalAreaSquares))
+                            .font(.system(size: Theme.TypeRamp.display, weight: .heavy))
+                            .foregroundStyle(Theme.ink)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                    }
+                    Spacer()
+                    Text(SolarServiceFactory.shared.isLive ? "GOOGLE SOLAR" : "ESTIMATE")
+                        .font(.system(size: Theme.TypeRamp.captionSm, weight: .heavy))
+                        .tracking(0.8)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(SolarServiceFactory.shared.isLive ? Theme.mint : Theme.inkFaint,
+                                    in: .capsule)
+                }
+                Text("\(m.segments.count) slopes · \(avgPitchLabel(m)) avg pitch")
+                    .font(.system(size: Theme.TypeRamp.metaSm, weight: .semibold))
+                    .foregroundStyle(Theme.inkSoft)
+
+                if draft.roof.detectedAreaSquares == nil {
+                    HStack(spacing: 10) {
+                        Button {
+                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                            applyDetection(m)
+                        } label: {
+                            Text("Use detection")
+                                .font(.system(size: Theme.TypeRamp.cta, weight: .heavy))
+                                .foregroundStyle(.white)
+                                .frame(maxWidth: .infinity, minHeight: 64)
+                                .background(Theme.inkGradient, in: .rect(cornerRadius: 16))
+                        }
+                        .buttonStyle(.plain)
+                        Button {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            withAnimation(.easeInOut(duration: 0.2)) { didDismissCard = true }
+                        } label: {
+                            Text("Enter manually")
+                                .font(.system(size: Theme.TypeRamp.cta, weight: .heavy))
+                                .foregroundStyle(Theme.ink)
+                                .frame(maxWidth: .infinity, minHeight: 64)
+                                .background(Theme.card, in: .rect(cornerRadius: 16))
+                                .overlay(RoundedRectangle(cornerRadius: 16)
+                                    .stroke(Theme.hairline, lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                } else {
+                    HStack(spacing: 8) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "lock.fill")
+                                .font(.system(size: Theme.TypeRamp.captionSm, weight: .heavy))
+                            Text("USING DETECTION")
+                                .font(.system(size: Theme.TypeRamp.captionSm, weight: .heavy))
+                                .tracking(0.8)
+                        }
+                        .foregroundStyle(Theme.mint)
+                        .padding(.horizontal, 10).padding(.vertical, 6)
+                        .background(Theme.mintSoft, in: .capsule)
+                        Spacer()
+                        Button {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            draft.roof.detectedAreaSquares = nil
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "pencil")
+                                Text("Edit")
+                            }
+                            .font(.system(size: Theme.TypeRamp.metaSm, weight: .heavy))
+                            .foregroundStyle(Theme.ember)
+                            .padding(.horizontal, 12).padding(.vertical, 8)
+                            .background(Theme.emberSoft, in: .capsule)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .cardStyle(padding: 16, radius: 18)
+            .transition(.opacity)
+        } else if detectionFailed {
+            HStack(spacing: 10) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: Theme.TypeRamp.subhead, weight: .heavy))
+                    .foregroundStyle(Theme.inkFaint)
+                Text("Detection unavailable — enter manually")
+                    .font(.system(size: Theme.TypeRamp.metaSm, weight: .heavy))
+                    .foregroundStyle(Theme.inkSoft)
+                Spacer()
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .cardStyle(padding: 14, radius: 16)
+        } else {
+            HStack(spacing: 10) {
+                ProgressView().tint(Theme.amber)
+                Text("Measuring roof from satellite imagery…")
+                    .font(.system(size: Theme.TypeRamp.metaSm, weight: .semibold))
+                    .foregroundStyle(Theme.inkSoft)
+                Spacer()
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .cardStyle(padding: 14, radius: 16)
+        }
+    }
+
+    private func avgPitchLabel(_ m: RoofMeasurements) -> String {
+        guard !m.segments.isEmpty else { return "—" }
+        let avgDeg = m.segments.map(\.pitchDegrees).reduce(0, +) / Double(m.segments.count)
+        let rise = max(0, Int((tan(avgDeg * .pi / 180.0) * 12.0).rounded()))
+        return "\(rise):12"
+    }
+
+    private func fetchMeasurements() {
+        guard measurements == nil, !detectionFailed else { return }
+        let address = draft.job.propertyAddress.trimmingCharacters(in: .whitespaces)
+        guard !address.isEmpty else {
+            detectionFailed = true
+            return
+        }
+        let coord = GeocodingServiceFactory.eagerCoord(forAddress: address)
+        loadTask?.cancel()
+        loadTask = Task {
+            let m = try? await solar.measurements(at: coord)
+            await MainActor.run {
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    if let m { self.measurements = m }
+                    else { self.detectionFailed = true }
+                }
+            }
+        }
+    }
+
+    private func applyDetection(_ m: RoofMeasurements) {
+        // Stamp the roof-level total — this is what the Haag report will
+        // show as the "detected" baseline. Per-slope detected areas are
+        // applied later when slopes are added (see SlopeCaptureView).
+        draft.roof.detectedAreaSquares = m.totalAreaSquares
+        // Heuristic: 3+ segments = hip; otherwise gable, unless inspector
+        // already chose something explicit (we don't override material).
+        if m.segments.count >= 3 {
+            draft.roof.geometry = .hip
         }
     }
 }

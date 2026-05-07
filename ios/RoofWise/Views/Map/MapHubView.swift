@@ -33,6 +33,11 @@ struct MapHubView: View {
     /// is selected on appear.
     var currentReportId: String? = nil
     var focusedStorm: StormPinEvent? = nil
+    /// When set, the map recenters on this address on appear.
+    var focusedAddress: String? = nil
+    /// When set, draws each detected slope as a color-coded MKPolygon around
+    /// the focused address (one quad per slope, sized by area, oriented by azimuth).
+    var focusedRoof: RoofMeasurements? = nil
 
     // Layer toggles
     @State private var showLeads  = true
@@ -158,7 +163,10 @@ struct MapHubView: View {
             }
         }
         .task { await loadStorms() }
-        .onAppear { presentFocusedStormIfNeeded() }
+        .onAppear {
+            presentFocusedStormIfNeeded()
+            presentFocusedRoofIfNeeded()
+        }
         .onChange(of: stormMonthsBack) { _, _ in
             Task { await loadStorms() }
         }
@@ -255,6 +263,11 @@ struct MapHubView: View {
                             entityGlyph(p)
                         }
                     }
+                }
+                ForEach(roofPolygons) { poly in
+                    MapPolygon(coordinates: poly.coordinates)
+                        .foregroundStyle(poly.color.opacity(0.45))
+                        .stroke(poly.color, lineWidth: 2)
                 }
                 if showKnocks {
                     ForEach(knockStore.houses) { h in
@@ -604,6 +617,83 @@ struct MapHubView: View {
             self.stormEvents = fresh
             self.storms = fresh.map { $0.asPin }
         }
+    }
+
+    private struct RoofPolygon: Identifiable, Hashable {
+        let id: String
+        let coordinates: [CLLocationCoordinate2D]
+        let color: Color
+
+        static func == (lhs: RoofPolygon, rhs: RoofPolygon) -> Bool { lhs.id == rhs.id }
+        func hash(into hasher: inout Hasher) { hasher.combine(id) }
+    }
+
+    private func presentFocusedRoofIfNeeded() {
+        guard let address = focusedAddress, !address.isEmpty else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(120))
+            let coord = ((try? await geocoder.geocode(address)) ?? nil)
+                ?? GeocodingServiceFactory.eagerCoord(forAddress: address)
+            let region = MKCoordinateRegion(
+                center: coord,
+                span: .init(latitudeDelta: 0.004, longitudeDelta: 0.004)
+            )
+            self.lastRegion = region
+            withAnimation(.easeInOut(duration: 0.4)) { self.camera = .region(region) }
+        }
+    }
+
+    /// Synthesised polygons — we don't have real roof footprint coords, so
+    /// each slope renders as a small quad fanned out around the focused
+    /// address, sized by squares and rotated by azimuth.
+    private var roofPolygons: [RoofPolygon] {
+        guard let address = focusedAddress,
+              let roof = focusedRoof,
+              !address.isEmpty else { return [] }
+        let center = GeocodingServiceFactory.eagerCoord(forAddress: address)
+        return roof.segments.enumerated().map { idx, seg in
+            RoofPolygon(
+                id: "roof-\(idx)-\(seg.id)",
+                coordinates: Self.quad(around: center,
+                                       azimuthDegrees: seg.azimuthDegrees,
+                                       squares: seg.areaSquares),
+                color: orientationColor(seg.orientation)
+            )
+        }
+    }
+
+    private func orientationColor(_ o: String) -> Color {
+        switch o.uppercased().first {
+        case "N": return Theme.sky
+        case "E": return Theme.amber
+        case "S": return Theme.crimson
+        case "W": return Theme.mint
+        default:  return Theme.ember
+        }
+    }
+
+    /// Build a 4-coord quad anchored at `center`, fanned out by `azimuth`,
+    /// with side length proportional to √(squares).
+    private static func quad(around center: CLLocationCoordinate2D,
+                             azimuthDegrees: Double,
+                             squares: Double) -> [CLLocationCoordinate2D] {
+        let baseSide = max(0.00006, sqrt(max(squares, 1.0)) * 0.00018) // deg-ish
+        let rad = azimuthDegrees * .pi / 180.0
+        let outOffset = baseSide * 1.1
+        let cx = center.latitude  + cos(rad) * outOffset
+        let cy = center.longitude + sin(rad) * outOffset
+        let half = baseSide
+        let perp = rad + .pi / 2
+        let dxA = cos(rad) * half
+        let dyA = sin(rad) * half
+        let dxB = cos(perp) * half
+        let dyB = sin(perp) * half
+        return [
+            .init(latitude: cx - dxA - dxB, longitude: cy - dyA - dyB),
+            .init(latitude: cx + dxA - dxB, longitude: cy + dyA - dyB),
+            .init(latitude: cx + dxA + dxB, longitude: cy + dyA + dyB),
+            .init(latitude: cx - dxA + dxB, longitude: cy - dyA + dyB)
+        ]
     }
 
     private func presentFocusedStormIfNeeded() {

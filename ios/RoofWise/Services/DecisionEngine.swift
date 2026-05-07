@@ -48,7 +48,10 @@ nonisolated enum DecisionEngine {
             case .metalPanel:
                 // Treat hail bruise count as dent count; estimate panels at
                 // 5 per square. Replace when ≥ 25% of panels are dented.
-                let totalPanels = max(1.0, s.areaSquares * 5.0)
+                // Prefer detected (Google Solar) area when available; never
+                // mutate the inspector-entered areaSquares.
+                let effectiveSquares = s.detectedAreaSquares ?? s.areaSquares
+                let totalPanels = max(1.0, effectiveSquares * 5.0)
                 let dentPct = Double(totalHail) / totalPanels * 100.0
                 if dentPct >= 25 { replacement = true }
             case .woodShake:
@@ -57,7 +60,8 @@ nonisolated enum DecisionEngine {
                 }
             case .concreteTile:
                 // ~100 tiles per square as a working estimate.
-                let totalTiles = max(1.0, s.areaSquares * 100.0)
+                let effectiveSquares = s.detectedAreaSquares ?? s.areaSquares
+                let totalTiles = max(1.0, effectiveSquares * 100.0)
                 let pct = Double(totalHail) / totalTiles * 100.0
                 if pct >= 10 { replacement = true }
             case .clayTile:

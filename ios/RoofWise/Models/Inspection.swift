@@ -123,6 +123,10 @@ struct InspectionRoof: Codable, Hashable {
     var layers: Int
     var geometry: RoofGeometry
     var overallConditionPreStorm: RoofCondition
+    /// Total roof area (in roof squares) as detected by Google Solar / mock
+    /// fallback. Distinct from inspector-entered slope areas so the Haag
+    /// report can show both numbers side-by-side.
+    var detectedAreaSquares: Double?
 
     enum CodingKeys: String, CodingKey {
         case primaryMaterial = "primary_material"
@@ -130,6 +134,31 @@ struct InspectionRoof: Codable, Hashable {
         case layers
         case geometry
         case overallConditionPreStorm = "overall_condition_pre_storm"
+        case detectedAreaSquares = "detected_area_squares"
+    }
+
+    init(primaryMaterial: RoofPrimaryMaterial,
+         estimatedAgeYears: Int,
+         layers: Int,
+         geometry: RoofGeometry,
+         overallConditionPreStorm: RoofCondition,
+         detectedAreaSquares: Double? = nil) {
+        self.primaryMaterial = primaryMaterial
+        self.estimatedAgeYears = estimatedAgeYears
+        self.layers = layers
+        self.geometry = geometry
+        self.overallConditionPreStorm = overallConditionPreStorm
+        self.detectedAreaSquares = detectedAreaSquares
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        primaryMaterial = try c.decode(RoofPrimaryMaterial.self, forKey: .primaryMaterial)
+        estimatedAgeYears = try c.decode(Int.self, forKey: .estimatedAgeYears)
+        layers = try c.decode(Int.self, forKey: .layers)
+        geometry = try c.decode(RoofGeometry.self, forKey: .geometry)
+        overallConditionPreStorm = try c.decode(RoofCondition.self, forKey: .overallConditionPreStorm)
+        detectedAreaSquares = try c.decodeIfPresent(Double.self, forKey: .detectedAreaSquares)
     }
 
     static var empty: InspectionRoof {
@@ -218,6 +247,9 @@ struct Slope: Codable, Hashable, Identifiable {
     var slopeReplacementRecommended: Bool
     var slopeRepairsRecommended: Bool
     var damageTypes: SlopeDamageTypes
+    /// Per-slope detected area (squares) from Google Solar segments. Survives
+    /// inspector edits to areaSquares so the report can show both.
+    var detectedAreaSquares: Double?
 
     enum CodingKeys: String, CodingKey {
         case orientation
@@ -234,6 +266,58 @@ struct Slope: Codable, Hashable, Identifiable {
         case slopeReplacementRecommended = "slope_replacement_recommended"
         case slopeRepairsRecommended = "slope_repairs_recommended"
         case damageTypes = "damage_types"
+        case detectedAreaSquares = "detected_area_squares"
+    }
+
+    init(orientation: String,
+         pitchRiseOver12: Int,
+         areaSquares: Double,
+         testSquareCount: Int,
+         damagedUnitsPerSquare: Int,
+         unitRepairCost: Double,
+         repairDifficultyFactor: Double,
+         repairCostSlope: Double,
+         replacementCostSlope: Double,
+         functionalDamagePresent: Bool,
+         cosmeticOnly: Bool,
+         slopeReplacementRecommended: Bool,
+         slopeRepairsRecommended: Bool,
+         damageTypes: SlopeDamageTypes,
+         detectedAreaSquares: Double? = nil) {
+        self.orientation = orientation
+        self.pitchRiseOver12 = pitchRiseOver12
+        self.areaSquares = areaSquares
+        self.testSquareCount = testSquareCount
+        self.damagedUnitsPerSquare = damagedUnitsPerSquare
+        self.unitRepairCost = unitRepairCost
+        self.repairDifficultyFactor = repairDifficultyFactor
+        self.repairCostSlope = repairCostSlope
+        self.replacementCostSlope = replacementCostSlope
+        self.functionalDamagePresent = functionalDamagePresent
+        self.cosmeticOnly = cosmeticOnly
+        self.slopeReplacementRecommended = slopeReplacementRecommended
+        self.slopeRepairsRecommended = slopeRepairsRecommended
+        self.damageTypes = damageTypes
+        self.detectedAreaSquares = detectedAreaSquares
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        orientation = try c.decode(String.self, forKey: .orientation)
+        pitchRiseOver12 = try c.decode(Int.self, forKey: .pitchRiseOver12)
+        areaSquares = try c.decode(Double.self, forKey: .areaSquares)
+        testSquareCount = try c.decode(Int.self, forKey: .testSquareCount)
+        damagedUnitsPerSquare = try c.decode(Int.self, forKey: .damagedUnitsPerSquare)
+        unitRepairCost = try c.decode(Double.self, forKey: .unitRepairCost)
+        repairDifficultyFactor = try c.decode(Double.self, forKey: .repairDifficultyFactor)
+        repairCostSlope = try c.decode(Double.self, forKey: .repairCostSlope)
+        replacementCostSlope = try c.decode(Double.self, forKey: .replacementCostSlope)
+        functionalDamagePresent = try c.decode(Bool.self, forKey: .functionalDamagePresent)
+        cosmeticOnly = try c.decode(Bool.self, forKey: .cosmeticOnly)
+        slopeReplacementRecommended = try c.decode(Bool.self, forKey: .slopeReplacementRecommended)
+        slopeRepairsRecommended = try c.decode(Bool.self, forKey: .slopeRepairsRecommended)
+        damageTypes = try c.decode(SlopeDamageTypes.self, forKey: .damageTypes)
+        detectedAreaSquares = try c.decodeIfPresent(Double.self, forKey: .detectedAreaSquares)
     }
 
     var id: String { orientation }
