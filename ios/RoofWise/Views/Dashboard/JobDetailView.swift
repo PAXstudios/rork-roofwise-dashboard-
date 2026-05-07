@@ -13,6 +13,8 @@ struct JobDetailView: View {
     @State private var showWeather = false
     @State private var stormMatchFocus: StormPinEvent? = nil
     @State private var showStormOnMap = false
+    @State private var roofMeasurements: RoofMeasurements? = nil
+    @State private var showSolarSheet = false
 
     let reportId: String
 
@@ -31,6 +33,7 @@ struct JobDetailView: View {
                         if !insp.event.weatherSources.isEmpty {
                             stormMatchCard(insp)
                         }
+                        roofMeasurementsCard(insp)
                         if insp.slopes.isEmpty {
                             emptySlopesCard
                         } else {
@@ -79,6 +82,14 @@ struct JobDetailView: View {
         }
         .task(id: reportId) {
             await store.autoPopulateEvent(for: reportId)
+        }
+        .task(id: reportId) {
+            await loadRoofMeasurements()
+        }
+        .sheet(isPresented: $showSolarSheet) {
+            if let m = roofMeasurements, let insp = inspection {
+                SolarMeasurementsSheet(measurements: m, address: insp.job.propertyAddress)
+            }
         }
         .sheet(item: Binding(
             get: { pdfShareURL.map(IdentifiableURL.init) },
@@ -570,6 +581,94 @@ struct JobDetailView: View {
         )
     }
 
+    // MARK: Roof measurements (Google Solar)
+
+    private func loadRoofMeasurements() async {
+        guard let address = inspection?.job.propertyAddress,
+              !address.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        let coord = WeatherServiceFactory.mockCoord(forAddress: address)
+        let m = try? await SolarServiceFactory.shared.measurements(at: coord)
+        await MainActor.run { self.roofMeasurements = m }
+    }
+
+    @ViewBuilder
+    private func roofMeasurementsCard(_ insp: Inspection) -> some View {
+        if let m = roofMeasurements {
+            Button {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                showSolarSheet = true
+            } label: {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 10) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 12).fill(Theme.amberSoft)
+                            Image(systemName: "square.3.layers.3d.top.filled")
+                                .font(.system(size: Theme.TypeRamp.subhead, weight: .heavy))
+                                .foregroundStyle(Theme.amber)
+                        }
+                        .frame(width: 44, height: 44)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("ROOF MEASUREMENTS")
+                                .font(.system(size: Theme.TypeRamp.captionSm, weight: .heavy))
+                                .tracking(1.2)
+                                .foregroundStyle(Theme.inkSoft)
+                            Text("\(squaresLabel(m.totalAreaSquares)) \u{00B7} \(m.segments.count) faces")
+                                .font(.system(size: Theme.TypeRamp.body, weight: .heavy))
+                                .foregroundStyle(Theme.ink)
+                        }
+                        Spacer()
+                        sourcePill(text: m.source.uppercased(),
+                                   live: SolarServiceFactory.shared.isLive)
+                    }
+                    HStack(spacing: 8) {
+                        ForEach(m.segments.prefix(4)) { seg in
+                            faceChip(seg)
+                        }
+                        if m.segments.count > 4 {
+                            Text("+\(m.segments.count - 4)")
+                                .font(.system(size: Theme.TypeRamp.captionSm, weight: .heavy))
+                                .foregroundStyle(Theme.inkSoft)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: Theme.TypeRamp.caption, weight: .heavy))
+                            .foregroundStyle(Theme.inkFaint)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .cardStyle(padding: 16, radius: 18)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private func faceChip(_ seg: RoofSegmentMeasurement) -> some View {
+        VStack(spacing: 2) {
+            Text(seg.orientation)
+                .font(.system(size: Theme.TypeRamp.captionSm, weight: .heavy))
+                .foregroundStyle(Theme.ember)
+            Text(String(format: "%.1f sq", seg.areaSquares))
+                .font(.system(size: Theme.TypeRamp.captionSm, weight: .semibold))
+                .foregroundStyle(Theme.inkSoft)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Theme.emberSoft, in: .capsule)
+    }
+
+    private func sourcePill(text: String, live: Bool) -> some View {
+        Text(text)
+            .font(.system(size: Theme.TypeRamp.captionSm, weight: .heavy))
+            .tracking(0.8)
+            .foregroundStyle(.white)
+            .padding(.horizontal, 8).padding(.vertical, 4)
+            .background(live ? Theme.mint : Theme.inkFaint, in: .capsule)
+    }
+
+    private func squaresLabel(_ sq: Double) -> String {
+        String(format: "%.1f sq", sq)
+    }
+
     // MARK: Decision banner
 
     private func decisionBanner(_ insp: Inspection) -> some View {
@@ -742,6 +841,121 @@ private struct FieldLabelInline: View {
             .font(.system(size: 12, weight: .heavy))
             .foregroundStyle(Theme.inkSoft)
             .tracking(0.6)
+    }
+}
+
+// MARK: - Solar measurements sheet
+
+struct SolarMeasurementsSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let measurements: RoofMeasurements
+    let address: String
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    headerCard
+                    segmentsCard
+                    sourceCard
+                    Color.clear.frame(height: 24)
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 16)
+            }
+            .background(Theme.canvas.ignoresSafeArea())
+            .navigationTitle("Roof Measurements")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                        .font(.system(size: Theme.TypeRamp.body, weight: .heavy))
+                        .foregroundStyle(Theme.ember)
+                }
+            }
+        }
+    }
+
+    private var headerCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(address.isEmpty ? "Site" : address)
+                .font(.system(size: Theme.TypeRamp.subhead, weight: .heavy))
+                .foregroundStyle(Theme.inkSoft)
+                .lineLimit(2)
+            Text(String(format: "%.1f roof squares", measurements.totalAreaSquares))
+                .font(.system(size: Theme.TypeRamp.display, weight: .heavy))
+                .foregroundStyle(Theme.ink)
+            Text(String(format: "%.0f sq ft total roof footprint", measurements.totalAreaSqFt))
+                .font(.system(size: Theme.TypeRamp.metaSm, weight: .semibold))
+                .foregroundStyle(Theme.inkSoft)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cardStyle(padding: 20, radius: 20)
+    }
+
+    private var segmentsCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("FACES")
+                .font(.system(size: Theme.TypeRamp.captionSm, weight: .heavy))
+                .tracking(0.8)
+                .foregroundStyle(Theme.inkSoft)
+            ForEach(measurements.segments) { seg in
+                segmentRow(seg)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cardStyle(padding: 16, radius: 18)
+    }
+
+    private func segmentRow(_ seg: RoofSegmentMeasurement) -> some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle().fill(Theme.emberSoft)
+                Text(seg.orientation)
+                    .font(.system(size: Theme.TypeRamp.subhead, weight: .heavy))
+                    .foregroundStyle(Theme.ember)
+            }
+            .frame(width: 48, height: 48)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(String(format: "%.1f sq \u{00B7} %.0f sq ft", seg.areaSquares, seg.areaSqFt))
+                    .font(.system(size: Theme.TypeRamp.body, weight: .heavy))
+                    .foregroundStyle(Theme.ink)
+                Text("Pitch \(seg.pitchRiseOver12)/12 \u{00B7} \(Int(seg.pitchDegrees.rounded()))\u{00B0} \u{00B7} az \(Int(seg.azimuthDegrees.rounded()))\u{00B0}")
+                    .font(.system(size: Theme.TypeRamp.metaSm, weight: .semibold))
+                    .foregroundStyle(Theme.inkSoft)
+            }
+            Spacer()
+        }
+        .padding(.vertical, 6)
+    }
+
+    private var sourceCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("SOURCE")
+                .font(.system(size: Theme.TypeRamp.captionSm, weight: .heavy))
+                .tracking(0.8)
+                .foregroundStyle(Theme.inkSoft)
+            HStack(spacing: 8) {
+                Image(systemName: SolarServiceFactory.shared.isLive
+                      ? "checkmark.seal.fill" : "sparkles")
+                    .foregroundStyle(SolarServiceFactory.shared.isLive ? Theme.mint : Theme.inkFaint)
+                Text(measurements.source)
+                    .font(.system(size: Theme.TypeRamp.body, weight: .heavy))
+                    .foregroundStyle(Theme.ink)
+            }
+            if let date = measurements.imageryDate {
+                Text("Imagery \(date.formatted(date: .abbreviated, time: .omitted))")
+                    .font(.system(size: Theme.TypeRamp.metaSm, weight: .semibold))
+                    .foregroundStyle(Theme.inkSoft)
+            }
+            if let kwh = measurements.sunshineKwhPerSqMPerYear {
+                Text(String(format: "~%.0f kWh/m\u{00B2}/yr sunshine at site", kwh))
+                    .font(.system(size: Theme.TypeRamp.metaSm, weight: .semibold))
+                    .foregroundStyle(Theme.inkSoft)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cardStyle(padding: 16, radius: 18)
     }
 }
 

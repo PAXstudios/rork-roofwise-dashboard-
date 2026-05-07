@@ -450,8 +450,11 @@ private struct CustomerStep: View {
 
     @State private var addressSnapshot: WeatherSnapshot? = nil
     @State private var lookupTask: Task<Void, Never>? = nil
+    @State private var roofMeasurements: RoofMeasurements? = nil
+    @State private var solarTask: Task<Void, Never>? = nil
 
     private let service: WeatherServicing = WeatherServiceFactory.shared
+    private let solar: SolarServicing = SolarServiceFactory.shared
 
     var body: some View {
         WizardSection(
@@ -465,18 +468,36 @@ private struct CustomerStep: View {
             MicField(label: "Property address",
                      text: $draft.job.propertyAddress,
                      placeholder: "1247 Oakridge Ln, Plano TX 75024")
-            if let snap = addressSnapshot {
-                HStack(spacing: 6) {
-                    Image(systemName: weatherSymbol(for: snap.condition))
-                        .font(.system(size: Theme.TypeRamp.caption, weight: .bold))
-                        .foregroundStyle(Theme.sky)
-                    Text("Now: \(snap.temperatureF)° \(snap.condition)")
-                        .font(.system(size: Theme.TypeRamp.metaSm, weight: .heavy))
-                        .foregroundStyle(Theme.ink)
+            if addressSnapshot != nil || roofMeasurements != nil {
+                HStack(spacing: 8) {
+                    if let snap = addressSnapshot {
+                        HStack(spacing: 6) {
+                            Image(systemName: weatherSymbol(for: snap.condition))
+                                .font(.system(size: Theme.TypeRamp.caption, weight: .bold))
+                                .foregroundStyle(Theme.sky)
+                            Text("Now: \(snap.temperatureF)° \(snap.condition)")
+                                .font(.system(size: Theme.TypeRamp.metaSm, weight: .heavy))
+                                .foregroundStyle(Theme.ink)
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Theme.skySoft, in: .capsule)
+                    }
+                    if let m = roofMeasurements {
+                        HStack(spacing: 6) {
+                            Image(systemName: "square.3.layers.3d.top.filled")
+                                .font(.system(size: Theme.TypeRamp.caption, weight: .bold))
+                                .foregroundStyle(Theme.amber)
+                            Text(String(format: "Roof: ~%.0f sq \u{00B7} %d faces",
+                                        m.totalAreaSquares, m.segments.count))
+                                .font(.system(size: Theme.TypeRamp.metaSm, weight: .heavy))
+                                .foregroundStyle(Theme.ink)
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Theme.amberSoft, in: .capsule)
+                    }
                 }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(Theme.skySoft, in: .capsule)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .transition(.opacity)
             }
@@ -497,9 +518,13 @@ private struct CustomerStep: View {
 
     private func scheduleLookup(for address: String) {
         lookupTask?.cancel()
+        solarTask?.cancel()
         let trimmed = address.trimmingCharacters(in: .whitespaces)
         guard trimmed.count >= 5 else {
-            withAnimation(.easeInOut(duration: 0.2)) { addressSnapshot = nil }
+            withAnimation(.easeInOut(duration: 0.2)) {
+                addressSnapshot = nil
+                roofMeasurements = nil
+            }
             return
         }
         let coord = WeatherServiceFactory.mockCoord(forAddress: trimmed)
@@ -510,6 +535,16 @@ private struct CustomerStep: View {
             await MainActor.run {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     self.addressSnapshot = snap
+                }
+            }
+        }
+        solarTask = Task {
+            try? await Task.sleep(for: .milliseconds(450))
+            if Task.isCancelled { return }
+            let m = try? await solar.measurements(at: coord)
+            await MainActor.run {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    self.roofMeasurements = m
                 }
             }
         }
