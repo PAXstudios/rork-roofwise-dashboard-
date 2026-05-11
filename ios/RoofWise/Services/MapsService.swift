@@ -145,9 +145,8 @@ final class LiveMapsService: MapsService, @unchecked Sendable {
     let isLive = true
 
     private let session: URLSession
-    private let fallback = MockMapsService()
 
-    // Tiny in-memory caches so we don't hammer NOAA / Nominatim while the user
+    // Tiny in-memory caches so we don't hammer NOAA / Google while the user
     // pans the map or types into the address picker.
     private var stormCache: (date: Date, events: [StormPinEvent])?
     private var addressCache: [String: [AddressSuggestion]] = [:]
@@ -164,39 +163,78 @@ final class LiveMapsService: MapsService, @unchecked Sendable {
         self.session = URLSession(configuration: cfg)
     }
 
-    // MARK: Geocoding (OSM Nominatim)
+    // MARK: Geocoding (Google Places Autocomplete + Details)
 
     func suggestAddresses(query: String) async -> [AddressSuggestion] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return await fallback.suggestAddresses(query: "") }
+        guard !trimmed.isEmpty else { return [] }
 
-        let key = trimmed.lowercased()
-        if let hit = addressCache[key] { return hit }
+        let cacheKey = trimmed.lowercased()
+        if let hit = addressCache[cacheKey] { return hit }
 
-        var comps = URLComponents(string: "https://nominatim.openstreetmap.org/search")!
+        let key = APIKeys.googlePlacesApiKey
+        guard !key.isEmpty else { return [] }
+
+        // Step 1: Autocomplete
+        var comps = URLComponents(string: "https://maps.googleapis.com/maps/api/place/autocomplete/json")!
         comps.queryItems = [
-            .init(name: "q", value: trimmed),
-            .init(name: "format", value: "jsonv2"),
-            .init(name: "limit", value: "6"),
-            .init(name: "addressdetails", value: "1"),
-            .init(name: "countrycodes", value: "us")
+            .init(name: "input", value: trimmed),
+            .init(name: "types", value: "address"),
+            .init(name: "components", value: "country:us"),
+            .init(name: "key", value: key)
         ]
-        guard let url = comps.url else { return await fallback.suggestAddresses(query: trimmed) }
+        guard let url = comps.url else { return [] }
 
         do {
             let (data, resp) = try await session.data(from: url)
             guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-                return await fallback.suggestAddresses(query: trimmed)
+                let status = (resp as? HTTPURLResponse)?.statusCode ?? -1
+                print("[MapsService] Places Autocomplete non-OK \(status)")
+                return []
             }
-            let raw = try JSONDecoder().decode([NominatimRow].self, from: data)
-            let mapped = raw.compactMap { $0.toSuggestion() }
-            let result = mapped.isEmpty
-                ? await fallback.suggestAddresses(query: trimmed)
-                : mapped
-            addressCache[key] = result
-            return result
+            let decoded = try JSONDecoder().decode(PlacesAutocompleteResponse.self, from: data)
+            let preds = (decoded.predictions ?? []).prefix(6)
+            // Step 2: hydrate coords via Details (parallel)
+            var hydrated: [AddressSuggestion] = []
+            await withTaskGroup(of: AddressSuggestion?.self) { group in
+                for p in preds {
+                    group.addTask { [self] in await fetchPlaceDetails(predication: p, key: key) }
+                }
+                for await s in group { if let s { hydrated.append(s) } }
+            }
+            addressCache[cacheKey] = hydrated
+            return hydrated
         } catch {
-            return await fallback.suggestAddresses(query: trimmed)
+            print("[MapsService] Places error: \(error)")
+            return []
+        }
+    }
+
+    private func fetchPlaceDetails(predication p: PlacesAutocompleteResponse.Prediction,
+                                   key: String) async -> AddressSuggestion? {
+        guard let placeId = p.place_id else { return nil }
+        var comps = URLComponents(string: "https://maps.googleapis.com/maps/api/place/details/json")!
+        comps.queryItems = [
+            .init(name: "place_id", value: placeId),
+            .init(name: "fields", value: "geometry/location,formatted_address"),
+            .init(name: "key", value: key)
+        ]
+        guard let url = comps.url else { return nil }
+        do {
+            let (data, _) = try await session.data(from: url)
+            let decoded = try JSONDecoder().decode(PlacesDetailsResponse.self, from: data)
+            guard let loc = decoded.result?.geometry?.location else { return nil }
+            let title = p.structured_formatting?.main_text
+                ?? decoded.result?.formatted_address
+                ?? p.description
+                ?? ""
+            let subtitle = p.structured_formatting?.secondary_text
+                ?? decoded.result?.formatted_address
+                ?? ""
+            return AddressSuggestion(title: title, subtitle: subtitle,
+                                     latitude: loc.lat, longitude: loc.lng)
+        } catch {
+            return nil
         }
     }
 
@@ -222,14 +260,7 @@ final class LiveMapsService: MapsService, @unchecked Sendable {
             for await chunk in group { events.append(contentsOf: chunk) }
         }
 
-        if events.isEmpty {
-            // NOAA unreachable — keep the deterministic mock dataset so the map
-            // still tells a story instead of going blank.
-            let mock = await fallback.recentStorms()
-            stormCache = (Date(), mock)
-            return mock
-        }
-
+        // No mock backfill — if NOAA returns nothing, map shows no storm pins.
         // Sort newest first, cap at a sane number for rendering.
         let sorted = events.sorted { $0.date > $1.date }
         let capped = Array(sorted.prefix(400))
@@ -328,7 +359,32 @@ final class LiveMapsService: MapsService, @unchecked Sendable {
     }
 }
 
-// MARK: - Nominatim DTO
+// MARK: - Google Places DTOs
+
+private nonisolated struct PlacesAutocompleteResponse: Decodable {
+    let predictions: [Prediction]?
+    struct Prediction: Decodable {
+        let place_id: String?
+        let description: String?
+        let structured_formatting: StructuredFormatting?
+    }
+    struct StructuredFormatting: Decodable {
+        let main_text: String?
+        let secondary_text: String?
+    }
+}
+
+private nonisolated struct PlacesDetailsResponse: Decodable {
+    let result: PlaceResult?
+    struct PlaceResult: Decodable {
+        let formatted_address: String?
+        let geometry: Geometry?
+    }
+    struct Geometry: Decodable { let location: Location? }
+    struct Location: Decodable { let lat: Double; let lng: Double }
+}
+
+// MARK: - Nominatim DTO (kept for back-compat, unused at runtime)
 
 private nonisolated struct NominatimRow: Decodable {
     let display_name: String?

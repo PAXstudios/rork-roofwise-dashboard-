@@ -7,42 +7,10 @@ final class CustomerStore {
     var activeCustomerID: UUID?
 
     init() {
-        let seed: [Customer] = [
-            Customer(ownerName: "Smith Residence", address: "734 Cedar Hollow Rd",
-                     phone: "(214) 555-0142", email: "j.smith@example.com",
-                     insuranceCompany: "State Farm", policyNumber: "SF-9087421",
-                     dateOfLoss: Calendar.current.date(byAdding: .day, value: -28, to: .now),
-                     adjusterName: "Karen Liu", adjusterPhone: "(800) 555-0119",
-                     stage: .claimFiled, stormTagged: true, estimatedValue: "$28,400"),
-            Customer(ownerName: "Patel Custom Build", address: "5501 Stonebriar Pkwy",
-                     phone: "(469) 555-0177", email: "ravi@patelbuild.com",
-                     insuranceCompany: "Allstate", policyNumber: "AL-5532018",
-                     dateOfLoss: Calendar.current.date(byAdding: .day, value: -14, to: .now),
-                     adjusterName: "Marcus Reed", adjusterPhone: "(800) 555-0233",
-                     stage: .adjusterMeeting, stormTagged: true, estimatedValue: "$54,200"),
-            Customer(ownerName: "Hawthorn Apts", address: "210 Hawthorn Blvd",
-                     phone: "(972) 555-0188",
-                     insuranceCompany: "Travelers", policyNumber: "TR-7711204",
-                     stage: .interested, stormTagged: true, estimatedValue: "$112,000"),
-            Customer(ownerName: "J. Whitman", address: "12 Ridge Vista",
-                     phone: "(214) 555-0166",
-                     stage: .inspectionScheduled, estimatedValue: "$18,900"),
-            Customer(ownerName: "R. Greene", address: "1247 Oakridge Ln",
-                     phone: "(214) 555-0151", email: "rgreene@example.com",
-                     insuranceCompany: "USAA", policyNumber: "US-3320981",
-                     dateOfLoss: Calendar.current.date(byAdding: .day, value: -42, to: .now),
-                     adjusterName: "Diane Cole", adjusterPhone: "(800) 555-0411",
-                     stage: .approved, stormTagged: true, estimatedValue: "$31,800"),
-            Customer(ownerName: "D. Park", address: "920 Bluebonnet Way",
-                     phone: "(469) 555-0110", email: "dpark@example.com",
-                     insuranceCompany: "Liberty Mutual", policyNumber: "LM-4498712",
-                     stage: .paid, estimatedValue: "$36,400"),
-            Customer(ownerName: "M. Castellanos", address: "88 Maple Cove",
-                     phone: "(972) 555-0193",
-                     stage: .knocked, estimatedValue: "$22,500")
-        ]
-        self.customers = seed
-        self.activeCustomerID = seed.first?.id
+        // Clean empty state — no seeded sample customers. Real records come
+        // from door-knocking, inspection drafts, and address lookups.
+        self.customers = []
+        self.activeCustomerID = nil
     }
 
     var activeCustomer: Customer? {

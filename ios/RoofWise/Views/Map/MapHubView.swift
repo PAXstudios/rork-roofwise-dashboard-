@@ -88,8 +88,12 @@ struct MapHubView: View {
     private let stormService: StormEventsServicing = StormEventsServiceFactory.shared
     private let geocoder: GeocodingService = GeocodingServiceFactory.shared
 
-    // Pre-computed entity pins (mock-derived from existing stores).
-    private var leadPins: [MapEntityPin] { Self.mockLeadPins }
+    // Live location state
+    @State private var locationProvider = MapLocationProvider()
+    @State private var didCenterOnUser = false
+
+    // Pre-computed entity pins from real stores.
+    private var leadPins: [MapEntityPin] { [] }
     /// Lead pins narrowed to the active radius filter (if any).
     private var visibleLeadPins: [MapEntityPin] {
         guard let center = radiusFilterCenter, let miles = radiusFilterMiles else {
@@ -129,7 +133,7 @@ struct MapHubView: View {
                 longitude: c.longitude
             )
         }
-        return jobs.isEmpty ? Self.mockJobPins : jobs
+        return jobs
     }
 
     var body: some View {
@@ -197,6 +201,13 @@ struct MapHubView: View {
         .onAppear {
             presentFocusedStormIfNeeded()
             presentFocusedRoofIfNeeded()
+            startLocationIfNeeded()
+        }
+        .onDisappear { locationProvider.stop() }
+        .overlay {
+            if locationProvider.isDeniedOrRestricted && focusedAddress == nil && focusedStorm == nil {
+                locationPermissionOverlay
+            }
         }
         .onChange(of: stormMonthsBack) { _, _ in
             Task { await loadStorms() }
@@ -727,6 +738,56 @@ struct MapHubView: View {
         ]
     }
 
+    private func startLocationIfNeeded() {
+        // Only auto-center on the user when no focused address / storm is set.
+        guard focusedAddress == nil, focusedStorm == nil else { return }
+        locationProvider.start { coord in
+            if !didCenterOnUser {
+                didCenterOnUser = true
+                let region = MKCoordinateRegion(
+                    center: coord,
+                    span: .init(latitudeDelta: 0.08, longitudeDelta: 0.08)
+                )
+                lastRegion = region
+                withAnimation(.easeInOut(duration: 0.4)) { camera = .region(region) }
+            }
+        }
+    }
+
+    private var locationPermissionOverlay: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "location.slash.fill")
+                .font(.system(size: 44, weight: .semibold))
+                .foregroundStyle(Theme.ember)
+            Text("Location permission required")
+                .font(.system(size: Theme.TypeRamp.title, weight: .heavy))
+                .foregroundStyle(Theme.ink)
+                .multilineTextAlignment(.center)
+            Text("Enable Location Services so the map can center on your live position and log accurate knocks.")
+                .font(.system(size: Theme.TypeRamp.body))
+                .foregroundStyle(Theme.inkSoft)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 12)
+            Button {
+                if let url = URL(string: UIApplication.openSettingsURLString) {
+                    UIApplication.shared.open(url)
+                }
+            } label: {
+                Text("Open Settings")
+                    .font(.system(size: Theme.TypeRamp.cta, weight: .heavy))
+                    .foregroundStyle(.white)
+                    .frame(minWidth: 220, minHeight: 64)
+                    .background(Theme.ink, in: .capsule)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(24)
+        .background(Theme.card, in: .rect(cornerRadius: 22))
+        .overlay(RoundedRectangle(cornerRadius: 22).stroke(Theme.hairline, lineWidth: 0.6))
+        .padding(.horizontal, 24)
+        .shadow(color: .black.opacity(0.18), radius: 20, y: 6)
+    }
+
     private func presentFocusedStormIfNeeded() {
         guard let pin = focusedStorm else { return }
         // Recenter and pop the detail sheet on the next runloop so the map is
@@ -772,31 +833,7 @@ struct MapHubView: View {
         selectedStorm = nil
     }
 
-    // MARK: - Mock geo helpers
-
-    private static let mockLeadPins: [MapEntityPin] = [
-        .init(kind: .lead, title: "Adams Residence",   subtitle: "Plano, TX",
-              latitude: 33.0421, longitude: -96.7012),
-        .init(kind: .lead, title: "Brooks Residence",  subtitle: "Frisco, TX",
-              latitude: 33.1602, longitude: -96.8101),
-        .init(kind: .lead, title: "Carter Residence",  subtitle: "Allen, TX",
-              latitude: 33.0985, longitude: -96.6612),
-        .init(kind: .lead, title: "Diaz Residence",    subtitle: "McKinney, TX",
-              latitude: 33.1865, longitude: -96.6504),
-        .init(kind: .lead, title: "Evans Residence",   subtitle: "Plano, TX",
-              latitude: 33.0712, longitude: -96.7388)
-    ]
-
-    private static let mockJobPins: [MapEntityPin] = [
-        .init(kind: .job, title: "Coleman Residence",  subtitle: "Plano, TX",
-              latitude: 33.0653, longitude: -96.7493),
-        .init(kind: .job, title: "Smith Residence",    subtitle: "Frisco, TX",
-              latitude: 33.1507, longitude: -96.8236),
-        .init(kind: .job, title: "Hawthorn Estate",    subtitle: "McKinney, TX",
-              latitude: 33.1972, longitude: -96.6398),
-        .init(kind: .job, title: "Patel Custom Build", subtitle: "Frisco, TX",
-              latitude: 33.1389, longitude: -96.7712)
-    ]
+    // MARK: - Address → coord helper
 
     /// FNV-1a stable hash so a propertyAddress maps to the same DFW lat/lng
     /// across launches (Swift's `Hasher` randomizes its seed).
@@ -916,5 +953,70 @@ private struct GoogleMapsCanvas: UIViewRepresentable {
     }
 }
 #endif
+
+// MARK: - File-private CLLocation provider
+
+@MainActor
+@Observable
+final class MapLocationProvider: NSObject, CLLocationManagerDelegate {
+    var lastCoord: CLLocationCoordinate2D?
+    var authorizationStatus: CLAuthorizationStatus = .notDetermined
+
+    private let manager = CLLocationManager()
+    private var onUpdate: ((CLLocationCoordinate2D) -> Void)?
+
+    override init() {
+        super.init()
+        manager.delegate = self
+        manager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters
+        authorizationStatus = manager.authorizationStatus
+    }
+
+    var isDeniedOrRestricted: Bool {
+        authorizationStatus == .denied || authorizationStatus == .restricted
+    }
+
+    func start(onUpdate: @escaping (CLLocationCoordinate2D) -> Void) {
+        self.onUpdate = onUpdate
+        authorizationStatus = manager.authorizationStatus
+        switch authorizationStatus {
+        case .notDetermined:
+            manager.requestWhenInUseAuthorization()
+        case .authorizedAlways, .authorizedWhenInUse:
+            manager.startUpdatingLocation()
+        default:
+            break
+        }
+    }
+
+    func stop() {
+        manager.stopUpdatingLocation()
+        onUpdate = nil
+    }
+
+    nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        let status = manager.authorizationStatus
+        Task { @MainActor in
+            self.authorizationStatus = status
+            if status == .authorizedAlways || status == .authorizedWhenInUse {
+                self.manager.startUpdatingLocation()
+            }
+        }
+    }
+
+    nonisolated func locationManager(_ manager: CLLocationManager,
+                                     didUpdateLocations locations: [CLLocation]) {
+        guard let coord = locations.last?.coordinate else { return }
+        Task { @MainActor in
+            self.lastCoord = coord
+            self.onUpdate?(coord)
+        }
+    }
+
+    nonisolated func locationManager(_ manager: CLLocationManager,
+                                     didFailWithError error: Error) {
+        // Non-fatal — caller renders denied-state UI from authorizationStatus.
+    }
+}
 
 #Preview { MapHubView() }

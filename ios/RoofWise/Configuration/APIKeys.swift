@@ -11,6 +11,7 @@ enum APIKeys {
     static let googleMapsApiKey: String      = "AIzaSyDmnzp1Q23igS3XTPA6BMcIGOygkmyYSBM"
     static let googleSolarApiKey: String     = "AIzaSyDmnzp1Q23igS3XTPA6BMcIGOygkmyYSBM"
     static let googleGeocodingApiKey: String = "AIzaSyDmnzp1Q23igS3XTPA6BMcIGOygkmyYSBM"
+    static let googlePlacesApiKey: String    = "AIzaSyDmnzp1Q23igS3XTPA6BMcIGOygkmyYSBM"
     static let noaaUserAgent: String         = read(
         "NoaaUserAgent",
         default: "RoofWise/1.0 (contact@roofwise.app)"
@@ -29,6 +30,7 @@ enum APIKeys {
     static var isLiveGoogleMaps: Bool      { !USE_MOCKS && !googleMapsApiKey.isEmpty }
     static var isLiveGoogleSolar: Bool     { !USE_MOCKS && !googleSolarApiKey.isEmpty }
     static var isLiveGoogleGeocoding: Bool { !USE_MOCKS && !googleGeocodingApiKey.isEmpty }
+    static var isLiveGooglePlaces: Bool    { !USE_MOCKS && !googlePlacesApiKey.isEmpty }
     static var isLiveNOAA: Bool            { !USE_MOCKS }
 
     /// Friendly status label for the on-screen pill.

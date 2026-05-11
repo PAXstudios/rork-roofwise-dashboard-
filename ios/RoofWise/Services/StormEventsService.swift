@@ -136,7 +136,6 @@ final class LiveStormEventsService: StormEventsServicing, @unchecked Sendable {
     let isLive = true
 
     private let session: URLSession
-    private let fallback = MockStormEventsService()
 
     init() {
         let cfg = URLSessionConfiguration.ephemeral
@@ -155,7 +154,7 @@ final class LiveStormEventsService: StormEventsServicing, @unchecked Sendable {
         let cal = Calendar(identifier: .gregorian)
         let now = Date()
         guard let start = cal.date(byAdding: .month, value: -sinceMonthsBack, to: now) else {
-            return try await fallback.events(near: coord, radiusMi: radiusMi, sinceMonthsBack: sinceMonthsBack)
+            return []
         }
 
         // Convert miles → degrees (1° lat ≈ 69 mi). Loose square approximation
@@ -182,25 +181,23 @@ final class LiveStormEventsService: StormEventsServicing, @unchecked Sendable {
             .init(name: "format",     value: "json")
         ]
 
-        guard let url = comps.url else {
-            return try await fallback.events(near: coord, radiusMi: radiusMi, sinceMonthsBack: sinceMonthsBack)
-        }
+        guard let url = comps.url else { return [] }
 
         do {
             let (data, resp) = try await session.data(from: url)
             guard let http = resp as? HTTPURLResponse,
                   (200..<300).contains(http.statusCode) else {
-                return try await fallback.events(near: coord, radiusMi: radiusMi, sinceMonthsBack: sinceMonthsBack)
+                let status = (resp as? HTTPURLResponse)?.statusCode ?? -1
+                print("[StormEventsService] NOAA non-OK \(status)")
+                return []
             }
             let rows = (try? JSONDecoder().decode([NCEIRow].self, from: data)) ?? []
-            let mapped = rows.compactMap { $0.toEvent() }
+            return rows.compactMap { $0.toEvent() }
                 .filter { $0.distanceMiles(from: coord) <= radiusMi }
                 .sorted { $0.eventDate > $1.eventDate }
-            return mapped.isEmpty
-                ? (try await fallback.events(near: coord, radiusMi: radiusMi, sinceMonthsBack: sinceMonthsBack))
-                : mapped
         } catch {
-            return try await fallback.events(near: coord, radiusMi: radiusMi, sinceMonthsBack: sinceMonthsBack)
+            print("[StormEventsService] NOAA error: \(error)")
+            return []
         }
     }
 }

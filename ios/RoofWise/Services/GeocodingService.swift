@@ -40,9 +40,9 @@ final class LiveGeocodingService: GeocodingService, @unchecked Sendable {
             let placemarks = try await geocoder.geocodeAddressString(trimmed)
             return placemarks.first?.location?.coordinate
         } catch {
-            // Fall back to deterministic mock so the rest of the pipeline
-            // (weather, storm match) still has a coord to work with.
-            return WeatherServiceFactory.mockCoord(forAddress: trimmed)
+            // No silent fallback — caller decides how to handle a miss.
+            print("[GeocodingService] CLGeocoder failed for \"\(trimmed)\": \(error)")
+            return nil
         }
     }
 }
@@ -56,9 +56,10 @@ enum GeocodingServiceFactory {
             : (LiveGeocodingService() as GeocodingService)
     }()
 
-    /// Synchronous helper for views that need a coord *now* (e.g. WeatherTile
-    /// initial render). Always returns the deterministic mock coord; the live
-    /// async path runs in the background and updates state once resolved.
+    /// Synchronous helper for legacy views that need a coord *now* before the
+    /// async geocode resolves. Returns a deterministic deviceless coord as a
+    /// placeholder anchor; callers should replace with the real CLGeocoder
+    /// result as soon as it arrives. Not a Live geocode.
     static func eagerCoord(forAddress address: String) -> CLLocationCoordinate2D {
         WeatherServiceFactory.mockCoord(forAddress: address)
     }

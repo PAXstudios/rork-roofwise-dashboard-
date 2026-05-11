@@ -23,6 +23,7 @@ struct DoorKnockingModeView: View {
         span: .init(latitudeDelta: 0.02, longitudeDelta: 0.02)
     )
     @State private var currentCoord: CLLocationCoordinate2D? = nil
+    @State private var authStatus: CLAuthorizationStatus = .notDetermined
     @State private var showLogSheet = false
     @State private var showEndConfirm = false
     @State private var showSummary = false
@@ -54,20 +55,27 @@ struct DoorKnockingModeView: View {
                 Spacer()
                 bottomBar
             }
+
+            if authStatus == .denied || authStatus == .restricted {
+                locationPermissionOverlay
+            }
         }
         .onAppear {
             if sessionId == nil {
                 sessionId = store.startSession(stormAlertId: routeStormAlertId).id
             }
-            locationProvider.start { coord in
-                currentCoord = coord
-                let region = MKCoordinateRegion(
-                    center: coord,
-                    span: .init(latitudeDelta: 0.01, longitudeDelta: 0.01)
-                )
-                lastRegion = region
-                withAnimation(.easeInOut(duration: 0.4)) { camera = .region(region) }
-            }
+            locationProvider.start(
+                onUpdate: { coord in
+                    currentCoord = coord
+                    let region = MKCoordinateRegion(
+                        center: coord,
+                        span: .init(latitudeDelta: 0.01, longitudeDelta: 0.01)
+                    )
+                    lastRegion = region
+                    withAnimation(.easeInOut(duration: 0.4)) { camera = .region(region) }
+                },
+                onAuth: { status in authStatus = status }
+            )
         }
         .onDisappear { locationProvider.stop() }
         .onReceive(elapsedTimer) { now in elapsedTick = now }
@@ -259,6 +267,43 @@ struct DoorKnockingModeView: View {
         return "\(Int((Double(interested) / Double(total)) * 100))%"
     }
 
+    private var locationPermissionOverlay: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "location.slash.fill")
+                .font(.system(size: 44, weight: .semibold))
+                .foregroundStyle(Theme.ember)
+            Text("Location permission required")
+                .font(.system(size: Theme.TypeRamp.title, weight: .heavy))
+                .foregroundStyle(Theme.ink)
+                .multilineTextAlignment(.center)
+            Text("Door-knock pins are GPS-stamped. Enable Location Services to log knocks at your real position.")
+                .font(.system(size: Theme.TypeRamp.body))
+                .foregroundStyle(Theme.inkSoft)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 12)
+            Button {
+                if let url = URL(string: UIApplication.openSettingsURLString) {
+                    UIApplication.shared.open(url)
+                }
+            } label: {
+                Text("Open Settings")
+                    .font(.system(size: Theme.TypeRamp.cta, weight: .heavy))
+                    .foregroundStyle(.white)
+                    .frame(minWidth: 220, minHeight: 64)
+                    .background(Theme.ink, in: .capsule)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(24)
+        .frame(maxWidth: 420)
+        .background(Theme.card, in: .rect(cornerRadius: 22))
+        .overlay(RoundedRectangle(cornerRadius: 22).stroke(Theme.hairline, lineWidth: 0.6))
+        .padding(.horizontal, 24)
+        .shadow(color: .black.opacity(0.18), radius: 20, y: 6)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(.ultraThinMaterial)
+    }
+
     private var elapsedLabel: String {
         _ = elapsedTick
         guard let s = session else { return "—" }
@@ -275,6 +320,7 @@ struct DoorKnockingModeView: View {
 private final class KnockLocationProvider: NSObject, CLLocationManagerDelegate {
     private let manager = CLLocationManager()
     private var onUpdate: ((CLLocationCoordinate2D) -> Void)?
+    private var onAuth: ((CLAuthorizationStatus) -> Void)?
 
     override init() {
         super.init()
@@ -282,9 +328,13 @@ private final class KnockLocationProvider: NSObject, CLLocationManagerDelegate {
         manager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters
     }
 
-    func start(onUpdate: @escaping (CLLocationCoordinate2D) -> Void) {
+    func start(onUpdate: @escaping (CLLocationCoordinate2D) -> Void,
+               onAuth: ((CLAuthorizationStatus) -> Void)? = nil) {
         self.onUpdate = onUpdate
-        switch manager.authorizationStatus {
+        self.onAuth = onAuth
+        let status = manager.authorizationStatus
+        onAuth?(status)
+        switch status {
         case .notDetermined:
             manager.requestWhenInUseAuthorization()
         case .authorizedAlways, .authorizedWhenInUse:
@@ -299,10 +349,13 @@ private final class KnockLocationProvider: NSObject, CLLocationManagerDelegate {
         onUpdate = nil
     }
 
-    nonisolated func locationManager(_ manager: CLLocationManager,
-                                     didChangeAuthorization status: CLAuthorizationStatus) {
-        if status == .authorizedAlways || status == .authorizedWhenInUse {
-            Task { @MainActor in self.manager.startUpdatingLocation() }
+    nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        let status = manager.authorizationStatus
+        Task { @MainActor in
+            self.onAuth?(status)
+            if status == .authorizedAlways || status == .authorizedWhenInUse {
+                self.manager.startUpdatingLocation()
+            }
         }
     }
 

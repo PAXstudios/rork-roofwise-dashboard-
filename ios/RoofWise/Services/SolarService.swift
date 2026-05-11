@@ -125,7 +125,6 @@ final class LiveSolarService: SolarServicing, @unchecked Sendable {
 
     private let session: URLSession
     private let apiKey: String
-    private let fallback = MockSolarService()
 
     init(apiKey: String) {
         self.apiKey = apiKey
@@ -138,7 +137,7 @@ final class LiveSolarService: SolarServicing, @unchecked Sendable {
 
     func measurements(at coord: CLLocationCoordinate2D) async throws -> RoofMeasurements {
         guard !apiKey.isEmpty else {
-            return try await fallback.measurements(at: coord)
+            throw SolarServiceError.missingKey
         }
         var comps = URLComponents(string: "https://solar.googleapis.com/v1/buildingInsights:findClosest")!
         comps.queryItems = [
@@ -148,20 +147,25 @@ final class LiveSolarService: SolarServicing, @unchecked Sendable {
             .init(name: "key",                value: apiKey)
         ]
         guard let url = comps.url else {
-            return try await fallback.measurements(at: coord)
+            throw SolarServiceError.unavailable
         }
 
         do {
             let (data, resp) = try await session.data(from: url)
             guard let http = resp as? HTTPURLResponse,
                   (200..<300).contains(http.statusCode) else {
-                return try await fallback.measurements(at: coord)
+                let status = (resp as? HTTPURLResponse)?.statusCode ?? -1
+                let body = String(data: data, encoding: .utf8)?.prefix(400) ?? ""
+                print("[SolarService] Live error \(status) \(body)")
+                throw SolarServiceError.unavailable
             }
             let dto = try JSONDecoder().decode(BuildingInsightsDTO.self, from: data)
             if let m = dto.toMeasurements() { return m }
-            return try await fallback.measurements(at: coord)
+            throw SolarServiceError.unavailable
+        } catch let e as SolarServiceError {
+            throw e
         } catch {
-            return try await fallback.measurements(at: coord)
+            throw SolarServiceError.underlying(error)
         }
     }
 }
