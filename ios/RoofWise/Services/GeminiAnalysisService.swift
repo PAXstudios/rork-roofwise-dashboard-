@@ -9,6 +9,9 @@ struct GeminiAnalysisService {
     private let toolkitURL: String
     private let secret: String
     private static let model = "google/gemini-2.5-flash"
+    /// Markers below this normalized confidence (0.0-1.0) are dropped after parsing.
+    /// Default-safe: markers with missing/zero confidence are KEPT (treated as 1.0).
+    static let MIN_CONFIDENCE_THRESHOLD: Double = 0.40
 
     init() {
         self.toolkitURL = Config.EXPO_PUBLIC_TOOLKIT_URL
@@ -195,6 +198,8 @@ struct GeminiAnalysisService {
         Coordinates MUST be normalized fractions of the image: x = (pixel_x / image_width), y = (pixel_y / image_height). 0.0 = left/top, 1.0 = right/bottom, top-left origin. (x,y) is the CENTER of the feature; radius is roughly half the feature size relative to the shorter image edge. NEVER return pixel values. NEVER return values outside [0, 1]. Measure coordinates against THIS image as you see it (do not rotate).
 
         Include all 10 damage categories in `findings` (set detected=false for ones not present). Mark each visible hail strike individually. If the image is NOT a roof (grass, sky, indoors, person, vehicle), set analyzed=false, return empty `damage_markers`, and add a finding with label="no_roof_detected".
+
+        HALLUCINATION GUARDRAIL (apply after detection, before finalizing response): Sanity-check your hail markers specifically. Wind, wear, missing, granule, bruise, fracture, exposed mat, and lichen detection rules above are unchanged. For hail damage only: Real hail damage is random and clustered. Some areas of a roof get hit, others don't. The spatial distribution is uneven by nature. If your hail markers form an evenly-spaced grid, a repeating pattern, or cover every visible shingle uniformly, you are pattern-matching the shingle texture rather than seeing real impacts. In that case, return an empty hail array for this photo. Better to under-detect hail than to hallucinate a grid. Hail impacts typically appear as: round 1/4 to 2 inch spots with granule loss exposing the dark mat; visible bruises that deform the shingle surface; fracture lines radiating from an impact point; sharply circular discolorations distinct from normal granule variation. If you can't identify those specific characteristics, mark zero hail. For each hail marker you DO return, include in the existing evidence/description field a 1-sentence specific observation (e.g. "exposed mat 3/4 inch with granule scatter at 10 o'clock corner"). Generic "hail impact" descriptions indicate uncertainty - when your evidence is generic, lower the confidence value.
         """
 
         let body = Self.chatCompletionBody(systemPrompt: prompt,
@@ -370,6 +375,44 @@ struct GeminiAnalysisService {
                 if let m = markerFromDict(dict) { markers.append(m) }
             }
         }
+        // --- Anti-hallucination filters (additive, default-safe) ---
+        let rawCounts = countsByType(markers)
+        let originalCount = markers.count
+        let confidenceFiltered: [DamageMarker] = markers.filter { m in
+            // Default-safe: missing/zero confidence is treated as 1.0 (kept).
+            if m.confidence == 0 { return true }
+            return (Double(m.confidence) / 100.0) >= MIN_CONFIDENCE_THRESHOLD
+        }
+        let keptCount = confidenceFiltered.count
+        print("[GeminiAnalysisService] Confidence filter: kept \(keptCount) of \(originalCount) markers (threshold \(MIN_CONFIDENCE_THRESHOLD))")
+        let filteredCounts = countsByType(confidenceFiltered)
+        // Hail-only grid check
+        var finalMarkers = confidenceFiltered
+        var hailGridDiscarded = false
+        let hailMarkers = confidenceFiltered.filter { $0.type == .hailStrike }
+        if hailMarkers.count > 6 {
+            var distances: [Double] = []
+            distances.reserveCapacity(hailMarkers.count * (hailMarkers.count - 1) / 2)
+            for i in 0..<hailMarkers.count {
+                for j in (i + 1)..<hailMarkers.count {
+                    let dx = Double(hailMarkers[i].x - hailMarkers[j].x)
+                    let dy = Double(hailMarkers[i].y - hailMarkers[j].y)
+                    distances.append((dx * dx + dy * dy).squareRoot())
+                }
+            }
+            let mean = distances.reduce(0, +) / Double(distances.count)
+            let variance = distances.map { ($0 - mean) * ($0 - mean) }.reduce(0, +) / Double(distances.count)
+            let stddev = variance.squareRoot()
+            let evenness = mean > 0 ? stddev / mean : 1.0
+            if evenness < 0.20 {
+                print("[GeminiAnalysisService] Hail grid detected (n=\(hailMarkers.count), evenness=\(evenness)) - discarding hail markers only")
+                finalMarkers = confidenceFiltered.filter { $0.type != .hailStrike }
+                hailGridDiscarded = true
+            }
+        }
+        markers = finalMarkers
+        print("[GeminiAnalysisService] Raw: \(rawCounts) After confidence filter (>=0.4): \(filteredCounts) Hail grid discarded: \(hailGridDiscarded)")
+        // --- end anti-hallucination filters ---
         if noRoofFlag {
             print("[Gemini] \u{26A0}\u{FE0F} no_roof_detected — image does not show a roof; suppressing markers.")
         }
@@ -396,6 +439,12 @@ struct GeminiAnalysisService {
             s = s.trimmingCharacters(in: .whitespacesAndNewlines)
         }
         return s
+    }
+
+    private static func countsByType(_ markers: [DamageMarker]) -> [String: Int] {
+        var dict: [String: Int] = [:]
+        for m in markers { dict[m.type.rawValue, default: 0] += 1 }
+        return dict
     }
 
     private static func markerFromDict(_ dict: [String: Any]) -> DamageMarker? {
