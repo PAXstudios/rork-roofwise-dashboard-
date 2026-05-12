@@ -250,6 +250,11 @@ struct Slope: Codable, Hashable, Identifiable {
     /// Per-slope detected area (squares) from Google Solar segments. Survives
     /// inspector edits to areaSquares so the report can show both.
     var detectedAreaSquares: Double?
+    /// Phase 8 (flag-gated). Set by `DecisionEngine` when mean per-slope AI
+    /// confidence is below 50. Surfaces a “Verify with inspector” chip in the
+    /// slope verdict UI. Recomputed on every `DecisionEngine.decide` and never
+    /// encoded — transient runtime state only.
+    var verifyWithInspector: Bool = false
 
     enum CodingKeys: String, CodingKey {
         case orientation
@@ -267,6 +272,7 @@ struct Slope: Codable, Hashable, Identifiable {
         case slopeRepairsRecommended = "slope_repairs_recommended"
         case damageTypes = "damage_types"
         case detectedAreaSquares = "detected_area_squares"
+        // verifyWithInspector is intentionally not encoded — recomputed at runtime.
     }
 
     init(orientation: String,

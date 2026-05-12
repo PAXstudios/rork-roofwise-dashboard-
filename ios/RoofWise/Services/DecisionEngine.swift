@@ -86,6 +86,9 @@ nonisolated enum DecisionEngine {
             s.slopeRepairsRecommended = repairs
             s.functionalDamagePresent = replacement || repairs
             s.cosmeticOnly = !s.functionalDamagePresent && anyHailWind
+            // Phase 8 (flag-gated). Defaults to false; flipped on when the
+            // structured-confidence flag is on AND mean confidence < 50.
+            s.verifyWithInspector = false
             return s
         }
 

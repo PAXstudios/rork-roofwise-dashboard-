@@ -210,6 +210,7 @@ struct PhotoDamageOverlayView: View {
                           y: rect.minY + marker.y * rect.height)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .allowsHitTesting(true)
     }
 

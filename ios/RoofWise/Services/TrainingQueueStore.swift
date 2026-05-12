@@ -79,7 +79,12 @@ final class TrainingQueueStore {
     /// the count (the existing capture pipeline does NOT yet surface a per-
     /// category confidence) so the queue still receives a realistic mix
     /// without changing the on-disk schema.
+    ///
+    /// Phase 8: when `APIKeys.useStructuredConfidence == true`, this
+    /// deterministic stub becomes inert. Real per-result confidence enqueue
+    /// flows through `enqueueFromAnalysis(_:on:slopeOrientation:photoPath:)`.
     func enqueueFromSlope(_ slope: Slope, on reportId: String) {
+        if APIKeys.useStructuredConfidence { return }
         let pairs: [(TrainingItem.Kind, Int)] = [
             (.hailBruise,   slope.damageTypes.hail.asphaltBruise),
             (.hailFracture, slope.damageTypes.hail.asphaltMatFracture),
@@ -99,6 +104,62 @@ final class TrainingQueueStore {
                 confidence: confidence
             )
         }
+    }
+
+    // MARK: Structured-confidence path (Phase 8, flag-gated)
+
+    /// Phase 8 path. Consumes the real per-finding / per-marker confidence
+    /// scores already returned by Gemini and enqueues a training item when
+    /// the mean confidence on this analysis run is < 60 (0–100 scale).
+    /// No-op when the flag is OFF. No-op when the result has no signal
+    /// (no markers and no findings).
+    @discardableResult
+    func enqueueFromAnalysis(_ result: GeminiAnalysisService.AnalysisResult,
+                             on reportId: String,
+                             slopeOrientation: String,
+                             kind: TrainingItem.Kind,
+                             photoPath: String? = nil) -> TrainingItem? {
+        guard APIKeys.useStructuredConfidence else { return nil }
+        guard let avg = meanConfidence(result) else { return nil }
+        guard avg < 60 else { return nil }
+        let count = max(result.markers.count,
+                        result.findings.filter { $0.detected }.count)
+        if items.contains(where: {
+            $0.inspectionId == reportId &&
+            $0.slopeOrientation == slopeOrientation &&
+            $0.kind == kind &&
+            $0.status == .pending
+        }) {
+            return nil
+        }
+        let item = TrainingItem(
+            inspectionId: reportId,
+            slopeOrientation: slopeOrientation,
+            photoPath: photoPath,
+            kind: kind,
+            aiCount: count,
+            aiConfidence: avg / 100.0
+        )
+        items.insert(item, at: 0)
+        persist()
+        return item
+    }
+
+    /// Mean confidence (0–100) across the analysis result. Prefers
+    /// `findings[].confidence`; falls back to per-marker confidence when
+    /// findings is empty. Returns `nil` when there is no signal at all.
+    private func meanConfidence(_ result: GeminiAnalysisService.AnalysisResult) -> Double? {
+        let findingScores = result.findings.map { Double($0.confidence) }
+        if !findingScores.isEmpty {
+            return findingScores.reduce(0, +) / Double(findingScores.count)
+        }
+        let markerScores = result.markers
+            .map { Double($0.confidence) }
+            .filter { $0 > 0 }
+        if !markerScores.isEmpty {
+            return markerScores.reduce(0, +) / Double(markerScores.count)
+        }
+        return nil
     }
 
     /// Deterministic mock confidence: high counts + categories prone to

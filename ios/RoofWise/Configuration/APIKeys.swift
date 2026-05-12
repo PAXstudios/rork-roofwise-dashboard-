@@ -26,6 +26,14 @@ enum APIKeys {
     /// are still being wired.
     static let USE_MOCKS: Bool = false
 
+    /// Phase 8 feature flag. When `true`, the analyze pipeline surfaces
+    /// structured per-category Gemini confidence to the UI (slope chips,
+    /// verify-with-inspector badges) and the training queue switches from the
+    /// deterministic stub to real `confidence_avg < 0.6` enqueue. Default `false`
+    /// — flip to `true` to enable. Strictly additive; everything below is OFF
+    /// until you flip this.
+    static let useStructuredConfidence: Bool = false
+
     // MARK: Live-mode accessors
     static var isLiveGoogleMaps: Bool      { !USE_MOCKS && !googleMapsApiKey.isEmpty }
     static var isLiveGoogleSolar: Bool     { !USE_MOCKS && !googleSolarApiKey.isEmpty }

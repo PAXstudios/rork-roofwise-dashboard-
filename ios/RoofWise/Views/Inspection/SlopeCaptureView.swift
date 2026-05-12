@@ -63,6 +63,11 @@ struct SlopeCaptureView: View {
     @State private var pitchRiseOver12: Int = 6
     @State private var testSquareCount: Int = 1
 
+    // MARK: Phase 8 (flag-gated) AI confidence chips
+    /// Sheet binding for the small “AI confidence” info popover. Only used
+    /// when `APIKeys.useStructuredConfidence == true`.
+    @State private var showConfidenceInfo: Bool = false
+
     private let orientationOptions = ["North", "South", "East", "West", "Other"]
     private let difficultyOptions: [(label: String, value: Double)] = [
         ("Easy", 1.0), ("Medium", 1.25), ("Hard", 1.5), ("Severe", 2.0)
@@ -122,6 +127,11 @@ struct SlopeCaptureView: View {
                 showCamera = false
             }
             .ignoresSafeArea()
+        }
+        .sheet(isPresented: $showConfidenceInfo) {
+            confidenceInfoSheet
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
         }
         .fullScreenCover(isPresented: $showFullCapture) {
             // Reuse the existing polished capture flow as-is. It manages its
@@ -320,6 +330,7 @@ struct SlopeCaptureView: View {
 
     private var hailCard: some View {
         SlopeCard(title: "Hail Damage", icon: "circle.hexagongrid.fill", tint: Theme.crimson) {
+            confidenceChip(for: .hail)
             StepperRow(label: "Bruises",        value: $hailBruise,   range: 0...99)
             StepperRow(label: "Mat Fractures",  value: $hailFracture, range: 0...99)
             StepperRow(label: "Granule Loss with Exposed Mat",
@@ -329,6 +340,7 @@ struct SlopeCaptureView: View {
 
     private var windCard: some View {
         SlopeCard(title: "Wind Damage", icon: "wind", tint: Theme.amber) {
+            confidenceChip(for: .wind)
             StepperRow(label: "Creased Shingles", value: $windCrease,  range: 0...99)
             StepperRow(label: "Missing Shingles", value: $windMissing, range: 0...99)
             StepperRow(label: "Lifted / Unsealed", value: $windLifted, range: 0...99)
@@ -337,6 +349,7 @@ struct SlopeCaptureView: View {
 
     private var wearCard: some View {
         SlopeCard(title: "Wear", icon: "clock.arrow.circlepath", tint: Theme.inkSoft) {
+            confidenceChip(for: .wear)
             ToggleRow(label: "Natural Weathering",   isOn: $wearNatural)
             ToggleRow(label: "Foot Traffic",         isOn: $wearFoot)
             ToggleRow(label: "Manufacturing Defect", isOn: $wearMfg)
@@ -400,6 +413,96 @@ struct SlopeCaptureView: View {
     }
 
     // MARK: Functional damage
+
+    // MARK: Phase 8 (flag-gated) AI confidence chips
+
+    /// Lightweight category enum used only to label the AI confidence chip.
+    /// Mirrors the mapping in the Phase 8 spec.
+    private enum AICategory { case hail, wind, wear, missing }
+
+    /// Findings sourced for this slope. Returns empty until the analyze
+    /// pipeline starts writing per-slope findings back through the store.
+    /// Read-only — keeps the chip code path additive and inert by default.
+    private var aiFindings: [InspectionFinding] { [] }
+
+    private func meanConfidence(for category: AICategory) -> Int? {
+        let labels: Set<String>
+        switch category {
+        case .hail:    labels = ["hail_damage"]
+        case .wind:    labels = ["wind_creasing"]
+        case .missing: labels = ["missing_shingles"]
+        case .wear:    labels = ["granule_loss", "cracking_splitting", "blistering",
+                                  "algae_moss", "bruising", "structural_sagging",
+                                  "flashing_damage"]
+        }
+        let matched = aiFindings.filter { labels.contains($0.label) }
+        guard !matched.isEmpty else { return nil }
+        let total = matched.reduce(0) { $0 + $1.confidence }
+        return Int((Double(total) / Double(matched.count)).rounded())
+    }
+
+    @ViewBuilder
+    private func confidenceChip(for category: AICategory) -> some View {
+        if APIKeys.useStructuredConfidence,
+           let pct = meanConfidence(for: category) {
+            HStack(spacing: 8) {
+                HStack(spacing: 6) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 10, weight: .heavy))
+                        .foregroundStyle(Theme.sky)
+                    Text("AI confidence: \(pct)%")
+                        .font(.system(size: Theme.TypeRamp.metaSm, weight: .heavy))
+                        .foregroundStyle(Theme.ink)
+                }
+                .padding(.horizontal, 10).padding(.vertical, 6)
+                .background(Theme.canvas, in: .capsule)
+                .overlay(Capsule().stroke(Theme.hairline, lineWidth: 0.6))
+                .cardStyle(padding: 0, radius: 14)
+
+                Button {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    showConfidenceInfo = true
+                } label: {
+                    Image(systemName: "info.circle")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(Theme.inkSoft)
+                        .frame(width: 56, height: 56)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                Spacer(minLength: 0)
+            }
+        }
+    }
+
+    private var confidenceInfoSheet: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("AI confidence")
+                    .font(.system(size: Theme.TypeRamp.title, weight: .heavy))
+                    .foregroundStyle(Theme.ink)
+                Text("NN% is the model’s self-reported confidence for this category on this slope. Low confidence (under 60%) means an inspector should verify the finding directly.")
+                    .font(.system(size: Theme.TypeRamp.body, weight: .semibold))
+                    .foregroundStyle(Theme.inkSoft)
+                    .lineSpacing(3)
+                Spacer()
+                Button {
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    showConfidenceInfo = false
+                } label: {
+                    Text("OK")
+                        .font(.system(size: 18, weight: .heavy))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity, minHeight: 88)
+                        .background(Theme.inkGradient, in: .rect(cornerRadius: 18))
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(20)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Theme.canvas)
+        }
+    }
 
     private var functionalCard: some View {
         SlopeCard(title: "Functional Damage", icon: "stethoscope") {

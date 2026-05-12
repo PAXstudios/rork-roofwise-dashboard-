@@ -16,7 +16,7 @@ enum ImageResize {
     }
 
     private static let fullLadder: [(maxPixel: CGFloat, quality: CGFloat)] = [
-        (1280, 0.80), (1024, 0.78), (832, 0.74), (640, 0.70)
+        (1600, 0.85), (1280, 0.82), (1024, 0.78), (832, 0.74), (640, 0.70)
     ]
     private static let liveLadder: [(maxPixel: CGFloat, quality: CGFloat)] = [
         (768, 0.70), (640, 0.65), (512, 0.60)

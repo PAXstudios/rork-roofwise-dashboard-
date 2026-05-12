@@ -363,6 +363,9 @@ struct JobDetailView: View {
                             .lineLimit(1)
                         HStack(spacing: 6) {
                             verdictPill(slope: slope)
+                            if slope.verifyWithInspector {
+                                verifyInspectorBadge
+                            }
                             if photoCount > 0 {
                                 HStack(spacing: 4) {
                                     Image(systemName: "photo.fill")
@@ -399,6 +402,20 @@ struct JobDetailView: View {
             }
             .buttonStyle(.plain)
         }
+    }
+
+    private var verifyInspectorBadge: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 10, weight: .heavy))
+            Text("Verify with inspector")
+                .font(.system(size: Theme.TypeRamp.metaSm, weight: .heavy))
+                .lineLimit(1)
+        }
+        .foregroundStyle(Theme.amber)
+        .padding(.horizontal, 8).padding(.vertical, 4)
+        .background(Theme.amberSoft, in: .capsule)
+        .overlay(Capsule().stroke(Theme.amber.opacity(0.35), lineWidth: 0.6))
     }
 
     private func verdictPill(slope: Slope) -> some View {
