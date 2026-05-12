@@ -54,6 +54,14 @@ final class ActivityStore {
         return event
     }
 
+    /// Logs an AI calibration update from `LocalLearningEngine`. Stored under
+    /// a shared `ai-calibration` bucket (no specific inspection).
+    func logCalibrationUpdate(category: String, delta: Double) {
+        let sign = delta >= 0 ? "+" : ""
+        let summary = "AI threshold \(category) \(sign)\(String(format: "%.1f", delta))%"
+        log(.aiCalibrationUpdated, summary: summary, reportId: "ai-calibration")
+    }
+
     /// Logs a low-priority `.uiTap` event used by the broader tap-trace audit.
     /// Not bound to any inspection — stored under a shared `ui-tap` bucket.
     func logTap(target: String) {

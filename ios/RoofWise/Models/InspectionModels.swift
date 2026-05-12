@@ -101,7 +101,7 @@ enum ClaimWorthiness: String {
     }
 }
 
-struct InspectionFinding: Identifiable {
+struct InspectionFinding: Identifiable, Hashable {
     let id = UUID()
     let label: String      // e.g. "wind_creased_shingles"
     let display: String    // human friendly

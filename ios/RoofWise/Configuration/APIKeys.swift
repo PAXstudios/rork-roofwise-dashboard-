@@ -32,7 +32,7 @@ enum APIKeys {
     /// deterministic stub to real `confidence_avg < 0.6` enqueue. Default `false`
     /// — flip to `true` to enable. Strictly additive; everything below is OFF
     /// until you flip this.
-    static let useStructuredConfidence: Bool = false
+    static let useStructuredConfidence: Bool = true
 
     // MARK: Live-mode accessors
     static var isLiveGoogleMaps: Bool      { !USE_MOCKS && !googleMapsApiKey.isEmpty }

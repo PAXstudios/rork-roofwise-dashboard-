@@ -135,6 +135,7 @@ struct ActivityFeedSheet: View {
         case .proposalSent:                return ("paperplane.fill", Theme.amber)
         case .proposalViewed:              return ("eye.fill", Theme.sky)
         case .proposalSigned:              return ("checkmark.seal.fill", Theme.mint)
+        case .aiCalibrationUpdated:        return ("sparkles", Theme.sky)
         }
     }
 }

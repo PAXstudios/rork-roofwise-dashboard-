@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 // MARK: - Haag Inspection schema (single source of truth)
 //
@@ -255,6 +256,10 @@ struct Slope: Codable, Hashable, Identifiable {
     /// slope verdict UI. Recomputed on every `DecisionEngine.decide` and never
     /// encoded — transient runtime state only.
     var verifyWithInspector: Bool = false
+    /// Phase 9 transient. Per-slope AI findings, written by InspectionStore
+    /// after each successful analyze run. Never encoded. Drives the Phase 8
+    /// confidence chips in SlopeCaptureView and the Phase 8/9 Verify badge.
+    var aiFindings: [InspectionFinding] = []
 
     enum CodingKeys: String, CodingKey {
         case orientation

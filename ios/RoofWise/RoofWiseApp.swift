@@ -25,6 +25,7 @@ struct RoofWiseApp: App {
         // Register the storm-watch BGTask handler. Safe no-op in mock builds
         // and on simulator where BGTasks are unavailable.
         StormWatchService.registerBackgroundTasks()
+        CalibrationPushService.registerBackgroundTasks()
 
         // Register the storm-alert notification category so action buttons
         // (View / Snooze / Dismiss) appear when an alert push arrives.
@@ -59,6 +60,7 @@ struct RoofWiseApp: App {
             case .background:
                 StormWatchService.shared.scheduleNextBackgroundRefresh()
                 StormWatchService.shared.stopForegroundPolling()
+                CalibrationPushService.shared.scheduleNext()
             default:
                 break
             }

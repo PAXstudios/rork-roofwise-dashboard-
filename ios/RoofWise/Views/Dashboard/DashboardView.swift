@@ -47,6 +47,7 @@ struct DashboardView: View {
                     TodaysGoalsCard()
                     LeaderboardCard()
                     RecentWinsCard()
+                    AICalibrationCard()
                     HomeCardsCarousel(onOpenTraining: onOpenTraining)
                     CoachingActivityCard(onOpenTraining: onOpenTraining)
                     StormAlertSubscriptionCard()

@@ -175,7 +175,9 @@ struct GeminiAnalysisService {
             }
         }()
 
-        let prompt = """
+        let userStylePrefix = LocalLearningEngine.shared.userStylePromptPrefix()
+        let promptHead = userStylePrefix.isEmpty ? "" : (userStylePrefix + "\n")
+        let prompt = promptHead + """
         You are a forensic roof inspector (HAAG standards). \(intro)
 
         Identify the roof covering and any visible damage. Be conservative — only flag damage you can actually see in the pixels. Empty arrays are correct when nothing is visible.

@@ -31,6 +31,29 @@ struct JobDetailView: View {
         store.inspection(with: reportId)
     }
 
+    @State private var showSwipeReview: Bool = false
+
+    /// Phase 9F. "Review AI" CTA that routes into SwipeReviewView for this
+    /// inspector. Always rendered — the destination handles its own empty state.
+    private var reviewAIButton: some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            showSwipeReview = true
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: Theme.TypeRamp.body, weight: .heavy))
+                Text("Review AI")
+                    .font(.system(size: Theme.TypeRamp.cta, weight: .heavy))
+            }
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity, minHeight: 64)
+            .background(Theme.ember, in: .rect(cornerRadius: 16))
+            .shadow(color: Theme.ember.opacity(0.30), radius: 12, y: 4)
+        }
+        .buttonStyle(.plain)
+    }
+
     var body: some View {
         ZStack(alignment: .bottom) {
             Theme.canvas.ignoresSafeArea()
@@ -52,6 +75,7 @@ struct JobDetailView: View {
                             slopesList(insp)
                         }
                         addSlopeButton(label: insp.slopes.isEmpty ? "Add slope" : "Add another slope")
+                        reviewAIButton
                         if !insp.slopes.isEmpty {
                             signReportCard(insp)
                             proposalSection(insp)
@@ -81,6 +105,9 @@ struct JobDetailView: View {
         }
         .navigationDestination(isPresented: $showAddSlope) {
             SlopeCaptureView(reportId: reportId)
+        }
+        .navigationDestination(isPresented: $showSwipeReview) {
+            SwipeReviewView()
         }
         .navigationDestination(item: $editingOrientation) { orient in
             SlopeCaptureView(reportId: reportId, existingOrientation: orient)

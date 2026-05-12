@@ -7,11 +7,24 @@ struct TrainingQueueView: View {
     @State private var queue = TrainingQueueStore.shared
     @State private var correcting: TrainingItem? = nil
     @State private var correctionValue: Int = 0
+    @State private var toastText: String? = nil
+    @State private var prevThresholds: [String: Double] = [:]
 
     var body: some View {
-        ZStack(alignment: .bottom) {
+        ZStack(alignment: .top) {
             Theme.canvas.ignoresSafeArea()
             content
+            if let toast = toastText {
+                Text(toast)
+                    .font(.system(size: Theme.TypeRamp.captionSm, weight: .heavy))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 14).padding(.vertical, 10)
+                    .frame(maxWidth: 320)
+                    .background(Theme.ink, in: .capsule)
+                    .cardStyle(padding: 0, radius: 22)
+                    .padding(.top, 12)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
         }
         .navigationTitle("Pending Review")
         .navigationBarTitleDisplayMode(.inline)
@@ -20,9 +33,12 @@ struct TrainingQueueView: View {
                 item: item,
                 value: $correctionValue,
                 onSave: { newCount in
+                    captureThresholds(forCategory: item.kind.rawValue)
                     queue.correct(item, override: newCount)
+                    recordCorrection(item: item, type: .edited)
                     UINotificationFeedbackGenerator().notificationOccurred(.success)
                     correcting = nil
+                    showThresholdToast(forCategory: item.kind.rawValue)
                 },
                 onCancel: { correcting = nil }
             )
@@ -112,8 +128,11 @@ struct TrainingQueueView: View {
                 actionChip(label: "Looks right",
                            icon: "checkmark.circle.fill",
                            tint: Theme.mint) {
+                    captureThresholds(forCategory: item.kind.rawValue)
                     queue.accept(item)
+                    recordCorrection(item: item, type: .confirmed)
                     UINotificationFeedbackGenerator().notificationOccurred(.success)
+                    showThresholdToast(forCategory: item.kind.rawValue)
                 }
                 actionChip(label: "Wrong count",
                            icon: "pencil.circle.fill",
@@ -124,13 +143,52 @@ struct TrainingQueueView: View {
                 actionChip(label: "Not damage",
                            icon: "xmark.circle.fill",
                            tint: Theme.crimson) {
+                    captureThresholds(forCategory: item.kind.rawValue)
                     queue.reject(item)
+                    recordCorrection(item: item, type: .removedFalsePositive)
                     UINotificationFeedbackGenerator().notificationOccurred(.warning)
+                    showThresholdToast(forCategory: item.kind.rawValue)
                 }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .cardStyle(padding: 16, radius: 18)
+    }
+
+    // MARK: Phase 9 helpers
+
+    private func captureThresholds(forCategory category: String) {
+        prevThresholds[category] = LocalLearningEngine.shared.effectiveThreshold(forCategory: category)
+    }
+
+    private func recordCorrection(item: TrainingItem, type: CorrectionType) {
+        let snap = CorrectionDetectionSnapshot(markers: [], findings: [])
+        let data = CorrectionsStore.encode(snap)
+        let correction = Correction(
+            inspectionId: UUID(),
+            photoId: UUID(),
+            originalDetection: data,
+            correctedDetection: data,
+            correctionType: type,
+            categoriesAffected: [item.kind.rawValue],
+            delta: CorrectionsStore.encode(DetectionDelta()),
+            correctedBy: CorrectionsStore.localUserId
+        )
+        CorrectionsStore.shared.append(correction)
+    }
+
+    private func showThresholdToast(forCategory category: String) {
+        let prev = prevThresholds[category]
+        let delta = LocalLearningEngine.shared.thresholdDelta(forCategory: category, previous: prev)
+        guard abs(delta) >= 0.05 else { return }
+        let pretty = category.replacingOccurrences(of: "_", with: " ").capitalized
+        let sign = delta >= 0 ? "+" : ""
+        toastText = "Thanks — this improved \(pretty) detection by \(sign)\(String(format: "%.1f", abs(delta)))%"
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2.4))
+            withAnimation { toastText = nil }
+        }
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {}
     }
 
     private func actionChip(label: String,

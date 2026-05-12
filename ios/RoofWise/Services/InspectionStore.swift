@@ -90,6 +90,19 @@ final class InspectionStore {
         save()
     }
 
+    /// Phase 9: write transient AI findings onto the matching slope. Findings
+    /// are not persisted (Slope.aiFindings is excluded from Codable) so this
+    /// is in-memory only. Safe to call from any analyze completion path.
+    func setAIFindings(_ findings: [InspectionFinding],
+                       for reportId: String,
+                       orientation: String) {
+        guard let idx = inspections.firstIndex(where: { $0.job.reportId == reportId }) else { return }
+        var insp = inspections[idx]
+        guard let sIdx = insp.slopes.firstIndex(where: { $0.orientation == orientation }) else { return }
+        insp.slopes[sIdx].aiFindings = findings
+        inspections[idx] = insp
+    }
+
     func removeSlope(orientation: String, on reportId: String) {
         guard let idx = inspections.firstIndex(where: { $0.job.reportId == reportId }) else { return }
         var insp = inspections[idx]

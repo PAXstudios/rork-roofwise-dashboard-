@@ -7,6 +7,8 @@ struct TrainingView: View {
     @State private var showExplainer = false
     @State private var showQueue = false
     @State private var queue = TrainingQueueStore.shared
+    @State private var corrections = CorrectionsStore.shared
+    @State private var showSwipeReview = false
 
     private let curriculum = TrainingCurriculum.lessons
 
@@ -15,6 +17,7 @@ struct TrainingView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     header
+                    calibrationSubheader
                     pendingReviewCard
                     reviewStatsCard
                     progressCard
@@ -46,6 +49,9 @@ struct TrainingView: View {
             }
             .navigationDestination(isPresented: $showQueue) {
                 TrainingQueueView()
+            }
+            .navigationDestination(isPresented: $showSwipeReview) {
+                SwipeReviewView()
             }
         }
     }
@@ -136,6 +142,37 @@ struct TrainingView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
         .background(tint.opacity(0.10), in: .rect(cornerRadius: 14))
+    }
+
+    // MARK: - Phase 9 calibration subheader
+
+    @ViewBuilder
+    private var calibrationSubheader: some View {
+        let total = corrections.totalCount
+        if total >= 1 {
+            HStack(spacing: 10) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: Theme.TypeRamp.caption, weight: .heavy))
+                    .foregroundStyle(Theme.sky)
+                Text("Calibrating to your inspection style — \(total) correction\(total == 1 ? "" : "s") recorded")
+                    .font(.system(size: Theme.TypeRamp.caption, weight: .heavy))
+                    .foregroundStyle(Theme.inkSoft)
+                Spacer(minLength: 0)
+                Button {
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    showSwipeReview = true
+                } label: {
+                    Text("Swipe review")
+                        .font(.system(size: Theme.TypeRamp.captionSm, weight: .heavy))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 12).padding(.vertical, 8)
+                        .background(Theme.ember, in: .capsule)
+                }
+                .buttonStyle(.plain)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .cardStyle(padding: 12, radius: 14)
+        }
     }
 
     // MARK: - Header

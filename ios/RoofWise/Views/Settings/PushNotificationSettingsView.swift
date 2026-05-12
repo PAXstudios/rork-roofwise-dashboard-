@@ -18,6 +18,7 @@ struct PushNotificationSettingsView: View {
                 permissionCard
                 preferenceCard
                 snoozeCard
+                correctionsSyncCard
                 Color.clear.frame(height: 24)
             }
             .padding(.horizontal, 18)
@@ -28,6 +29,35 @@ struct PushNotificationSettingsView: View {
         .navigationTitle("Notifications")
         .navigationBarTitleDisplayMode(.inline)
         .task { await refresh() }
+    }
+
+    // MARK: Phase 9 corrections sync
+
+    @State private var syncCorrections: Bool = CorrectionsSyncService.shared.syncEnabled
+
+    private var correctionsSyncCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("AI LEARNING")
+                .font(.system(size: Theme.TypeRamp.captionSm, weight: .heavy))
+                .tracking(0.8)
+                .foregroundStyle(Theme.inkSoft)
+            Toggle(isOn: $syncCorrections) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Sync corrections to cloud")
+                        .font(.system(size: Theme.TypeRamp.body, weight: .heavy))
+                        .foregroundStyle(Theme.ink)
+                    Text("Help RoofWise improve the AI")
+                        .font(.system(size: Theme.TypeRamp.metaSm, weight: .semibold))
+                        .foregroundStyle(Theme.inkSoft)
+                }
+            }
+            .tint(Theme.ember)
+            .onChange(of: syncCorrections) { _, newValue in
+                CorrectionsSyncService.shared.syncEnabled = newValue
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cardStyle(padding: 16, radius: 18)
     }
 
     // MARK: Sections
