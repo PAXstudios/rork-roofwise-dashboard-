@@ -1,8 +1,5 @@
 import Foundation
 import CoreLocation
-#if canImport(WeatherKit)
-import WeatherKit
-#endif
 
 // MARK: - Snapshot
 
@@ -301,94 +298,12 @@ final class GoogleWeatherProvider: WeatherServicing, @unchecked Sendable {
     }
 }
 
-// MARK: - WeatherKit fallback (gated)
-
-#if canImport(WeatherKit)
-@available(iOS 16.0, *)
-final class LiveWeatherService: WeatherServicing, @unchecked Sendable {
-    private let service = WeatherService.shared
-
-    func currentConditions(at coord: CLLocationCoordinate2D) async throws -> WeatherSnapshot {
-        do {
-            let location = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
-            let weather = try await service.weather(for: location)
-            let current = weather.currentWeather
-            let tempF = Int(current.temperature.converted(to: .fahrenheit).value.rounded())
-            let windMph = Int(current.wind.speed.converted(to: .milesPerHour).value.rounded())
-            let hailRisk = Int((current.precipitationIntensity.value * 50).rounded())
-            return WeatherSnapshot(
-                temperatureF: tempF,
-                condition: current.condition.description,
-                windMph: windMph,
-                hailRiskPct: min(100, max(0, hailRisk)),
-                updatedAt: current.date
-            )
-        } catch {
-            throw WeatherServiceError.underlying(error)
-        }
-    }
-
-    func hourlyForecast(at coord: CLLocationCoordinate2D) async throws -> [WeatherHourlySample] {
-        do {
-            let location = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
-            let weather = try await service.weather(for: location)
-            return weather.hourlyForecast.forecast.prefix(24).map { hour in
-                WeatherHourlySample(
-                    date: hour.date,
-                    temperatureF: Int(hour.temperature.converted(to: .fahrenheit).value.rounded()),
-                    condition: hour.condition.description,
-                    symbolName: hour.symbolName,
-                    windMph: Int(hour.wind.speed.converted(to: .milesPerHour).value.rounded()),
-                    precipPct: Int((hour.precipitationChance * 100).rounded())
-                )
-            }
-        } catch {
-            throw WeatherServiceError.underlying(error)
-        }
-    }
-}
-#endif
-
-// MARK: - Google-first with WeatherKit fallback
-
-final class GoogleWithFallbackWeatherService: WeatherServicing, @unchecked Sendable {
-    private let google = GoogleWeatherProvider()
-
-    func currentConditions(at coord: CLLocationCoordinate2D) async throws -> WeatherSnapshot {
-        do {
-            return try await google.currentConditions(at: coord)
-        } catch {
-            #if canImport(WeatherKit)
-            if #available(iOS 16.0, *) {
-                print("[WeatherService] Falling back to WeatherKit after Google failure.")
-                return try await LiveWeatherService().currentConditions(at: coord)
-            }
-            #endif
-            throw WeatherServiceError.unavailable
-        }
-    }
-
-    func hourlyForecast(at coord: CLLocationCoordinate2D) async throws -> [WeatherHourlySample] {
-        do {
-            return try await google.hourlyForecast(at: coord)
-        } catch {
-            #if canImport(WeatherKit)
-            if #available(iOS 16.0, *) {
-                print("[WeatherService] Falling back to WeatherKit after Google failure.")
-                return try await LiveWeatherService().hourlyForecast(at: coord)
-            }
-            #endif
-            throw WeatherServiceError.unavailable
-        }
-    }
-}
-
 // MARK: - Factory
 
 enum WeatherServiceFactory {
     static let shared: WeatherServicing = {
         if !APIKeys.USE_MOCKS {
-            return GoogleWithFallbackWeatherService()
+            return GoogleWeatherProvider()
         }
         return MockWeatherService()
     }()
