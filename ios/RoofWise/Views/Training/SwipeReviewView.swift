@@ -224,8 +224,8 @@ struct SwipeReviewView: View {
         let snap = CorrectionDetectionSnapshot(markers: [], findings: [])
         let data = CorrectionsStore.encode(snap)
         let correction = Correction(
-            inspectionId: UUID(),
-            photoId: UUID(),
+            inspectionId: CorrectionsStore.deterministicUUID(from: item.inspectionId),
+            photoId: CorrectionsStore.deterministicUUID(from: item.photoPath ?? item.id.uuidString),
             originalDetection: data,
             correctedDetection: data,
             correctionType: .confirmed,
@@ -249,8 +249,8 @@ struct SwipeReviewView: View {
         let snap = CorrectionDetectionSnapshot(markers: [], findings: [])
         let data = CorrectionsStore.encode(snap)
         let correction = Correction(
-            inspectionId: UUID(),
-            photoId: UUID(),
+            inspectionId: CorrectionsStore.deterministicUUID(from: item.inspectionId),
+            photoId: CorrectionsStore.deterministicUUID(from: item.photoPath ?? item.id.uuidString),
             originalDetection: data,
             correctedDetection: data,
             correctionType: isOnlyAdds ? .addedMissed : .edited,
@@ -275,8 +275,8 @@ struct SwipeReviewView: View {
         let snap = CorrectionDetectionSnapshot(markers: [], findings: [])
         let data = CorrectionsStore.encode(snap)
         let correction = Correction(
-            inspectionId: UUID(),
-            photoId: UUID(),
+            inspectionId: CorrectionsStore.deterministicUUID(from: item.inspectionId),
+            photoId: CorrectionsStore.deterministicUUID(from: item.photoPath ?? item.id.uuidString),
             originalDetection: data,
             correctedDetection: data,
             correctionType: .removedFalsePositive,

@@ -11,6 +11,7 @@ struct OverlayEditorView: View {
     let onSave: (DetectionDelta) -> Void
 
     @State private var ops: [DetectionDeltaOp] = []
+    @State private var showDiscardConfirm: Bool = false
     @State private var showCategoryPicker: Bool = false
     @State private var pendingPoint: CGPoint? = nil
     @State private var pickedCategory: String? = nil
@@ -40,12 +41,22 @@ struct OverlayEditorView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
-                Button("Cancel") { dismiss() }
+                Button("Cancel") {
+                    if ops.isEmpty { dismiss() } else { showDiscardConfirm = true }
+                }
                     .font(.system(size: Theme.TypeRamp.body, weight: .heavy))
                     .foregroundStyle(Theme.ember)
             }
         }
         .sheet(isPresented: $showCategoryPicker) { categorySheet }
+        .confirmationDialog("Discard changes?",
+                            isPresented: $showDiscardConfirm,
+                            titleVisibility: .visible) {
+            Button("Discard", role: .destructive) { dismiss() }
+            Button("Keep editing", role: .cancel) { }
+        } message: {
+            Text("You have \(ops.count) unsaved edit\(ops.count == 1 ? "" : "s") on this photo.")
+        }
     }
 
     // MARK: Header / canvas

@@ -14,6 +14,11 @@ enum InspectionStep {
 struct QuickInspectionView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(CustomerStore.self) private var customerStore
+    /// Phase 9.1.1 — optional analyze-context. When set, the analyze loop
+    /// writes aggregated findings onto the matching slope via
+    /// `InspectionStore.setAIFindings(_:for:orientation:)` so SlopeCaptureView
+    /// confidence chips + DecisionEngine verify-with-inspector run on real data.
+    var analyzeContext: (reportId: String, orientation: String)? = nil
     @State private var step: InspectionStep = .capture
     @State private var scanProgress: CGFloat = 0
     @State private var detectedHits: [DetectedHit] = []
@@ -1139,6 +1144,14 @@ struct QuickInspectionView: View {
             }
 
             lastFindings = await analyzeTask.value
+
+            // Phase 9.1.1 — propagate findings onto the originating slope so
+            // confidence chips + Verify-with-Inspector badge render real data.
+            if let ctx = analyzeContext {
+                InspectionStore.shared.setAIFindings(lastFindings,
+                                                     for: ctx.reportId,
+                                                     orientation: ctx.orientation)
+            }
 
             if let cid = customerStore.activeCustomerID {
                 customerStore.updateAnalysis(for: cid,

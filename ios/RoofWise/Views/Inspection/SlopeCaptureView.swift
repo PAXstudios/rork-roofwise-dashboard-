@@ -137,7 +137,9 @@ struct SlopeCaptureView: View {
             // Reuse the existing polished capture flow as-is. It manages its
             // own state and dismisses itself; we don't bind back into our
             // local photos array (QuickInspectionView doesn't surface them).
-            QuickInspectionView()
+            // Phase 9.1.1 — thread reportId + orientation so the analyze loop
+            // can write back aiFindings onto this slope.
+            QuickInspectionView(analyzeContext: (reportId, orientation))
                 .environment(fullCaptureCustomerStore)
         }
         .confirmationDialog("Discard slope?",
@@ -420,10 +422,16 @@ struct SlopeCaptureView: View {
     /// Mirrors the mapping in the Phase 8 spec.
     private enum AICategory { case hail, wind, wear, missing }
 
-    /// Findings sourced for this slope. Returns empty until the analyze
-    /// pipeline starts writing per-slope findings back through the store.
-    /// Read-only — keeps the chip code path additive and inert by default.
-    private var aiFindings: [InspectionFinding] { [] }
+    /// Findings sourced for this slope. Reads from the live `InspectionStore`
+    /// where the analyze pipeline writes via `setAIFindings`. Empty until the
+    /// inspector runs a Quick Inspection on this slope.
+    private var aiFindings: [InspectionFinding] {
+        guard let insp = store.inspection(with: reportId),
+              let s = insp.slopes.first(where: { $0.orientation == orientation }) else {
+            return []
+        }
+        return s.aiFindings
+    }
 
     private func meanConfidence(for category: AICategory) -> Int? {
         let labels: Set<String>

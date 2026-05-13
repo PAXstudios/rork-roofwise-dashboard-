@@ -132,6 +132,25 @@ final class CorrectionsStore {
 // MARK: - Helpers for building Correction snapshots
 
 extension CorrectionsStore {
+    /// Phase 9.1.2 — deterministic UUID derived from an arbitrary string.
+    /// Used to map a TrainingItem's stringly-typed `inspectionId` / `photoPath`
+    /// onto the Correction's UUID-typed fields without throwing away identity.
+    /// Stable across launches: the same input always returns the same UUID.
+    static func deterministicUUID(from string: String) -> UUID {
+        let bytes = Array(string.utf8)
+        var out = [UInt8](repeating: 0, count: 16)
+        for (i, b) in bytes.enumerated() {
+            out[i % 16] = out[i % 16] &+ b
+            out[(i * 7 + 3) % 16] ^= b
+        }
+        // Stamp version (4) + variant (RFC 4122) so it reads as a valid UUID.
+        out[6] = (out[6] & 0x0F) | 0x40
+        out[8] = (out[8] & 0x3F) | 0x80
+        return UUID(uuid: (out[0], out[1], out[2], out[3], out[4], out[5],
+                            out[6], out[7], out[8], out[9], out[10], out[11],
+                            out[12], out[13], out[14], out[15]))
+    }
+
     /// Encodes a `CorrectionDetectionSnapshot` to JSON `Data`.
     static func encode(_ snapshot: CorrectionDetectionSnapshot) -> Data {
         (try? JSONEncoder().encode(snapshot)) ?? Data()
