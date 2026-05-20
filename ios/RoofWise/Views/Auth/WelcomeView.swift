@@ -136,6 +136,7 @@ struct WelcomeView: View {
             }
 
             appleButton
+            googleButton
 
             divider
 
@@ -192,6 +193,33 @@ struct WelcomeView: View {
         .signInWithAppleButtonStyle(.black)
         .frame(height: 56)
         .clipShape(.rect(cornerRadius: 14))
+    }
+
+    private var googleButton: some View {
+        Button {
+            Task { await auth.signInWithGoogle() }
+        } label: {
+            HStack(spacing: 10) {
+                if auth.isBusy {
+                    ProgressView().tint(Theme.ink)
+                } else {
+                    Image(systemName: "g.circle.fill")
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(Theme.ink)
+                }
+                Text("Continue with Google")
+                    .font(.system(size: Theme.TypeRamp.cta, weight: .heavy))
+                    .foregroundStyle(Theme.ink)
+            }
+            .frame(maxWidth: .infinity, minHeight: 56)
+            .background(Color.white, in: .rect(cornerRadius: 14))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(Theme.hairline, lineWidth: 0.8)
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(auth.isBusy)
     }
 
     private var divider: some View {
