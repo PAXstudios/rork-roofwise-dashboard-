@@ -3,6 +3,7 @@ import Observation
 import Supabase
 import AuthenticationServices
 import CryptoKit
+import UIKit
 
 enum AuthState: Equatable {
     case unknown          // initial — checking persisted session
@@ -125,6 +126,24 @@ final class AuthStore {
                 try await SupabaseService.client.auth.signInWithIdToken(
                     credentials: .init(provider: .apple, idToken: idToken, nonce: nonce)
                 )
+            }
+        }
+    }
+
+    // MARK: - Sign in with Google (Supabase OAuth via ASWebAuthenticationSession)
+
+    func signInWithGoogle() async {
+        await run {
+            _ = try await SupabaseService.client.auth.signInWithOAuth(
+                provider: .google,
+                redirectTo: URL(string: "roofwise://login-callback"),
+                queryParams: [
+                    (name: "access_type", value: "offline"),
+                    (name: "prompt", value: "consent")
+                ]
+            ) { (session: ASWebAuthenticationSession) in
+                session.presentationContextProvider = WebAuthAnchor.shared
+                session.prefersEphemeralWebBrowserSession = false
             }
         }
     }
