@@ -41,39 +41,76 @@ struct WelcomeView: View {
     private var backdrop: some View {
         ZStack {
             LinearGradient(
-                colors: [Theme.ink, Theme.inkRaised, Theme.ember.opacity(0.85)],
+                colors: [Theme.ink, Theme.inkRaised, Theme.sky.opacity(0.55)],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
             .ignoresSafeArea()
+
+            // Ember brand glow — warm orange top-left
             Circle()
-                .fill(Theme.ember.opacity(0.35))
-                .frame(width: 320, height: 320)
+                .fill(Theme.ember.opacity(0.85))
+                .frame(width: 420, height: 420)
+                .blur(radius: 110)
+                .offset(x: -150, y: -220)
+
+            // Sky brand glow — storm blue bottom-right
+            Circle()
+                .fill(Theme.sky.opacity(0.75))
+                .frame(width: 380, height: 380)
+                .blur(radius: 120)
+                .offset(x: 160, y: 300)
+
+            // Amber accent — middle right
+            Circle()
+                .fill(Theme.amber.opacity(0.45))
+                .frame(width: 240, height: 240)
                 .blur(radius: 90)
-                .offset(x: -120, y: -180)
-            Circle()
-                .fill(Theme.sky.opacity(0.35))
-                .frame(width: 280, height: 280)
-                .blur(radius: 100)
-                .offset(x: 140, y: 280)
+                .offset(x: 180, y: -40)
+
+            // Soft grain overlay to deepen the gradient
+            LinearGradient(
+                colors: [Color.black.opacity(0.0), Color.black.opacity(0.35)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
         }
     }
 
     // MARK: - Hero
 
     private var hero: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 16) {
             ZStack {
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .fill(.white.opacity(0.12))
-                    .frame(width: 72, height: 72)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 22, style: .continuous)
-                            .stroke(.white.opacity(0.25), lineWidth: 0.8)
+                // Soft halo behind the logo
+                Circle()
+                    .fill(
+                        RadialGradient(
+                            colors: [Theme.ember.opacity(0.55), .clear],
+                            center: .center,
+                            startRadius: 4,
+                            endRadius: 110
+                        )
                     )
-                Image(systemName: "house.lodge.fill")
-                    .font(.system(size: 32, weight: .bold))
-                    .foregroundStyle(.white)
+                    .frame(width: 200, height: 200)
+                    .blur(radius: 8)
+
+                RoundedRectangle(cornerRadius: 32, style: .continuous)
+                    .fill(.white.opacity(0.10))
+                    .frame(width: 132, height: 132)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 32, style: .continuous)
+                            .stroke(.white.opacity(0.28), lineWidth: 0.8)
+                    )
+                    .shadow(color: Theme.ink.opacity(0.45), radius: 24, x: 0, y: 14)
+
+                Image("LogoMark")
+                    .resizable()
+                    .renderingMode(.original)
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 108, height: 108)
             }
             Text("RoofWise")
                 .font(.system(size: Theme.TypeRamp.display, weight: .heavy))
