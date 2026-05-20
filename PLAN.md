@@ -1,27 +1,39 @@
-# Add LiDAR mesh, ARKit planes, and persistent 3D damage anchors to RoofWise
+# Wire Supabase into the iOS app with Apple + Email login and lead sync
 
-## What the inspection gets
+## What you'll get
 
-- **Real roof measurements on LiDAR iPhones/iPads**: Captures the actual 3D shape of the roof using the device's LiDAR scanner. The square footage shown in the report comes from the real scanned surface (not a guess), and the roof pitch is read straight from the scanned surface angle (not the gyroscope).
-- **Smart surface detection**: The app only shows the shingle grid overlay on real surfaces it has confirmed are roof, wall, or angled floor — no more floating overlays in empty space.
-- **Damage pinned in 3D space**: Every damage spot the AI finds gets a colored sphere placed at its real-world location on the roof — red for hail, orange for wind, yellow for cracks, purple for missing shingles. The spheres glow with a gentle pulse and stay locked in place as you walk around or move the phone.
-- **3D AR Report export**: A new "Export 3D Report" button on the results screen saves the scanned roof and all damage spheres as a 3D file, then opens it in Apple's built-in AR viewer so it can be shared, viewed, or shown to a customer/adjuster in full augmented reality.
-- **Graceful fallback for older devices**: On iPhones without LiDAR, the existing camera + AI flow keeps working exactly as it does today. A small subtitle says "LiDAR not available — using camera mode" so the user knows what to expect.
-- **Inspector tap-to-mark damage**: The inspector can tap anywhere on the live camera preview to drop a manual damage marker (Hail, Wind, Crack, or Missing) with severity (Low/Medium/High) and an optional note. Manual markers render as colored dots with a 2pt white ring and a small pencil glyph so they read as inspector-placed (not AI). Long-press a manual marker to delete. Manual markers persist for the inspection session and surface in the results screen under an "Inspector-Marked" section, counted separately from AI auto-detections.
+A required sign-in screen on launch (Apple or email/password), a synced cloud copy of every lead, and a clean account section in Settings — all backed by Supabase.
 
-## How it looks
+### Features
+- **Locked login screen on launch** — the app shows a welcome screen until the user signs in.
+- **Sign in with Apple** — one-tap login using the Apple ID, no password needed.
+- **Email + password** — classic sign-up and sign-in for users who prefer it, with "Forgot password" sending a reset email.
+- **Persistent session** — once signed in, the app remembers the user across launches; no re-login needed.
+- **Sign out** — a clear sign-out option in Settings, with a confirm step.
+- **Account section in Settings** — shows the signed-in email, account creation date, and sign-out button.
+- **Leads sync in the background** — every lead the user creates locally is pushed to the cloud automatically; on launch and pull-to-refresh, the app pulls down any leads not already on the device.
+- **Offline-safe** — leads still work when offline; pending changes flush to the cloud as soon as a connection returns.
+- **Per-user data** — each user only sees their own leads (enforced both in the app and on the server).
 
-- The live camera view gains a quiet, subtle mesh shimmer over detected roof surfaces when LiDAR is active, fading in only after a real surface is found.
-- Damage spheres are small (about the size of a marble in real-world scale), softly emissive, and gently pulse so they read as "live data" without feeling busy.
-- The "Export 3D Report" button sits in the results screen alongside existing actions, styled to match the current results card.
-- The 3D viewer is Apple's native QuickLook AR — same gesture set users already know (pinch, rotate, place in room).
+### Design
+- **Welcome screen** — full-bleed background with the app accent gradient, app icon up top, big "Continue with Apple" button (black, system style), an "Or" divider, then email and password fields with a primary "Sign in" button. A small "Create account" link toggles the screen into sign-up mode. Sticky bottom area in the thumb zone, 64pt buttons, system fonts from the existing type ramp.
+- **Loading + error states** — a soft inline spinner inside the button while signing in; errors render as a friendly red banner above the form ("Wrong password — try again or reset it").
+- **Account row in Settings** — uses the existing card style with the user's email, a calendar icon for "Joined Jan 14, 2026", and a destructive red "Sign out" pill at the bottom.
+- **Sync indicator** — a tiny cloud icon next to the leads list header that animates while syncing, turns into a checkmark when synced, and a warning dot if any leads failed to upload.
 
-## Screens touched
+### Screens
+- **Welcome / Sign-in** — the gate everyone hits on first launch and after sign-out; toggles between Sign In and Create Account modes.
+- **Forgot password** — small screen with a single email field and "Send reset link" button.
+- **Settings → Account** — shows current user, sign-out, and a "Delete account" option (with a strong confirm step).
+- **Leads list (existing)** — gets a small sync status badge in the header and an automatic background refresh.
 
-- **Quick Inspection (capture screen)**: Gains LiDAR-aware overlay; only renders shingle grid on detected roof/wall/floor planes; shows live damage spheres anchored in 3D.
-- **Inspection Results screen**: Gains an "Export 3D Report" button that opens the scanned roof + damage spheres in Apple's AR QuickLook.
-- **Non-LiDAR devices**: Show a subtle "LiDAR not available — using camera mode" subtitle on the capture screen; everything else unchanged.
+### Behind the scenes (no UI impact)
+- A new server-side leads table that mirrors the on-device lead shape, scoped to the signed-in user.
+- Row-level security so users can only read and write their own leads.
+- The existing local lead store stays the source of truth in the UI; a background sync pushes pending changes up and pulls remote changes down on launch, on app-foreground, and on pull-to-refresh.
 
-## Scope
+### What you'll need to do once on the Supabase dashboard
+- Enable Apple as a sign-in provider and paste the bundle identifier + a Services ID (I'll surface the exact values when you're ready to test on device).
+- Run a one-time SQL snippet to create the `leads` table and row-level security policies — I'll provide it ready to paste.
 
-Only the items above. No filter chips, no zoom controls, no other UI additions beyond the inspector tap-to-mark flow. Build will be verified to pass on simulator and device.
+After approval I'll wire everything up, run the build, and confirm green before handing back.

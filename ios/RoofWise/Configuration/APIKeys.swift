@@ -21,6 +21,21 @@ enum APIKeys {
         default: "https://roofwise.app/v1/corrections/batch"
     )
 
+    // MARK: Supabase
+    /// Project URL — public, safe to ship. Read from env at build time via
+    /// `Config.EXPO_PUBLIC_SUPABASE_URL`; falls back to the literal so the app
+    /// keeps building if env injection isn't wired.
+    static var supabaseURL: String {
+        let envVal = Config.allValues["EXPO_PUBLIC_SUPABASE_URL"] ?? ""
+        return envVal.isEmpty ? "https://hqswazfecbvqcgypqozg.supabase.co" : envVal
+    }
+    /// Publishable / anon key — safe for client.
+    static var supabaseAnonKey: String {
+        let envVal = Config.allValues["EXPO_PUBLIC_SUPABASE_ANON_KEY"] ?? ""
+        return envVal.isEmpty ? "sb_publishable_vyBJXFX9-HYMFVsJApx5Vg_5oUdzciz" : envVal
+    }
+    static var isLiveSupabase: Bool { !supabaseURL.isEmpty && !supabaseAnonKey.isEmpty }
+
     /// Global mock-mode flag. Toggled by setting `USE_MOCKS = NO` in Info.plist
     /// (or via an Xcode build setting). Defaults to `true` while live services
     /// are still being wired.

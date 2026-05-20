@@ -5,6 +5,7 @@ struct LeadsView: View {
     @Binding var filter: JobPipelineStage?
     @State private var search: String = ""
     @State private var showNewJob = false
+    @State private var sync = LeadsSyncService.shared
 
     init(filter: Binding<JobPipelineStage?> = .constant(nil)) {
         self._filter = filter
@@ -25,6 +26,7 @@ struct LeadsView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     headerBar
+                        .onChange(of: store.customers.count) { _, _ in sync.noteLocalChange() }
 
                     searchBar
 
@@ -54,12 +56,52 @@ struct LeadsView: View {
                 .padding(.bottom, 40)
             }
             .background(Theme.canvas)
+            .refreshable {
+                await sync.syncNow()
+            }
             .navigationDestination(for: UUID.self) { id in
                 CustomerProfileView(customerID: id)
             }
             .fullScreenCover(isPresented: $showNewJob) {
                 NewJobWizard()
             }
+        }
+    }
+
+    @ViewBuilder
+    private var syncBadge: some View {
+        switch sync.status {
+        case .idle:
+            EmptyView()
+        case .syncing:
+            HStack(spacing: 6) {
+                ProgressView().scaleEffect(0.65).tint(Theme.sky)
+                Text("Syncing…")
+                    .font(.system(size: Theme.TypeRamp.captionSm, weight: .heavy))
+                    .foregroundStyle(Theme.sky)
+            }
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .background(Theme.skySoft, in: .capsule)
+        case .synced(let at):
+            HStack(spacing: 6) {
+                Image(systemName: "checkmark.icloud.fill")
+                    .font(.system(size: 11, weight: .heavy))
+                Text("Synced \(at.formatted(.relative(presentation: .numeric)))")
+                    .font(.system(size: Theme.TypeRamp.captionSm, weight: .heavy))
+            }
+            .foregroundStyle(Theme.mint)
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .background(Theme.mintSoft, in: .capsule)
+        case .failed:
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.icloud.fill")
+                    .font(.system(size: 11, weight: .heavy))
+                Text("Sync failed")
+                    .font(.system(size: Theme.TypeRamp.captionSm, weight: .heavy))
+            }
+            .foregroundStyle(Theme.crimson)
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .background(Theme.crimson.opacity(0.10), in: .capsule)
         }
     }
 
@@ -78,6 +120,7 @@ struct LeadsView: View {
                         .foregroundStyle(Theme.inkFaint)
                 }
                 Spacer()
+                syncBadge
             }
             Button {
                 ActivityStore.shared.logTap(target: "Leads.newCustomer")

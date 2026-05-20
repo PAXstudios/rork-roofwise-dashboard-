@@ -31,8 +31,35 @@ struct RootView: View {
     @State private var customerStore = CustomerStore()
     @State private var trainingProgress = TrainingProgressStore()
     @State private var leadsFilter: JobPipelineStage? = nil
+    @State private var auth = AuthStore.shared
+    @State private var leadsSync = LeadsSyncService.shared
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
+        Group {
+            switch auth.state {
+            case .unknown:
+                LaunchSplashView()
+            case .signedOut:
+                WelcomeView()
+                    .transition(.opacity)
+            case .signedIn:
+                signedInBody
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.25), value: stateKey)
+    }
+
+    private var stateKey: Int {
+        switch auth.state {
+        case .unknown: return 0
+        case .signedOut: return 1
+        case .signedIn: return 2
+        }
+    }
+
+    private var signedInBody: some View {
         ZStack(alignment: .bottom) {
             Theme.canvas.ignoresSafeArea()
 
@@ -94,6 +121,32 @@ struct RootView: View {
         }
         .environment(customerStore)
         .environment(trainingProgress)
+        .task {
+            leadsSync.attach(customerStore)
+            await leadsSync.syncNow()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                Task { await leadsSync.syncNow() }
+            }
+        }
+    }
+}
+
+/// Minimal launch splash shown while we hydrate the persisted Supabase session.
+struct LaunchSplashView: View {
+    var body: some View {
+        ZStack {
+            LinearGradient(colors: [Theme.ink, Theme.inkRaised],
+                           startPoint: .topLeading, endPoint: .bottomTrailing)
+                .ignoresSafeArea()
+            VStack(spacing: 18) {
+                Image(systemName: "house.lodge.fill")
+                    .font(.system(size: 38, weight: .bold))
+                    .foregroundStyle(.white)
+                ProgressView().tint(.white)
+            }
+        }
     }
 }
 

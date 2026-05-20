@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		XX50D61ED0BAE05FA2F8E9XX /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = XX1C9FF110ABBCE8BF456CXX /* Supabase */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		105FC58A2E9EAD3200EA8BCF /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -29,29 +33,12 @@
 		105FC5932E9EAD3200EA8BCF /* RoofWiseUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RoofWiseUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
-/* Begin PBXFileSystemSynchronizedRootGroup section */
-		105FC57C2E9EAD3100EA8BCF /* RoofWise */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = RoofWise;
-			sourceTree = "<group>";
-		};
-		105FC58C2E9EAD3200EA8BCF /* RoofWiseTests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = RoofWiseTests;
-			sourceTree = "<group>";
-		};
-		105FC5962E9EAD3200EA8BCF /* RoofWiseUITests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = RoofWiseUITests;
-			sourceTree = "<group>";
-		};
-/* End PBXFileSystemSynchronizedRootGroup section */
-
 /* Begin PBXFrameworksBuildPhase section */
 		105FC5772E9EAD3100EA8BCF /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				XX50D61ED0BAE05FA2F8E9XX /* Supabase in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -70,6 +57,24 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		105FC57C2E9EAD3100EA8BCF /* RoofWise */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = RoofWise;
+			sourceTree = "<group>";
+		};
+		105FC58C2E9EAD3200EA8BCF /* RoofWiseTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = RoofWiseTests;
+			sourceTree = "<group>";
+		};
+		105FC5962E9EAD3200EA8BCF /* RoofWiseUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = RoofWiseUITests;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXGroup section */
 		105FC5712E9EAD3100EA8BCF = {
@@ -112,6 +117,7 @@
 			);
 			name = RoofWise;
 			packageProductDependencies = (
+				XX1C9FF110ABBCE8BF456CXX /* Supabase */,
 			);
 			productName = RoofWise;
 			productReference = 105FC57A2E9EAD3100EA8BCF /* RoofWise.app */;
@@ -203,6 +209,9 @@
 				105FC5792E9EAD3100EA8BCF /* RoofWise */,
 				105FC5882E9EAD3200EA8BCF /* RoofWiseTests */,
 				105FC5922E9EAD3200EA8BCF /* RoofWiseUITests */,
+			);
+			packageReferences = (
+				XX20EB7F6EA71E9F2E096CXX /* XCRemoteSwiftPackageReference "supabase-swift" */,
 			);
 		};
 /* End PBXProject section */
@@ -395,6 +404,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = RoofWise/RoofWise.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = "";
@@ -408,8 +418,8 @@
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = (
-					"app.roofwise.stormwatch",
-					"com.roofwise.calibration_weekly",
+					app.roofwise.stormwatch,
+					com.roofwise.calibration_weekly,
 				);
 				INFOPLIST_KEY_UIBackgroundModes = "location fetch processing";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -450,8 +460,8 @@
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = (
-					"app.roofwise.stormwatch",
-					"com.roofwise.calibration_weekly",
+					app.roofwise.stormwatch,
+					com.roofwise.calibration_weekly,
 				);
 				INFOPLIST_KEY_UIBackgroundModes = "location fetch processing";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -484,7 +494,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				MARKETING_VERSION = 1.0.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "app.rork.lk920aibkq5a1ej39znll.tests";
+				PRODUCT_BUNDLE_IDENTIFIER = app.rork.lk920aibkq5a1ej39znll.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -506,7 +516,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				MARKETING_VERSION = 1.0.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "app.rork.lk920aibkq5a1ej39znll.tests";
+				PRODUCT_BUNDLE_IDENTIFIER = app.rork.lk920aibkq5a1ej39znll.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -526,7 +536,7 @@
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "app.rork.lk920aibkq5a1ej39znll.uitests";
+				PRODUCT_BUNDLE_IDENTIFIER = app.rork.lk920aibkq5a1ej39znll.uitests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -546,7 +556,7 @@
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "app.rork.lk920aibkq5a1ej39znll.uitests";
+				PRODUCT_BUNDLE_IDENTIFIER = app.rork.lk920aibkq5a1ej39znll.uitests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -598,6 +608,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		XX20EB7F6EA71E9F2E096CXX /* XCRemoteSwiftPackageReference "supabase-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/supabase/supabase-swift.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.40.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		XX1C9FF110ABBCE8BF456CXX /* Supabase */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = XX20EB7F6EA71E9F2E096CXX /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Supabase;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 105FC5722E9EAD3100EA8BCF /* Project object */;
 }

@@ -15,7 +15,7 @@ struct DashboardView: View {
         NavigationStack(path: $path) {
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: 22) {
-                    DashboardHeader(onOpenSettings: { path.append(.serviceArea) })
+                    DashboardHeader(onOpenSettings: { path.append(.settings) })
                     if !serviceAreaStore.hasConfiguredServiceArea {
                         ServiceAreaBanner(onConfigure: { path.append(.serviceArea) })
                             .padding(.horizontal, 18)
@@ -65,6 +65,7 @@ struct DashboardView: View {
                 switch route {
                 case .customer(let id): CustomerProfileView(customerID: id)
                 case .serviceArea: ServiceAreaView()
+                case .settings: SettingsHubView()
                 case .pushSettings: PushNotificationSettingsView()
                 case .stormImpact(let alertId):
                     if let alert = StormAlertStore.shared.alerts.first(where: { $0.id == alertId }) {
@@ -99,6 +100,7 @@ struct DashboardView: View {
 enum DashboardRoute: Hashable {
     case customer(UUID)
     case serviceArea
+    case settings
     case pushSettings
     case stormImpact(UUID)
 }
