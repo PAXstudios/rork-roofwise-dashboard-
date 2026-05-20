@@ -68,6 +68,10 @@ struct WelcomeView: View {
                 .blur(radius: 90)
                 .offset(x: 180, y: -40)
 
+            // Futuristic roof scan animation
+            RoofScanAnimationView()
+                .ignoresSafeArea()
+
             // Soft grain overlay to deepen the gradient
             LinearGradient(
                 colors: [Color.black.opacity(0.0), Color.black.opacity(0.35)],
