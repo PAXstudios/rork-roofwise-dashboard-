@@ -34,16 +34,38 @@ final class AuthStore {
     // MARK: - Session lifecycle
 
     private func startSessionObserver() async {
-        // Hydrate from any persisted session.
-        do {
-            let session = try await SupabaseService.client.auth.session
-            applySession(session)
-        } catch {
-            state = .signedOut
+        // Safety net: if neither `authStateChanges` nor `.session` answers within
+        // 2.5s (slow network, blocked DNS, etc.), unstick the UI by falling back
+        // to signedOut so the Welcome screen renders instead of hanging on the
+        // launch splash forever.
+        let fallback = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(2500))
+            guard let self else { return }
+            if case .unknown = self.state {
+                print("[AuthStore] bootstrap timeout — defaulting to signedOut")
+                self.state = .signedOut
+            }
+        }
+
+        // Kick off a non-blocking hydrate. `authStateChanges` will also emit
+        // `.initialSession`, but on some cold starts the property read is what
+        // triggers it, so we still want to ping it.
+        Task { [weak self] in
+            do {
+                let session = try await SupabaseService.client.auth.session
+                await MainActor.run { self?.applySession(session) }
+            } catch {
+                await MainActor.run {
+                    if case .unknown = self?.state ?? .signedOut {
+                        self?.state = .signedOut
+                    }
+                }
+            }
         }
 
         // Stream auth changes (sign-in, token refresh, sign-out).
         for await change in SupabaseService.client.auth.authStateChanges {
+            fallback.cancel()
             switch change.event {
             case .signedIn, .tokenRefreshed, .userUpdated, .initialSession:
                 if let session = change.session {
