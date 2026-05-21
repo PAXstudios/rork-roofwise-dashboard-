@@ -105,7 +105,11 @@ final class AuthStore {
 
     func signUp(email: String, password: String) async {
         await run {
-            let response = try await SupabaseService.client.auth.signUp(email: email, password: password)
+            let response = try await SupabaseService.client.auth.signUp(
+                email: email,
+                password: password,
+                redirectTo: URL(string: "roofwise://auth/callback")
+            )
             // Some projects require email confirmation; in that case session is nil.
             if response.session == nil {
                 self.lastErrorMessage = "Check your email to confirm your account, then sign in."
@@ -115,7 +119,10 @@ final class AuthStore {
 
     func sendPasswordReset(email: String) async {
         await run {
-            try await SupabaseService.client.auth.resetPasswordForEmail(email)
+            try await SupabaseService.client.auth.resetPasswordForEmail(
+                email,
+                redirectTo: URL(string: "roofwise://auth/callback")
+            )
             self.lastErrorMessage = "Password reset link sent — check your email."
         }
     }

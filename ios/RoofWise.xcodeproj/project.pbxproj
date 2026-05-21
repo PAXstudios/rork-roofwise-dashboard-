@@ -421,6 +421,14 @@
 					app.roofwise.stormwatch,
 					com.roofwise.calibration_weekly,
 				);
+				INFOPLIST_KEY_CFBundleURLTypes = (
+					{
+						CFBundleURLName = "com.paxconsulting.roofwise.deeplink";
+						CFBundleURLSchemes = (
+							roofwise,
+						);
+					},
+				);
 				INFOPLIST_KEY_UIBackgroundModes = "location fetch processing";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
@@ -462,6 +470,14 @@
 				INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = (
 					app.roofwise.stormwatch,
 					com.roofwise.calibration_weekly,
+				);
+				INFOPLIST_KEY_CFBundleURLTypes = (
+					{
+						CFBundleURLName = "com.paxconsulting.roofwise.deeplink";
+						CFBundleURLSchemes = (
+							roofwise,
+						);
+					},
 				);
 				INFOPLIST_KEY_UIBackgroundModes = "location fetch processing";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

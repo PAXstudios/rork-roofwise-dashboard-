@@ -5,6 +5,7 @@
 
 import SwiftUI
 import SwiftData
+import Supabase
 
 #if canImport(GoogleMaps)
 import GoogleMaps
@@ -32,6 +33,23 @@ struct RoofWiseApp: App {
         StormPushService.shared.registerCategory()
     }
 
+    /// Handle deep links — primarily Supabase auth callbacks for PKCE
+    /// (email confirm, password reset, magic link). Any `roofwise://auth/callback`
+    /// URL is handed to `auth.session(from:)` which finishes the PKCE exchange
+    /// and emits a signed-in session via `authStateChanges`.
+    private func handleIncomingURL(_ url: URL) {
+        guard url.scheme?.lowercased() == "roofwise" else { return }
+        if url.host?.lowercased() == "auth", url.path.hasPrefix("/callback") {
+            Task {
+                do {
+                    _ = try await SupabaseService.client.auth.session(from: url)
+                } catch {
+                    print("[RoofWiseApp] auth.session(from:) failed: \(error)")
+                }
+            }
+        }
+    }
+
     private static func bootGoogleMaps() {
         #if canImport(GoogleMaps)
         if APIKeys.isLiveGoogleMaps {
@@ -48,6 +66,9 @@ struct RoofWiseApp: App {
         WindowGroup {
             RootView()
                 .preferredColorScheme(.light)
+                .onOpenURL { url in
+                    handleIncomingURL(url)
+                }
         }
         .modelContainer(modelContainer)
         .onChange(of: scenePhase) { _, phase in
