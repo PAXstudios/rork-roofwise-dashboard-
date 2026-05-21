@@ -27,7 +27,7 @@ enum APIKeys {
     /// keeps building if env injection isn't wired.
     static var supabaseURL: String {
         let envVal = Config.allValues["EXPO_PUBLIC_SUPABASE_URL"] ?? ""
-        return envVal.isEmpty ? "https://hqswazfecbvqcgypqozg.supabase.co" : envVal
+        return envVal.isEmpty ? "https://mzsabjegtxmzlfpxmmfm.supabase.co" : envVal
     }
     /// Publishable / anon key — safe for client.
     static var supabaseAnonKey: String {
