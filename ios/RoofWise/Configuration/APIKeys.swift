@@ -30,9 +30,12 @@ enum APIKeys {
         return envVal.isEmpty ? "https://mzsabjegtxmzlfpxmmfm.supabase.co" : envVal
     }
     /// Publishable / anon key — safe for client.
+    /// Fallback is the JWT anon key for project `mzsabjegtxmzlfpxmmfm`, used
+    /// when env injection isn't wired (e.g. Config.swift hasn't regenerated
+    /// to include `EXPO_PUBLIC_SUPABASE_ANON_KEY` yet).
     static var supabaseAnonKey: String {
         let envVal = Config.allValues["EXPO_PUBLIC_SUPABASE_ANON_KEY"] ?? ""
-        return envVal.isEmpty ? "sb_publishable_vyBJXFX9-HYMFVsJApx5Vg_5oUdzciz" : envVal
+        return envVal.isEmpty ? "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im16c2FiamVndHhtemxmcHhtbWZtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkzMDQyNzIsImV4cCI6MjA5NDg4MDI3Mn0.llzXp4wYKeR1DjBTah7YzVQEaQALla3UI5TmvU2QGJc" : envVal
     }
     static var isLiveSupabase: Bool { !supabaseURL.isEmpty && !supabaseAnonKey.isEmpty }
 
