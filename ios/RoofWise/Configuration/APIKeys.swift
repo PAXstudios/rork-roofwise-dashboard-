@@ -8,10 +8,16 @@ import Foundation
 /// are wired in Phase 4C.
 enum APIKeys {
     // MARK: Raw keys
-    static let googleMapsApiKey: String      = "AIzaSyDmnzp1Q23igS3XTPA6BMcIGOygkmyYSBM"
-    static let googleSolarApiKey: String     = "AIzaSyDmnzp1Q23igS3XTPA6BMcIGOygkmyYSBM"
-    static let googleGeocodingApiKey: String = "AIzaSyDmnzp1Q23igS3XTPA6BMcIGOygkmyYSBM"
-    static let googlePlacesApiKey: String    = "AIzaSyDmnzp1Q23igS3XTPA6BMcIGOygkmyYSBM"
+    //
+    // Never hardcode live keys here. Each Google key resolves at runtime from the
+    // build-time-injected env (`Config.allValues`) first, then an Info.plist entry,
+    // then an empty fallback. An empty value flips the matching `isLive*` accessor
+    // to false so the UI shows a clean "Not available" state rather than calling an
+    // API with a bogus key.
+    static var googleMapsApiKey: String      { resolveKey(env: "EXPO_PUBLIC_GOOGLE_MAPS_API_KEY", plist: "GoogleMapsApiKey") }
+    static var googleSolarApiKey: String     { resolveKey(env: "EXPO_PUBLIC_GOOGLE_SOLAR_API_KEY", plist: "GoogleSolarApiKey") }
+    static var googleGeocodingApiKey: String { resolveKey(env: "EXPO_PUBLIC_GOOGLE_GEOCODING_API_KEY", plist: "GoogleGeocodingApiKey") }
+    static var googlePlacesApiKey: String    { resolveKey(env: "EXPO_PUBLIC_GOOGLE_PLACES_API_KEY", plist: "GooglePlacesApiKey") }
     static let noaaUserAgent: String         = read(
         "NoaaUserAgent",
         default: "RoofWise/1.0 (contact@roofwise.app)"
@@ -22,20 +28,18 @@ enum APIKeys {
     )
 
     // MARK: Supabase
-    /// Project URL — public, safe to ship. Read from env at build time via
-    /// `Config.EXPO_PUBLIC_SUPABASE_URL`; falls back to the literal so the app
-    /// keeps building if env injection isn't wired.
+    /// Project URL — read from env at build time via `EXPO_PUBLIC_SUPABASE_URL`,
+    /// then an Info.plist `SupabaseUrl` entry. No literal committed to source.
     static var supabaseURL: String {
         let envVal = Config.allValues["EXPO_PUBLIC_SUPABASE_URL"] ?? ""
-        return envVal.isEmpty ? "https://mzsabjegtxmzlfpxmmfm.supabase.co" : envVal
+        return envVal.isEmpty ? read("SupabaseUrl", default: "") : envVal
     }
-    /// Publishable / anon key — safe for client.
-    /// Fallback is the JWT anon key for project `mzsabjegtxmzlfpxmmfm`, used
-    /// when env injection isn't wired (e.g. Config.swift hasn't regenerated
-    /// to include `EXPO_PUBLIC_SUPABASE_ANON_KEY` yet).
+    /// Publishable / anon key — env (`EXPO_PUBLIC_SUPABASE_ANON_KEY`) then an
+    /// Info.plist `SupabaseAnonKey` entry. Anon keys are public-tier but are still
+    /// kept out of source control; inject them at build time.
     static var supabaseAnonKey: String {
         let envVal = Config.allValues["EXPO_PUBLIC_SUPABASE_ANON_KEY"] ?? ""
-        return envVal.isEmpty ? "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im16c2FiamVndHhtemxmcHhtbWZtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkzMDQyNzIsImV4cCI6MjA5NDg4MDI3Mn0.llzXp4wYKeR1DjBTah7YzVQEaQALla3UI5TmvU2QGJc" : envVal
+        return envVal.isEmpty ? read("SupabaseAnonKey", default: "") : envVal
     }
     static var isLiveSupabase: Bool { !supabaseURL.isEmpty && !supabaseAnonKey.isEmpty }
 
@@ -65,6 +69,12 @@ enum APIKeys {
     static var modeLabel: String { USE_MOCKS ? "MOCK" : "LIVE" }
 
     // MARK: Helpers
+    /// Resolve a key from the build-time env first, then Info.plist, then "".
+    private static func resolveKey(env: String, plist: String) -> String {
+        if let v = Config.allValues[env], !v.isEmpty { return v }
+        return read(plist, default: "")
+    }
+
     private static func read(_ key: String, default fallback: String = "") -> String {
         guard let raw = Bundle.main.object(forInfoDictionaryKey: key) as? String,
               !raw.isEmpty else { return fallback }

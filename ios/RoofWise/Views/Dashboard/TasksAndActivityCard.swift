@@ -2,7 +2,9 @@ import SwiftUI
 
 struct TasksAndActivityCard: View {
     var embedded: Bool = false
-    @State private var tasks: [TaskItem] = MockData.tasks
+    // Empty state by default — no seeded tasks. A global task/activity store is a
+    // Phase-5 follow-up; until then the dashboard shows clean empty states.
+    @State private var tasks: [TaskItem] = []
     @State private var tab: String = "Tasks"
 
     var body: some View {
@@ -27,17 +29,19 @@ struct TasksAndActivityCard: View {
             }
 
             if tab == "Tasks" {
-                VStack(spacing: 8) {
-                    ForEach($tasks) { $task in
-                        TaskRow(task: $task)
+                if tasks.isEmpty {
+                    EmptyHint(icon: "checklist",
+                              text: "No tasks yet. Tasks you create will show up here.")
+                } else {
+                    VStack(spacing: 8) {
+                        ForEach($tasks) { $task in
+                            TaskRow(task: $task)
+                        }
                     }
                 }
             } else {
-                VStack(spacing: 0) {
-                    ForEach(Array(MockData.activity.enumerated()), id: \.element.id) { idx, entry in
-                        ActivityRow(entry: entry, isLast: idx == MockData.activity.count - 1)
-                    }
-                }
+                EmptyHint(icon: "clock.arrow.circlepath",
+                          text: "Activity will appear here as you inspect, knock, and send proposals.")
             }
         }
         .cardStyle(padding: 18, radius: 24)
@@ -90,38 +94,3 @@ private struct TaskRow: View {
     }
 }
 
-private struct ActivityRow: View {
-    let entry: ActivityEntry
-    let isLast: Bool
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            ZStack {
-                Image(systemName: entry.icon)
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(entry.iconColor)
-                    .frame(width: 30, height: 30)
-                    .background(entry.iconColor.opacity(0.14), in: .circle)
-            }
-
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Text(entry.title)
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(Theme.ink)
-                    Spacer()
-                    Text(entry.time)
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Theme.inkFaint)
-                }
-                Text(entry.detail)
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.inkSoft)
-            }
-            .padding(.bottom, isLast ? 0 : 14)
-            .overlay(alignment: .bottom) {
-                if !isLast { Rectangle().fill(Theme.hairline).frame(height: 0.5) }
-            }
-        }
-    }
-}

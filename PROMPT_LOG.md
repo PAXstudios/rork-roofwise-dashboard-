@@ -335,3 +335,51 @@ A field-ready CRM and AI inspection tool that helps roofing pros:
 **Open questions / Follow-ups:**
 - After entry #12, refresh the Context Summary section.
 - Consider a CI check that fails if a PR doesn't add a new entry to `PROMPT_LOG.md`.
+
+---
+
+### [2026-05-28] #08 — Spec reconciliation Phase 1: theme, de-mock, secrets, dead-code
+
+**Prompt (summarized):**
+> Reconcile the app to the RoofWise build spec. This session (Phase 1 of a phased
+> plan): align Theme to the navy/orange/cream/slate palette, remove all seeded/mock
+> data so the app boots empty, scrub committed secrets, fix config, remove
+> useless/duplicate code, and produce a spec-compliance audit. (AI-accuracy and UI
+> polish deferred to Phase 2/3 PRs.)
+
+**Intent / Goal:**
+- Bring the app into compliance with the spec's hard operating principles
+  (canonical palette, "no seeded data / empty state always", no committed keys).
+- Remove duplicate/fabricated Home cards (fastidious code).
+
+**Decisions made:**
+- Palette: added canonical `Theme.navy/orange/cream/slate` at exact spec hex and
+  re-pointed legacy `ink/ember/canvas/inkSoft` to them (whole app shifts palette
+  with no per-call-site churn). `caption` 11pt; spec-named ramp + weighted fonts.
+- Secrets: Google keys + Supabase URL/anon now resolve env→Info.plist→empty; no
+  literals in source. Existing key is in git history — flagged for rotation.
+- `gemini-1.5-flash` → `gemini-2.5-flash` in `TrainingCoachService`.
+- Info.plist: added mic + speech usage strings.
+- De-mock: deleted `MockData.swift`; converted `KPIStrip` (Revenue/Leads/Pipeline),
+  `TasksAndActivityCard`, `ScheduleCard`, `StormAlertCard`, `TodaysGoalsCard`,
+  `RecentWinsCard`, `PropertyStormService` to real stores / empty states; new shared
+  `EmptyHint`.
+- Removed duplicate/fabricated views: `PipelineCard`, `RecentJobsRow`,
+  `AIInsightsCard`, `StormHistoryMapCard`, `LeaderboardCard` (team = Phase X), and
+  dead model types `PipelineColumn/PipelineStage/MapPin/LeadKind/AIReviewItem/ActivityEntry`.
+- Damage taxonomy, HAAG grades, Claim Worthiness, Quick Inspection flow, and the
+  Quick Inspection / New Job CTAs are all untouched (Drift Warning honored).
+
+**Files touched:**
+- `ios/RoofWise/Utilities/Theme.swift`, `Configuration/APIKeys.swift`,
+  `RoofWise.xcodeproj/project.pbxproj`, `Services/TrainingCoachService.swift`,
+  `Services/PropertyStormService.swift`, `Models/AppModels.swift`,
+  `Views/Dashboard/{DashboardView,KPIStrip,TasksAndActivityCard,ScheduleCard,StormAlertCard,HomeCardsCarousel,HomeExtraSections}.swift`,
+  `Views/Leads/PropertyStormHistoryCard.swift`, `Views/Components/EmptyHint.swift` (new).
+- Deleted: `Models/MockData.swift`, `Views/Dashboard/{PipelineCard,RecentJobsRow,AIInsightsCard,StormHistoryMapCard}.swift`.
+- Added `SPEC_AUDIT.md`.
+
+**Open questions / Follow-ups:**
+- Build green on a Mac (Xcode, iOS 17+) — could not be verified in the Linux session.
+- Rotate the committed Google API key.
+- Phase 2 (AI accuracy, flagged) and Phase 3 (UI polish + better APIs) — see SPEC_AUDIT.md.

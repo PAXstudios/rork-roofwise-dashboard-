@@ -2,8 +2,44 @@ import SwiftUI
 
 struct KPIStrip: View {
     var onQuickInspection: () -> Void = {}
+    @Environment(CustomerStore.self) private var store
     @State private var showNewJob = false
     @State private var showCostEstimator = false
+
+    /// Live KPIs computed from the real customer pipeline — Revenue / Leads /
+    /// Pipeline (spec Phase 1). Empty store → all zeros (no seeded data).
+    private var liveKPIs: [KPIMetric] {
+        let m = SalesMetrics.compute(from: store.customers)
+        return [
+            KPIMetric(title: "Revenue Won",
+                      value: Self.compactUSD(m.wonRevenue),
+                      delta: "\(m.approved) approved",
+                      deltaPositive: true,
+                      icon: "dollarsign.circle.fill",
+                      tint: Theme.mint),
+            KPIMetric(title: "Leads",
+                      value: "\(m.knocked)",
+                      delta: "\(m.interested) interested",
+                      deltaPositive: m.interested > 0,
+                      icon: "person.2.fill",
+                      tint: Theme.sky),
+            KPIMetric(title: "Pipeline",
+                      value: Self.compactUSD(m.pipelineRevenue),
+                      delta: "\(m.scheduled) scheduled",
+                      deltaPositive: true,
+                      icon: "chart.line.uptrend.xyaxis",
+                      tint: Theme.ember)
+        ]
+    }
+
+    /// Compact USD label, e.g. "$0", "$182k", "$1.2M".
+    static func compactUSD(_ v: Double) -> String {
+        switch v {
+        case 1_000_000...: return "$\(String(format: "%.1f", v / 1_000_000))M"
+        case 1_000...:     return "$\(Int((v / 1_000).rounded()))k"
+        default:           return "$\(Int(v.rounded()))"
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -40,7 +76,7 @@ struct KPIStrip: View {
                                     icon: "dollarsign.circle.fill",
                                     tint: Theme.mint,
                                     action: { showCostEstimator = true })
-                    ForEach(MockData.kpis) { metric in
+                    ForEach(liveKPIs) { metric in
                         KPICard(metric: metric)
                     }
                 }

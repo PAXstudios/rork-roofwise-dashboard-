@@ -1,7 +1,15 @@
 import SwiftUI
 
 struct ScheduleCard: View {
+    /// Real schedule items for today. Empty by default — no seeded stops.
+    var items: [ScheduleItem] = []
     @State private var view: String = "List"
+
+    private var subtitle: String {
+        let today = Date().formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
+        let stops = items.count
+        return "\(today) · \(stops) stop\(stops == 1 ? "" : "s")"
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -10,7 +18,7 @@ struct ScheduleCard: View {
                     Text("Today's Schedule")
                         .font(.system(size: 18, weight: .bold))
                         .foregroundStyle(Theme.ink)
-                    Text("Thu, May 1 · 4 stops · 38 mi route")
+                    Text(subtitle)
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.inkFaint)
                 }
@@ -18,9 +26,14 @@ struct ScheduleCard: View {
                 segmented
             }
 
-            VStack(spacing: 0) {
-                ForEach(Array(MockData.schedule.enumerated()), id: \.element.id) { idx, item in
-                    ScheduleRow(item: item, isFirst: idx == 0, isLast: idx == MockData.schedule.count - 1)
+            if items.isEmpty {
+                EmptyHint(icon: "calendar.badge.clock",
+                          text: "No stops scheduled. Scheduled inspections and route stops show up here.")
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(items.enumerated()), id: \.element.id) { idx, item in
+                        ScheduleRow(item: item, isFirst: idx == 0, isLast: idx == items.count - 1)
+                    }
                 }
             }
         }
