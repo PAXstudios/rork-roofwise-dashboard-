@@ -89,6 +89,25 @@ nonisolated enum DecisionEngine {
             // Phase 8 (flag-gated). Defaults to false; flipped on when the
             // structured-confidence flag is on AND mean confidence < 50.
             s.verifyWithInspector = false
+
+            // Phase 2: HAAG density cross-check. Flag a slope for on-site human
+            // verification when the hits-per-test-square sits right on the
+            // material threshold (a close call) or is implausibly saturated
+            // (likely over-detection / grid hallucination). Additive + flag-gated.
+            if APIKeys.useHaagDensityCheck {
+                let hailThreshold: Double? = {
+                    switch material {
+                    case .asphaltShingle: return 8
+                    case .threeTabAsphalt, .woodShake: return 5
+                    default: return nil   // metal/tile use %-based rules, not hits/sq
+                    }
+                }()
+                let borderline = hailThreshold.map { totalHail > 0 && abs(hitsPerSquare - $0) <= 1 } ?? false
+                let implausible = hitsPerSquare >= 25   // saturation — suspicious over-count
+                if borderline || implausible {
+                    s.verifyWithInspector = true
+                }
+            }
             return s
         }
 

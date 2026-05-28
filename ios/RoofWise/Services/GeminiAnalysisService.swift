@@ -10,6 +10,38 @@ struct GeminiAnalysisService {
     private let secret: String
     private static let model = "google/gemini-2.5-flash"
 
+    // MARK: - Phase 2 prompt hardening (flag-gated, appended to the core prompt)
+
+    /// Explicit false-positive taxonomy. The spec is clear that false positives
+    /// waste more inspector time than borderline misses, so we teach the model
+    /// what NOT to mark.
+    private static let falsePositiveGuidance = """
+
+
+    DO NOT mark these as damage (common false positives):
+    - Normal granule-color variation or manufacturing pattern differences.
+    - Lichen, moss, or algae (irregular/greenish, not round impact spots).
+    - Foot-traffic scuffs (smudged, not circular) or tool/mechanical marks (elongated).
+    - Tree-branch rub or debris streaks; vent gas etching (concentric rings near vents).
+    - Heat blistering (raised bumps) — this is NOT a depressed hail bruise.
+    - Uniform/whole-slope granule loss from age (that is wear, not storm hail).
+    Real hail is CLUSTERED and RANDOM. It NEVER forms a uniform grid covering every
+    shingle. If your markers look evenly spaced across the whole frame, you are likely
+    hallucinating a grid — return fewer, only the ones with clear impact evidence.
+    """
+
+    /// Physical-size reasoning. The model is better placed to judge strike size
+    /// from pixels than any post-hoc geometric guess, so we ask it directly.
+    private static let scaleSizingGuidance = """
+
+
+    Hail strikes are physically 1/4" to 2" across. Use any visible scale reference
+    (exposed shingle granules, tab/keyway width, a tape measure or chalk square) to
+    judge size, and DO NOT mark sub-1/4" specks or features larger than ~2" as hail.
+    If you can estimate scale, also return:
+    "shingleScaleEstimate": { "pixelsPerInch": <number>, "confidence": 0-100, "basis": "<what you measured>" }
+    """
+
     init() {
         self.toolkitURL = Config.EXPO_PUBLIC_TOOLKIT_URL
         self.secret = Config.EXPO_PUBLIC_RORK_TOOLKIT_SECRET_KEY
@@ -150,6 +182,22 @@ struct GeminiAnalysisService {
                                   markers: [],
                                   failed: true)
         }
+
+        // Phase 2: photo-quality gate. Blurry / too-dark / blown-out frames give
+        // unreliable AI analysis — surface a recapture prompt (via the existing
+        // failure UI) instead of sending garbage to the model. Flag-gated; the
+        // OFF path is byte-identical to before.
+        if APIKeys.usePhotoQualityGate {
+            let quality = PhotoQualityService.evaluate(image)
+            if !quality.isAcceptable {
+                let reason = quality.issues.first ?? "Photo quality too low to analyze — retake."
+                print("[Gemini] \u{26A0}\u{FE0F} photo-quality gate blocked frame (blur \(String(format: "%.0f", quality.blurScore)), brightness \(String(format: "%.0f", quality.brightnessScore)))")
+                return AnalysisResult(findings: Self.failureFinding(reason: reason),
+                                      markers: [],
+                                      failed: true)
+            }
+        }
+
         print("[Gemini] \u{2705} Using Rork toolkit proxy (\(Self.model)) — image \(Int(image.size.width))x\(Int(image.size.height)) slope=\(slope.rawValue) mode=\(mode.rawValue)")
 
         guard let base64 = ImageResize.encodedJPEGBase64(from: image, profile: .full) else {
@@ -177,7 +225,7 @@ struct GeminiAnalysisService {
 
         let userStylePrefix = LocalLearningEngine.shared.userStylePromptPrefix()
         let promptHead = userStylePrefix.isEmpty ? "" : (userStylePrefix + "\n")
-        let prompt = promptHead + """
+        let promptCore = promptHead + """
         You are a forensic roof inspector (HAAG standards). \(intro)
 
         Identify the roof covering and any visible damage. Be conservative — only flag damage you can actually see in the pixels. Empty arrays are correct when nothing is visible.
@@ -198,6 +246,11 @@ struct GeminiAnalysisService {
 
         Include all 10 damage categories in `findings` (set detected=false for ones not present). Mark each visible hail strike individually. If the image is NOT a roof (grass, sky, indoors, person, vehicle), set analyzed=false, return empty `damage_markers`, and add a finding with label="no_roof_detected".
         """
+
+        // Phase 2: prompt hardening — append the explicit false-positive taxonomy
+        // and (optionally) physical-size reasoning. Both flag-gated and additive.
+        let prompt = promptCore + (APIKeys.useHardenedPrompt ? Self.falsePositiveGuidance : "")
+                                 + (APIKeys.useScaleAwareSizing ? Self.scaleSizingGuidance : "")
 
         let body = Self.chatCompletionBody(systemPrompt: prompt,
                                             userText: "Analyse this roof photo.",
@@ -375,6 +428,14 @@ struct GeminiAnalysisService {
         if noRoofFlag {
             print("[Gemini] \u{26A0}\u{FE0F} no_roof_detected — image does not show a roof; suppressing markers.")
         }
+
+        // Phase 2: anti-grid hallucination. Real hail is clustered/random; a near-
+        // uniform marker grid is a model artifact. Down-weight confidence (never
+        // silently delete — that could hide real damage) so the training queue and
+        // verify-with-inspector pathways flag it. Flag-gated; OFF leaves markers as-is.
+        if APIKeys.useHaagDensityCheck {
+            markers = downweightGridHallucination(markers)
+        }
         return AnalysisResult(findings: results,
                               markers: markers,
                               failed: false,
@@ -382,6 +443,45 @@ struct GeminiAnalysisService {
                               shingleType: shingleTypeName,
                               shingleTypeConfidence: shingleTypeConfidence,
                               shingleTypeNote: shingleTypeNote)
+    }
+
+    /// Detects a near-uniform marker grid (a hallucination signature — real hail
+    /// is clustered/random) and reduces those markers' confidence so downstream
+    /// review/verify pathways pick them up. Non-destructive by design.
+    private static func downweightGridHallucination(_ markers: [DamageMarker]) -> [DamageMarker] {
+        guard markers.count >= 8 else { return markers }
+
+        // Nearest-neighbor distance for each marker in normalized space.
+        var nnDistances: [Double] = []
+        nnDistances.reserveCapacity(markers.count)
+        for i in markers.indices {
+            var best = Double.greatestFiniteMagnitude
+            for j in markers.indices where j != i {
+                let dx = Double(markers[i].x - markers[j].x)
+                let dy = Double(markers[i].y - markers[j].y)
+                best = min(best, (dx * dx + dy * dy).squareRoot())
+            }
+            if best.isFinite { nnDistances.append(best) }
+        }
+        guard nnDistances.count >= 8 else { return markers }
+
+        let mean = nnDistances.reduce(0, +) / Double(nnDistances.count)
+        guard mean > 0 else { return markers }
+        let variance = nnDistances.reduce(0.0) { $0 + ($1 - mean) * ($1 - mean) } / Double(nnDistances.count)
+        let cv = variance.squareRoot() / mean   // coefficient of variation
+
+        // Very low spread of spacing == grid-like. Real damage clusters have a
+        // much higher CV. 0.18 is conservative so we only flag obvious grids.
+        guard cv < 0.18 else { return markers }
+
+        print("[Gemini] \u{1F578}\u{FE0F} grid-like markers detected (cv \(String(format: "%.2f", cv)), n=\(markers.count)) — down-weighting confidence.")
+        return markers.map { m in
+            let lowered = max(10, Int(Double(m.confidence) * 0.6))
+            return DamageMarker(x: m.x, y: m.y, radius: m.radius,
+                                type: m.type, severity: m.severity,
+                                note: m.note.isEmpty ? "uniform pattern — verify" : m.note + " · uniform pattern — verify",
+                                confidence: lowered)
+        }
     }
 
     /// Strip ```json ... ``` or ``` ... ``` fences if Gemini wraps despite responseMimeType.

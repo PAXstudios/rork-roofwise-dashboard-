@@ -383,3 +383,41 @@ A field-ready CRM and AI inspection tool that helps roofing pros:
 - Build green on a Mac (Xcode, iOS 17+) — could not be verified in the Linux session.
 - Rotate the committed Google API key.
 - Phase 2 (AI accuracy, flagged) and Phase 3 (UI polish + better APIs) — see SPEC_AUDIT.md.
+
+---
+
+### [2026-05-28] #09 — Phase 2: AI shingle-analysis accuracy (flag-gated, additive)
+
+**Prompt (summarized):**
+> Implement all Phase 2 AI-accuracy improvements (photo-quality gate, multi-photo
+> consensus, anti-grid/HAAG-density, scale-aware sizing, prompt hardening). Improve
+> freely with justification; keep additive behind flags; foundation-first phased PRs.
+
+**Intent / Goal:**
+- Raise shingle-detection accuracy (the product moat) without touching the sacred
+  camera flow; every layer toggles back to the prior behavior via an APIKeys flag.
+
+**Decisions made:**
+- Landed the robust layers in NON-sacred files (`GeminiAnalysisService`, `DecisionEngine`)
+  plus standalone services, so `QuickInspectionView/SlopePhotosSheet/InspectionSession/
+  CameraCaptureService` stay byte-identical.
+- Photo-quality gate runs inside `analyzeFull` and reuses the existing retry UI.
+- Scale-aware sizing is done model-side (prompt) rather than as a post-hoc geometric
+  filter — the downsampled-JPEG px/in reference frame is ambiguous and dropping markers
+  in-app could hide real damage (unacceptable for a claims product).
+- Anti-grid down-weights confidence (never deletes) so review/verify pathways catch it.
+- Multi-photo consensus shipped as a pure `MarkerConsensus` utility but intentionally
+  NOT wired into the sacred `runScan` blind (no compiler here) — flagged for a
+  Mac-verified one-line hook.
+
+**Files touched:**
+- `Configuration/APIKeys.swift` (5 flags), `Services/PhotoQualityService.swift` (new),
+  `Services/MarkerConsensus.swift` (new), `Services/GeminiAnalysisService.swift`
+  (quality gate + prompt hardening + anti-grid), `Services/DecisionEngine.swift`
+  (HAAG density check), `SPEC_AUDIT.md`.
+
+**Open questions / Follow-ups:**
+- Build on a Mac; validate flags toggle cleanly and recapture prompt fires on blurry frames.
+- Wire `MarkerConsensus` into per-slope aggregation in `runScan` (Mac-verified).
+- Tune thresholds (blur 90, grid cv 0.18, density borderline ±1 / saturation 25) on real photos.
+- Later: focus/zoom verification pass; `gemini-2.5-pro` report-grade pass.

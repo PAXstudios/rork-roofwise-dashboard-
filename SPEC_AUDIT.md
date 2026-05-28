@@ -59,13 +59,35 @@ duplicate/dead Home cards. Phase 1 closes those.
   remain in **git history**. Removing them from source does not purge history —
   **rotate the Google key** in Google Cloud and treat the anon key as exposed.
 
-### Phase 2 — AI shingle-analysis accuracy (next PR, behind flags)
-Photo-quality gate; multi-photo per-slope consensus; anti-grid-hallucination check;
-scale-aware sizing (consume `shingleScaleEstimate`); test-square density cross-check vs
-`HaagThresholds`; prompt hardening with false-positive taxonomy; low-confidence focus
-pass; optional direct Gemini API + `gemini-2.5-pro` report-grade pass. Wire into
-`LocalLearningEngine` + `verifyWithInspector`. `GeminiAnalysisService` currently routes
-through a Rork toolkit proxy (OpenAI-compatible), not Google directly.
+### Phase 2 — AI shingle-analysis accuracy (in progress, behind flags)
+All flags live in `APIKeys` and default ON; each OFF path is byte-identical to before.
+
+Implemented:
+- **Photo-quality gate** (`usePhotoQualityGate`) — `PhotoQualityService` (variance-of-
+  Laplacian blur + mean luminance) runs at the top of `GeminiAnalysisService.analyzeFull`;
+  poor frames return via the existing retry UI with a recapture reason.
+- **Prompt hardening** (`useHardenedPrompt`) — explicit false-positive taxonomy appended
+  to the analyze prompt.
+- **Scale reasoning** (`useScaleAwareSizing`) — prompt asks Gemini to apply 1/4"–2"
+  physical hail-size limits using a scale reference and to report `shingleScaleEstimate`.
+  (Model-side, not a brittle post-hoc geometric filter — the px/in reference frame of the
+  downsampled JPEG is ambiguous, so dropping markers in-app would risk hiding real damage.)
+- **Anti-grid hallucination** (`useHaagDensityCheck`) — near-uniform marker grids get
+  their confidence down-weighted (never deleted) in `parseResponse`.
+- **HAAG density cross-check** (`useHaagDensityCheck`) — `DecisionEngine` flags a slope
+  `verifyWithInspector` when hits/test-square is borderline vs the material threshold or
+  implausibly saturated.
+
+Pending (ready, needs Mac-verified wiring):
+- **Multi-photo consensus** — `MarkerConsensus.merge(_:)` is implemented as a pure utility
+  but intentionally NOT yet called from `QuickInspectionView.runScan` (the sacred camera
+  flow). Wire it where a slope's per-photo markers are aggregated, behind
+  `useMultiPhotoConsensus`, and build on a Mac.
+
+Later (not started): low-confidence focus/zoom pass; optional direct Gemini API +
+`gemini-2.5-pro` report-grade pass; deeper `LocalLearningEngine` calibration coupling.
+`GeminiAnalysisService` currently routes through a Rork toolkit proxy (OpenAI-compatible),
+not Google directly.
 
 ### Phase 3 — UI polish + better APIs (later PR)
 `MotionToken` spring system + haptics + reduce-motion; glove-target audit (≥56pt,
