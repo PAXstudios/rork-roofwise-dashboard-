@@ -92,6 +92,10 @@ final class AuthStore {
 
     var currentUserId: String? {
         if case .signedIn(let id, _, _) = state { return id }
+        // Dev bypass: when auth is disabled via APIKeys.requireAuth = false,
+        // surface a stable per-install id so downstream services (leads sync,
+        // local learning) don't no-op on a nil user.
+        if !APIKeys.requireAuth { return "dev-local-user" }
         return nil
     }
 

@@ -52,6 +52,8 @@ enum APIKeys {
     /// until you flip this.
     static let useStructuredConfidence: Bool = true
 
+    static let requireAuth: Bool = false // dev bypass; set to true to enforce sign-in
+
     // MARK: Live-mode accessors
     static var isLiveGoogleMaps: Bool      { !USE_MOCKS && !googleMapsApiKey.isEmpty }
     static var isLiveGoogleSolar: Bool     { !USE_MOCKS && !googleSolarApiKey.isEmpty }

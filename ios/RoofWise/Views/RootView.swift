@@ -37,15 +37,23 @@ struct RootView: View {
 
     var body: some View {
         Group {
-            switch auth.state {
-            case .unknown:
-                LaunchSplashView()
-            case .signedOut:
-                WelcomeView()
-                    .transition(.opacity)
-            case .signedIn:
+            if !APIKeys.requireAuth {
+                // Dev bypass: boot straight into the dashboard regardless of
+                // auth state. Flip APIKeys.requireAuth to true to restore the
+                // full Welcome / sign-in gate.
                 signedInBody
                     .transition(.opacity)
+            } else {
+                switch auth.state {
+                case .unknown:
+                    LaunchSplashView()
+                case .signedOut:
+                    WelcomeView()
+                        .transition(.opacity)
+                case .signedIn:
+                    signedInBody
+                        .transition(.opacity)
+                }
             }
         }
         .animation(.easeInOut(duration: 0.25), value: stateKey)

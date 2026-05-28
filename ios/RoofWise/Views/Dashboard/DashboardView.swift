@@ -203,6 +203,16 @@ struct DashboardHeader: View {
 
             Spacer()
 
+            if !APIKeys.requireAuth {
+                Text("DEV MODE — auth disabled")
+                    .font(.system(size: Theme.TypeRamp.caption, weight: .heavy))
+                    .foregroundStyle(Theme.inkSoft)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Theme.hairline, in: .rect(cornerRadius: 12))
+                    .accessibilityLabel("Developer mode, authentication disabled")
+            }
+
             // P2 audit: search/bell icons removed — no destinations existed and
             // dead controls violate glove rules. Settings stays as the sole header CTA.
             iconButton(systemName: "gearshape.fill", action: {
