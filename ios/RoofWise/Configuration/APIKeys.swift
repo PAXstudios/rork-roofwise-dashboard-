@@ -58,6 +58,22 @@ enum APIKeys {
 
     static let requireAuth: Bool = false // dev bypass; set to true to enforce sign-in
 
+    // MARK: Phase 2 — AI accuracy flags (all additive; OFF path is unchanged)
+    /// Run a blur + brightness check before sending a captured photo to Gemini;
+    /// prompt for a recapture when the frame is too poor to analyze reliably.
+    static let usePhotoQualityGate: Bool = true
+    /// Aggregate + dedupe damage markers across all photos of a slope; boost
+    /// confidence for strikes seen in ≥2 frames, drop single-frame outliers.
+    static let useMultiPhotoConsensus: Bool = true
+    /// Cross-check marker counts against HAAG hits-per-test-square thresholds and
+    /// down-weight near-uniform "grid" marker layouts (model hallucination).
+    static let useHaagDensityCheck: Bool = true
+    /// Use Gemini's shingleScaleEstimate (px/in) to size markers in inches and
+    /// drop hail strikes outside the 0.25"–2" physical range.
+    static let useScaleAwareSizing: Bool = true
+    /// Append the explicit false-positive taxonomy to the Gemini system prompt.
+    static let useHardenedPrompt: Bool = true
+
     // MARK: Live-mode accessors
     static var isLiveGoogleMaps: Bool      { !USE_MOCKS && !googleMapsApiKey.isEmpty }
     static var isLiveGoogleSolar: Bool     { !USE_MOCKS && !googleSolarApiKey.isEmpty }
