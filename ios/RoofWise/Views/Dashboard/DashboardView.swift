@@ -10,6 +10,7 @@ struct DashboardView: View {
     @State private var serviceAreaStore = ServiceAreaStore.shared
     @State private var alertStore = StormAlertStore.shared
     @State private var pushRouter = PushAlertRouter.shared
+    @State private var showMileage = false
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -24,6 +25,7 @@ struct DashboardView: View {
                             .padding(.horizontal, 18)
                     }
                     KPIStrip(onQuickInspection: onQuickInspection)
+                    MileageSummaryCard(onOpen: { showMileage = true })
                     StormAlertHero(
                         alert: alertStore.latestActiveAlert,
                         onView: {
@@ -78,6 +80,10 @@ struct DashboardView: View {
                     }
                 }
             }
+        }
+        .sheet(isPresented: $showMileage) {
+            MileageTrackerView()
+                .presentationDragIndicator(.visible)
         }
         .onChange(of: pushRouter.pendingAlertId) { _, newId in
             guard let newId else { return }
