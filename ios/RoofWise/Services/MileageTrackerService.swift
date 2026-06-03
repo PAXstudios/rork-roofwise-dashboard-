@@ -4,6 +4,8 @@ import CoreLocation
 @MainActor
 @Observable
 final class MileageTrackerService: NSObject {
+    static let shared = MileageTrackerService()
+
     enum AuthState { case notDetermined, authorized, denied }
 
     // Live tracking state
@@ -31,6 +33,7 @@ final class MileageTrackerService: NSObject {
         manager.desiredAccuracy = kCLLocationAccuracyBest
         manager.distanceFilter = 5
         manager.activityType = .automotiveNavigation
+        manager.pausesLocationUpdatesAutomatically = false
         switch manager.authorizationStatus {
         case .authorizedAlways, .authorizedWhenInUse: authState = .authorized
         case .denied, .restricted: authState = .denied
@@ -39,7 +42,19 @@ final class MileageTrackerService: NSObject {
     }
 
     func requestAuth() {
-        manager.requestWhenInUseAuthorization()
+        // Request Always so the trip keeps tracking when the app is backgrounded.
+        manager.requestAlwaysAuthorization()
+    }
+
+    /// Enable background location delivery while a trip is active. Guarded so it
+    /// only flips on when we actually have authorization (avoids a runtime crash).
+    private func enableBackgroundUpdates(_ enabled: Bool) {
+        guard manager.authorizationStatus == .authorizedAlways else {
+            manager.allowsBackgroundLocationUpdates = false
+            return
+        }
+        manager.allowsBackgroundLocationUpdates = enabled
+        manager.showsBackgroundLocationIndicator = enabled
     }
 
     func start() {
@@ -54,6 +69,7 @@ final class MileageTrackerService: NSObject {
         startedAt = Date()
         isTracking = true
         isPaused = false
+        enableBackgroundUpdates(true)
         manager.startUpdatingLocation()
         startTicker()
     }
@@ -74,6 +90,7 @@ final class MileageTrackerService: NSObject {
     func stop() -> (miles: Double, startedAt: Date, endedAt: Date, path: [MileageTripPoint])? {
         guard isTracking, let started = startedAt else { return nil }
         manager.stopUpdatingLocation()
+        enableBackgroundUpdates(false)
         tickerTask?.cancel()
         tickerTask = nil
         let result = (currentMiles, started, Date(), path)
@@ -90,6 +107,7 @@ final class MileageTrackerService: NSObject {
 
     func cancel() {
         manager.stopUpdatingLocation()
+        enableBackgroundUpdates(false)
         tickerTask?.cancel()
         tickerTask = nil
         isTracking = false
@@ -143,7 +161,10 @@ final class MileageTrackerService: NSObject {
         switch status {
         case .authorizedAlways, .authorizedWhenInUse:
             authState = .authorized
-            if isTracking, !isPaused { manager.startUpdatingLocation() }
+            if isTracking, !isPaused {
+                enableBackgroundUpdates(true)
+                manager.startUpdatingLocation()
+            }
         case .denied, .restricted:
             authState = .denied
             lastError = "Location permission denied. Enable in Settings to track mileage."

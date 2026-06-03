@@ -5,7 +5,7 @@ import CoreLocation
 struct MileageTrackerView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var store = MileageStore.shared
-    @State private var tracker = MileageTrackerService()
+    @State private var tracker = MileageTrackerService.shared
     @State private var showStopSheet: Bool = false
     @State private var showRangePicker: Bool = false
     @State private var range: MileageRange = .week
