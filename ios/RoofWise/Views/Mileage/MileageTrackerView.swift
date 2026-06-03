@@ -11,6 +11,7 @@ struct MileageTrackerView: View {
     @State private var range: MileageRange = .week
     @State private var showRateSheet: Bool = false
     @State private var editingTrip: MileageTrip?
+    @State private var detailTrip: MileageTrip?
     @State private var showAddManual: Bool = false
     @State private var showSettings: Bool = false
     @State private var autoTrack = MileageAutoTrackService.shared
@@ -125,6 +126,9 @@ struct MileageTrackerView: View {
                 }
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
+            }
+            .sheet(item: $detailTrip) { trip in
+                TripDetailView(tripID: trip.id)
             }
         }
     }
@@ -556,7 +560,10 @@ struct MileageTrackerView: View {
                 VStack(spacing: 8) {
                     ForEach(rangedTrips) { trip in
                         TripRow(trip: trip, rate: store.ratePerMile)
-                            .onTapGesture { editingTrip = trip }
+                            .onTapGesture {
+                                let g = UIImpactFeedbackGenerator(style: .light); g.impactOccurred()
+                                detailTrip = trip
+                            }
                             .swipeActions {
                                 Button(role: .destructive) {
                                     store.delete(trip)
@@ -928,7 +935,7 @@ private struct StopTripSheet: View {
 
 // MARK: - Manual Trip Sheet
 
-private struct ManualTripSheet: View {
+struct ManualTripSheet: View {
     var existing: MileageTrip?
     var onSave: (MileageTrip) -> Void
 
