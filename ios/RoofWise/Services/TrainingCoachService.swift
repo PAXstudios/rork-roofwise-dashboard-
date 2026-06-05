@@ -23,7 +23,7 @@ struct DamageExplanation {
 ///  - Damage Explainer: turns inspector findings into homeowner-friendly language
 enum TrainingCoachService {
     static var apiKey: String { Config.allValues["EXPO_PUBLIC_GEMINI_API_KEY"] ?? "" }
-    static let endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+    static let endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 
     // MARK: - Role-Play Coach
 

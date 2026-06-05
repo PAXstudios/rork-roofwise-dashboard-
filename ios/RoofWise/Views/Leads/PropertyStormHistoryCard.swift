@@ -26,24 +26,30 @@ struct PropertyStormHistoryCard: View {
                     .background(Theme.canvas, in: .capsule)
             }
 
-            if let top = hits.first {
-                topHero(top)
-            }
-
-            VStack(spacing: 8) {
-                ForEach(hits) { hit in
-                    row(hit)
+            if hits.isEmpty {
+                EmptyHint(icon: "cloud.bolt.rain",
+                          text: "No storm history matched yet. Add an address to pull NOAA events near this property.",
+                          minHeight: 64)
+            } else {
+                if let top = hits.first {
+                    topHero(top)
                 }
-            }
 
-            HStack(spacing: 6) {
-                Image(systemName: "info.circle.fill")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(Theme.inkFaint)
-                Text("Sourced from regional NEXRAD + carrier loss data")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.inkFaint)
-                Spacer()
+                VStack(spacing: 8) {
+                    ForEach(hits) { hit in
+                        row(hit)
+                    }
+                }
+
+                HStack(spacing: 6) {
+                    Image(systemName: "info.circle.fill")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(Theme.inkFaint)
+                    Text("Sourced from NOAA Storm Events near this property")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Theme.inkFaint)
+                    Spacer()
+                }
             }
         }
         .padding(16)

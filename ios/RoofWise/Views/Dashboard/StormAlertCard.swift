@@ -2,6 +2,9 @@ import SwiftUI
 
 struct StormAlertCard: View {
     var embedded: Bool = false
+    @State private var alertStore = StormAlertStore.shared
+
+    private var alert: StormAlert? { alertStore.latestActiveAlert }
 
     var body: some View {
         ZStack {
@@ -54,60 +57,76 @@ struct StormAlertCard: View {
             VStack(alignment: .leading, spacing: 18) {
                 HStack {
                     HStack(spacing: 6) {
-                        Image(systemName: "exclamationmark.triangle.fill")
+                        Image(systemName: alert == nil ? "checkmark.shield.fill" : "exclamationmark.triangle.fill")
                             .font(.system(size: 11, weight: .bold))
-                        Text("STORM ALERT")
+                        Text(alert == nil ? "STORM WATCH" : "STORM ALERT")
                             .font(.system(size: 11, weight: .heavy))
                             .tracking(1.2)
                     }
                     .foregroundStyle(.white)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
-                    .background(Theme.ember, in: .rect(cornerRadius: 8))
+                    .background(alert == nil ? Theme.slate : Theme.ember, in: .rect(cornerRadius: 8))
 
                     Spacer()
 
-                    VStack(alignment: .trailing, spacing: 0) {
-                        HStack(spacing: 2) {
-                            Text("72")
-                                .font(.system(size: 28, weight: .heavy))
-                            Text("°")
-                                .font(.system(size: 18, weight: .bold))
-                                .baselineOffset(8)
+                    if let alert {
+                        VStack(alignment: .trailing, spacing: 0) {
+                            HStack(spacing: 2) {
+                                Text(String(format: "%.0f", alert.magnitudeValue))
+                                    .font(.system(size: 28, weight: .heavy))
+                                Text(alert.magnitudeUnit)
+                                    .font(.system(size: 14, weight: .bold))
+                                    .baselineOffset(6)
+                            }
+                            Text(alert.eventType.rawValue.capitalized)
+                                .font(.system(size: 11, weight: .medium))
+                                .opacity(0.85)
                         }
-                        Text("Rain & Hail")
-                            .font(.system(size: 11, weight: .medium))
-                            .opacity(0.85)
-                    }
-                    .foregroundStyle(.white)
-                }
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Severe Hail Warning")
-                        .font(.system(size: 22, weight: .heavy))
                         .foregroundStyle(.white)
-                    Text("Plano · Frisco · McKinney corridor — projected 1.5–2.0″ stones in the next 90 minutes. 4 of your active leads sit inside the high-impact zone.")
-                        .font(.system(size: 13))
-                        .foregroundStyle(.white.opacity(0.85))
-                        .lineLimit(3)
+                    }
                 }
 
-                Button {} label: {
-                    HStack {
-                        Text("View Impacted Properties")
-                            .font(.system(size: 14, weight: .semibold))
-                        Spacer()
-                        Image(systemName: "arrow.right")
-                            .font(.system(size: 13, weight: .bold))
+                if let alert {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(alert.headline)
+                            .font(.system(size: 22, weight: .heavy))
+                            .foregroundStyle(.white)
+                        Text("\(alert.areaLabel) · \(alert.propertyCount) propert\(alert.propertyCount == 1 ? "y" : "ies") in the impact zone · \(String(format: "%.1f", alert.distanceMi)) mi away.")
+                            .font(.system(size: 13))
+                            .foregroundStyle(.white.opacity(0.85))
+                            .lineLimit(3)
                     }
-                    .foregroundStyle(Theme.ink)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 14)
-                    .background(.white, in: .rect(cornerRadius: 14))
+
+                    Button {} label: {
+                        HStack {
+                            Text("View Impacted Properties")
+                                .font(.system(size: 14, weight: .semibold))
+                            Spacer()
+                            Image(systemName: "arrow.right")
+                                .font(.system(size: 13, weight: .bold))
+                        }
+                        .foregroundStyle(Theme.ink)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 14)
+                        .background(.white, in: .rect(cornerRadius: 14))
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("All clear")
+                            .font(.system(size: 22, weight: .heavy))
+                            .foregroundStyle(.white)
+                        Text("No active storm alerts in your service area. We'll notify you the moment hail or damaging wind is detected nearby.")
+                            .font(.system(size: 13))
+                            .foregroundStyle(.white.opacity(0.85))
+                            .lineLimit(3)
+                    }
+                    Spacer(minLength: 0)
                 }
-                .buttonStyle(.plain)
             }
             .padding(20)
+            .frame(maxHeight: .infinity, alignment: .top)
         }
         .frame(height: 260)
         .clipShape(.rect(cornerRadius: 24))

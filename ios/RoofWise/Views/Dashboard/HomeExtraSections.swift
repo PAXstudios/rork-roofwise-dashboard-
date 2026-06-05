@@ -17,23 +17,31 @@ private extension View {
     }
 }
 
-// MARK: 1. Today's Goals
+// MARK: 1. Pipeline funnel (real CustomerStore data — no fake targets)
 
 struct TodaysGoalsCard: View {
+    @Environment(CustomerStore.self) private var store
+
     private struct Goal: Identifiable {
         let id = UUID()
         let label: String
         let icon: String
         let value: Int
-        let target: Int
-        var fraction: Double { min(1.0, Double(value) / Double(max(1, target))) }
+        let denominator: Int
+        var fraction: Double { min(1.0, Double(value) / Double(max(1, denominator))) }
     }
 
-    private let goals: [Goal] = [
-        .init(label: "Doors Knocked", icon: "hand.tap.fill", value: 42, target: 60),
-        .init(label: "Inspections", icon: "camera.viewfinder", value: 3, target: 5),
-        .init(label: "Leads Booked", icon: "calendar.badge.plus", value: 2, target: 4)
-    ]
+    private var metrics: SalesMetrics { SalesMetrics.compute(from: store.customers) }
+
+    private var goals: [Goal] {
+        let m = metrics
+        let top = max(1, m.knocked)
+        return [
+            .init(label: "Leads", icon: "hand.tap.fill", value: m.knocked, denominator: top),
+            .init(label: "Inspections", icon: "camera.viewfinder", value: m.inspectionsCompleted, denominator: top),
+            .init(label: "Approved", icon: "checkmark.seal.fill", value: m.approved, denominator: top)
+        ]
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -48,34 +56,36 @@ struct TodaysGoalsCard: View {
                 }
                 .frame(width: 34, height: 34)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Today's Goals")
+                    Text("Pipeline Funnel")
                         .font(.system(size: 15, weight: .heavy))
                         .foregroundStyle(Theme.ink)
-                    Text("Daily targets · resets at midnight")
+                    Text("Leads → Inspections → Approved")
                         .font(.system(size: 11))
                         .foregroundStyle(Theme.inkFaint)
                 }
                 Spacer()
-                Text("\(overallPercent)%")
-                    .font(.system(size: 13, weight: .heavy))
-                    .foregroundStyle(Theme.ember)
-                    .monospacedDigit()
-                    .padding(.horizontal, 9).padding(.vertical, 4)
-                    .background(Theme.emberSoft, in: .capsule)
+                if metrics.knocked > 0 {
+                    Text("\(Int((metrics.conversionRate * 100).rounded()))%")
+                        .font(.system(size: 13, weight: .heavy))
+                        .foregroundStyle(Theme.ember)
+                        .monospacedDigit()
+                        .padding(.horizontal, 9).padding(.vertical, 4)
+                        .background(Theme.emberSoft, in: .capsule)
+                }
             }
 
-            VStack(spacing: 10) {
-                ForEach(goals) { goal in
-                    goalRow(goal)
+            if metrics.knocked == 0 {
+                EmptyHint(icon: "person.2.badge.plus",
+                          text: "Your pipeline is empty. Log a knock or create a job to start tracking conversion.")
+            } else {
+                VStack(spacing: 10) {
+                    ForEach(goals) { goal in
+                        goalRow(goal)
+                    }
                 }
             }
         }
         .homeSectionCard()
-    }
-
-    private var overallPercent: Int {
-        let avg = goals.map(\.fraction).reduce(0, +) / Double(goals.count)
-        return Int((avg * 100).rounded())
     }
 
     private func goalRow(_ goal: Goal) -> some View {
@@ -95,7 +105,7 @@ struct TodaysGoalsCard: View {
                         .font(.system(size: 12, weight: .heavy))
                         .foregroundStyle(Theme.ink)
                     Spacer()
-                    Text("\(goal.value)/\(goal.target)")
+                    Text("\(goal.value)")
                         .font(.system(size: 11, weight: .heavy))
                         .foregroundStyle(Theme.inkSoft)
                         .monospacedDigit()
@@ -115,132 +125,18 @@ struct TodaysGoalsCard: View {
     }
 }
 
-// MARK: 2. Live Leaderboard
-
-struct LeaderboardCard: View {
-    private struct Rep: Identifiable {
-        let id = UUID()
-        let initials: String
-        let name: String
-        let signed: Int
-        let revenue: String
-        let trend: Int
-    }
-
-    private let reps: [Rep] = [
-        .init(initials: "MR", name: "Mia Rivera", signed: 7, revenue: "$84.2k", trend: 18),
-        .init(initials: "AC", name: "Alex Coleman", signed: 5, revenue: "$61.0k", trend: 9),
-        .init(initials: "JT", name: "Jordan Tate", signed: 4, revenue: "$48.7k", trend: -3)
-    ]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 10) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(LinearGradient(colors: [Theme.ink, Color(red: 0.18, green: 0.25, blue: 0.45)],
-                                             startPoint: .topLeading, endPoint: .bottomTrailing))
-                    Image(systemName: "trophy.fill")
-                        .font(.system(size: 13, weight: .heavy))
-                        .foregroundStyle(Theme.amber)
-                }
-                .frame(width: 34, height: 34)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Team Leaderboard")
-                        .font(.system(size: 15, weight: .heavy))
-                        .foregroundStyle(Theme.ink)
-                    Text("This week · contracts signed")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.inkFaint)
-                }
-                Spacer()
-                Button {} label: {
-                    Text("View all")
-                        .font(.system(size: 12, weight: .heavy))
-                        .foregroundStyle(Theme.ember)
-                }
-            }
-
-            VStack(spacing: 8) {
-                ForEach(Array(reps.enumerated()), id: \.element.id) { index, rep in
-                    repRow(rank: index + 1, rep: rep)
-                }
-            }
-        }
-        .homeSectionCard()
-    }
-
-    private func repRow(rank: Int, rep: Rep) -> some View {
-        HStack(spacing: 12) {
-            Text("\(rank)")
-                .font(.system(size: 12, weight: .heavy))
-                .foregroundStyle(rankColor(rank))
-                .frame(width: 18, height: 18)
-                .background(rankColor(rank).opacity(0.14), in: .rect(cornerRadius: 5))
-
-            ZStack {
-                Circle().fill(Theme.ink.opacity(0.08))
-                Text(rep.initials)
-                    .font(.system(size: 11, weight: .heavy))
-                    .foregroundStyle(Theme.ink)
-            }
-            .frame(width: 32, height: 32)
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text(rep.name)
-                    .font(.system(size: 13, weight: .heavy))
-                    .foregroundStyle(Theme.ink)
-                Text("\(rep.signed) signed · \(rep.revenue)")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.inkFaint)
-            }
-            Spacer()
-            HStack(spacing: 3) {
-                Image(systemName: rep.trend >= 0 ? "arrow.up.right" : "arrow.down.right")
-                    .font(.system(size: 9, weight: .bold))
-                Text("\(abs(rep.trend))%")
-                    .font(.system(size: 11, weight: .heavy))
-                    .monospacedDigit()
-            }
-            .foregroundStyle(rep.trend >= 0 ? Theme.mint : Theme.crimson)
-            .padding(.horizontal, 8).padding(.vertical, 4)
-            .background((rep.trend >= 0 ? Theme.mintSoft : Theme.emberSoft), in: .capsule)
-        }
-    }
-
-    private func rankColor(_ rank: Int) -> Color {
-        switch rank {
-        case 1: return Theme.amber
-        case 2: return Theme.inkSoft
-        default: return Theme.ember
-        }
-    }
-}
-
-// MARK: 3. Recent Wins feed
+// MARK: 2. Recent Wins feed (real CustomerStore data)
 
 struct RecentWinsCard: View {
-    private struct Win: Identifiable {
-        let id = UUID()
-        let initials: String
-        let name: String
-        let amount: String
-        let address: String
-        let minutesAgo: Int
-        let tint: Color
-    }
+    @Environment(CustomerStore.self) private var store
 
-    private let wins: [Win] = [
-        .init(initials: "MR", name: "Mia Rivera",
-              amount: "$18,450", address: "412 Chestnut St",
-              minutesAgo: 22, tint: Theme.ember),
-        .init(initials: "AC", name: "You",
-              amount: "$12,800", address: "88 Ridgeview Dr",
-              minutesAgo: 96, tint: Theme.sky),
-        .init(initials: "JT", name: "Jordan Tate",
-              amount: "$9,200", address: "1207 Maple Ln",
-              minutesAgo: 184, tint: Theme.mint)
-    ]
+    /// Closed / approved jobs from the real pipeline.
+    private var wins: [Customer] {
+        store.customers.filter {
+            $0.stage == .approved || $0.stage == .materialOrdered ||
+            $0.stage == .jobComplete || $0.stage == .paid
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -258,81 +154,68 @@ struct RecentWinsCard: View {
                     Text("Recent Wins")
                         .font(.system(size: 15, weight: .heavy))
                         .foregroundStyle(Theme.ink)
-                    Text("Live feed · contracts signed today")
+                    Text("Approved & closed jobs")
                         .font(.system(size: 11))
                         .foregroundStyle(Theme.inkFaint)
                 }
                 Spacer()
-                HStack(spacing: 5) {
-                    Circle().fill(Theme.mint).frame(width: 7, height: 7)
-                    Text("LIVE")
-                        .font(.system(size: 9, weight: .heavy))
-                        .tracking(1.0)
-                        .foregroundStyle(Theme.mint)
-                }
-                .padding(.horizontal, 8).padding(.vertical, 4)
-                .background(Theme.mintSoft, in: .capsule)
             }
 
-            VStack(spacing: 10) {
-                ForEach(wins) { win in
-                    winRow(win)
+            if wins.isEmpty {
+                EmptyHint(icon: "trophy",
+                          text: "No closed jobs yet. Approved and paid jobs will appear here.")
+            } else {
+                VStack(spacing: 10) {
+                    ForEach(wins) { win in
+                        winRow(win)
+                    }
                 }
             }
         }
         .homeSectionCard()
     }
 
-    private func winRow(_ win: Win) -> some View {
+    private func winRow(_ win: Customer) -> some View {
         HStack(spacing: 12) {
             ZStack {
-                Circle().fill(win.tint.opacity(0.16))
-                Text(win.initials)
+                Circle().fill(Theme.mint.opacity(0.16))
+                Text(initials(win.ownerName))
                     .font(.system(size: 11, weight: .heavy))
-                    .foregroundStyle(win.tint)
+                    .foregroundStyle(Theme.mint)
             }
             .frame(width: 34, height: 34)
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    Text(win.name)
+                    Text(win.ownerName.isEmpty ? "Unnamed job" : win.ownerName)
                         .font(.system(size: 13, weight: .heavy))
                         .foregroundStyle(Theme.ink)
                     Text("·")
                         .font(.system(size: 11))
                         .foregroundStyle(Theme.inkFaint)
-                    Text(timeLabel(win.minutesAgo))
+                    Text(win.stage.rawValue)
                         .font(.system(size: 11))
                         .foregroundStyle(Theme.inkFaint)
                 }
-                Text(win.address)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.inkSoft)
-                    .lineLimit(1)
+                if !win.address.isEmpty {
+                    Text(win.address)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.inkSoft)
+                        .lineLimit(1)
+                }
             }
             Spacer()
-            Text(win.amount)
-                .font(.system(size: 14, weight: .heavy))
-                .foregroundStyle(Theme.ink)
-                .monospacedDigit()
+            if !win.estimatedValue.isEmpty {
+                Text(win.estimatedValue)
+                    .font(.system(size: 14, weight: .heavy))
+                    .foregroundStyle(Theme.ink)
+                    .monospacedDigit()
+            }
         }
     }
 
-    private func timeLabel(_ minutes: Int) -> String {
-        if minutes < 60 { return "\(minutes)m ago" }
-        let h = minutes / 60
-        return "\(h)h ago"
+    private func initials(_ name: String) -> String {
+        let parts = name.split(separator: " ").compactMap { $0.first }
+        return parts.isEmpty ? "•" : parts.prefix(2).map(String.init).joined()
     }
-}
-
-#Preview {
-    ScrollView {
-        VStack(spacing: 22) {
-            TodaysGoalsCard()
-            LeaderboardCard()
-            RecentWinsCard()
-        }
-        .padding(.vertical, 20)
-    }
-    .background(Theme.canvas)
 }

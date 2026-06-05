@@ -10,7 +10,7 @@ struct HomeCardsCarousel: View {
     var onOpenTraining: () -> Void = {}
 
     private enum Page: Int, CaseIterable, Identifiable, Hashable {
-        case lesson, alert, tasks, daily, storm, sales
+        case lesson, alert, tasks, daily, sales
         var id: Int { rawValue }
     }
 
@@ -45,11 +45,6 @@ struct HomeCardsCarousel: View {
 
                         carouselCard(.daily) {
                             DailySummaryCard(embedded: true)
-                        }
-                        .frame(width: cardWidth)
-
-                        carouselCard(.storm) {
-                            StormHistoryMapCard(embedded: true)
                         }
                         .frame(width: cardWidth)
 

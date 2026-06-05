@@ -1,20 +1,34 @@
 import SwiftUI
 
 enum Theme {
-    // Brand palette — deep storm navy + warm rooftop ember on ivory canvas.
-    static let ink = Color(red: 0.058, green: 0.106, blue: 0.231)        // #0F1B3B
-    static let inkRaised = Color(red: 0.12, green: 0.20, blue: 0.42)      // gradient companion
-    static let inkSoft = Color(red: 0.27, green: 0.32, blue: 0.43)        // muted slate
+    // MARK: Canonical brand palette (RoofWise spec — use these EXACT values).
+    // Navy + burnt orange + cream + slate. No inline hex anywhere else.
+    static let navy   = Color(red: 0.0471, green: 0.0941, blue: 0.2353)   // #0C183C
+    static let orange = Color(red: 0.9882, green: 0.3765, blue: 0.0941)   // #FC6018
+    static let cream  = Color(red: 0.9412, green: 0.9412, blue: 0.8941)   // #F0F0E4
+    static let slate  = Color(red: 0.3294, green: 0.3765, blue: 0.4706)   // #546078
+
+    // Legacy brand-token aliases — re-pointed to the canonical spec palette so the
+    // whole app (which references these names ~1865×) adopts navy/orange/cream/slate
+    // without touching every call site. Prefer the canonical names in new code.
+    static let ink = navy                                                 // was #0F1B3B
+    static let inkSoft = slate                                            // muted slate
+    static let canvas = cream                                            // was ivory #F8F6F2
+    static let ember = orange                                            // was #FF6B2E
+
+    static let inkRaised = Color(red: 0.12, green: 0.20, blue: 0.42)      // navy gradient companion
     static let inkFaint = Color(red: 0.55, green: 0.59, blue: 0.67)
     static let scrim = Color.black.opacity(0.65)                          // photo overlay scrim
-    static let canvas = Color(red: 0.973, green: 0.965, blue: 0.949)      // ivory #F8F6F2
     static let card = Color.white
     static let hairline = Color(red: 0.91, green: 0.90, blue: 0.88)
 
-    static let ember = Color(red: 1.00, green: 0.42, blue: 0.18)          // #FF6B2E
     static let emberDeep = Color(red: 0.91, green: 0.32, blue: 0.10)
     static let emberSoft = Color(red: 1.00, green: 0.93, blue: 0.88)
 
+    // MARK: Semantic status colors (severity / state).
+    // NOTE: off the canonical 4-token palette; retained because they encode
+    // severity + status semantics across many views. Slated for a Phase-3
+    // palette-purity pass — see SPEC_AUDIT.md.
     static let mint = Color(red: 0.18, green: 0.70, blue: 0.50)
     static let mintSoft = Color(red: 0.88, green: 0.97, blue: 0.92)
     static let sky = Color(red: 0.20, green: 0.50, blue: 0.95)
@@ -80,9 +94,29 @@ extension Theme {
         // Meta / chip / caption.
         static let meta: CGFloat = 14             // chip body, secondary
         static let metaSm: CGFloat = 13           // section labels
-        static let caption: CGFloat = 12          // pill, eyebrow
+        static let caption: CGFloat = 11          // pill, eyebrow (spec: 11pt)
         static let captionSm: CGFloat = 11        // dense eyebrow
         static let micro: CGFloat = 10            // micro tag
         static let microSm: CGFloat = 9           // map glyph / counter
+
+        // MARK: Spec-named ramp (RoofWise build spec). Aliases onto the audited
+        // sizes above so new screens can use the spec vocabulary directly.
+        static let titleXl: CGFloat = 28          // hero headlines (semibold)
+        static let titleLg: CGFloat = 24          // page titles (semibold)
+        static let titleMd: CGFloat = 20          // section headers (semibold)
+        static let bodyLg: CGFloat = 17           // body copy (regular)
+        static let bodyMd: CGFloat = 15           // secondary body (regular)
+        static let bodySm: CGFloat = 13           // labels, chips (regular)
+
+        // Spec-weighted system fonts — use in new code instead of inline
+        // `.font(.system(size:weight:))` so the ramp stays the single source.
+        static var titleXlFont: Font { .system(size: titleXl, weight: .semibold) }
+        static var titleLgFont: Font { .system(size: titleLg, weight: .semibold) }
+        static var titleMdFont: Font { .system(size: titleMd, weight: .semibold) }
+        static var titleSmFont: Font { .system(size: titleSm, weight: .medium) }
+        static var bodyLgFont: Font { .system(size: bodyLg, weight: .regular) }
+        static var bodyMdFont: Font { .system(size: bodyMd, weight: .regular) }
+        static var bodySmFont: Font { .system(size: bodySm, weight: .regular) }
+        static var captionFont: Font { .system(size: caption, weight: .regular) }
     }
 }

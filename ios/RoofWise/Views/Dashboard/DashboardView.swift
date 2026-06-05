@@ -47,16 +47,11 @@ struct DashboardView: View {
                         onTapStage: { stage in onOpenLeadsStage(stage.mappedStage) }
                     )
                     TodaysGoalsCard()
-                    LeaderboardCard()
                     RecentWinsCard()
                     AICalibrationCard()
                     HomeCardsCarousel(onOpenTraining: onOpenTraining)
                     CoachingActivityCard(onOpenTraining: onOpenTraining)
                     StormAlertSubscriptionCard()
-                    PipelineCard()
-                    ScheduleCard()
-                    RecentJobsRow(onOpenCustomer: { id in path.append(.customer(id)) })
-                    AIInsightsCard()
                     Color.clear.frame(height: 120)
                 }
                 .padding(.top, 8)

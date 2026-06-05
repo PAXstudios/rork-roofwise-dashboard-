@@ -335,3 +335,89 @@ A field-ready CRM and AI inspection tool that helps roofing pros:
 **Open questions / Follow-ups:**
 - After entry #12, refresh the Context Summary section.
 - Consider a CI check that fails if a PR doesn't add a new entry to `PROMPT_LOG.md`.
+
+---
+
+### [2026-05-28] #08 — Spec reconciliation Phase 1: theme, de-mock, secrets, dead-code
+
+**Prompt (summarized):**
+> Reconcile the app to the RoofWise build spec. This session (Phase 1 of a phased
+> plan): align Theme to the navy/orange/cream/slate palette, remove all seeded/mock
+> data so the app boots empty, scrub committed secrets, fix config, remove
+> useless/duplicate code, and produce a spec-compliance audit. (AI-accuracy and UI
+> polish deferred to Phase 2/3 PRs.)
+
+**Intent / Goal:**
+- Bring the app into compliance with the spec's hard operating principles
+  (canonical palette, "no seeded data / empty state always", no committed keys).
+- Remove duplicate/fabricated Home cards (fastidious code).
+
+**Decisions made:**
+- Palette: added canonical `Theme.navy/orange/cream/slate` at exact spec hex and
+  re-pointed legacy `ink/ember/canvas/inkSoft` to them (whole app shifts palette
+  with no per-call-site churn). `caption` 11pt; spec-named ramp + weighted fonts.
+- Secrets: Google keys + Supabase URL/anon now resolve env→Info.plist→empty; no
+  literals in source. Existing key is in git history — flagged for rotation.
+- `gemini-1.5-flash` → `gemini-2.5-flash` in `TrainingCoachService`.
+- Info.plist: added mic + speech usage strings.
+- De-mock: deleted `MockData.swift`; converted `KPIStrip` (Revenue/Leads/Pipeline),
+  `TasksAndActivityCard`, `ScheduleCard`, `StormAlertCard`, `TodaysGoalsCard`,
+  `RecentWinsCard`, `PropertyStormService` to real stores / empty states; new shared
+  `EmptyHint`.
+- Removed duplicate/fabricated views: `PipelineCard`, `RecentJobsRow`,
+  `AIInsightsCard`, `StormHistoryMapCard`, `LeaderboardCard` (team = Phase X), and
+  dead model types `PipelineColumn/PipelineStage/MapPin/LeadKind/AIReviewItem/ActivityEntry`.
+- Damage taxonomy, HAAG grades, Claim Worthiness, Quick Inspection flow, and the
+  Quick Inspection / New Job CTAs are all untouched (Drift Warning honored).
+
+**Files touched:**
+- `ios/RoofWise/Utilities/Theme.swift`, `Configuration/APIKeys.swift`,
+  `RoofWise.xcodeproj/project.pbxproj`, `Services/TrainingCoachService.swift`,
+  `Services/PropertyStormService.swift`, `Models/AppModels.swift`,
+  `Views/Dashboard/{DashboardView,KPIStrip,TasksAndActivityCard,ScheduleCard,StormAlertCard,HomeCardsCarousel,HomeExtraSections}.swift`,
+  `Views/Leads/PropertyStormHistoryCard.swift`, `Views/Components/EmptyHint.swift` (new).
+- Deleted: `Models/MockData.swift`, `Views/Dashboard/{PipelineCard,RecentJobsRow,AIInsightsCard,StormHistoryMapCard}.swift`.
+- Added `SPEC_AUDIT.md`.
+
+**Open questions / Follow-ups:**
+- Build green on a Mac (Xcode, iOS 17+) — could not be verified in the Linux session.
+- Rotate the committed Google API key.
+- Phase 2 (AI accuracy, flagged) and Phase 3 (UI polish + better APIs) — see SPEC_AUDIT.md.
+
+---
+
+### [2026-05-28] #09 — Phase 2: AI shingle-analysis accuracy (flag-gated, additive)
+
+**Prompt (summarized):**
+> Implement all Phase 2 AI-accuracy improvements (photo-quality gate, multi-photo
+> consensus, anti-grid/HAAG-density, scale-aware sizing, prompt hardening). Improve
+> freely with justification; keep additive behind flags; foundation-first phased PRs.
+
+**Intent / Goal:**
+- Raise shingle-detection accuracy (the product moat) without touching the sacred
+  camera flow; every layer toggles back to the prior behavior via an APIKeys flag.
+
+**Decisions made:**
+- Landed the robust layers in NON-sacred files (`GeminiAnalysisService`, `DecisionEngine`)
+  plus standalone services, so `QuickInspectionView/SlopePhotosSheet/InspectionSession/
+  CameraCaptureService` stay byte-identical.
+- Photo-quality gate runs inside `analyzeFull` and reuses the existing retry UI.
+- Scale-aware sizing is done model-side (prompt) rather than as a post-hoc geometric
+  filter — the downsampled-JPEG px/in reference frame is ambiguous and dropping markers
+  in-app could hide real damage (unacceptable for a claims product).
+- Anti-grid down-weights confidence (never deletes) so review/verify pathways catch it.
+- Multi-photo consensus shipped as a pure `MarkerConsensus` utility but intentionally
+  NOT wired into the sacred `runScan` blind (no compiler here) — flagged for a
+  Mac-verified one-line hook.
+
+**Files touched:**
+- `Configuration/APIKeys.swift` (5 flags), `Services/PhotoQualityService.swift` (new),
+  `Services/MarkerConsensus.swift` (new), `Services/GeminiAnalysisService.swift`
+  (quality gate + prompt hardening + anti-grid), `Services/DecisionEngine.swift`
+  (HAAG density check), `SPEC_AUDIT.md`.
+
+**Open questions / Follow-ups:**
+- Build on a Mac; validate flags toggle cleanly and recapture prompt fires on blurry frames.
+- Wire `MarkerConsensus` into per-slope aggregation in `runScan` (Mac-verified).
+- Tune thresholds (blur 90, grid cv 0.18, density borderline ±1 / saturation 25) on real photos.
+- Later: focus/zoom verification pass; `gemini-2.5-pro` report-grade pass.

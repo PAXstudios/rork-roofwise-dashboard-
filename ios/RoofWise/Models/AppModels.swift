@@ -13,34 +13,6 @@ struct KPIMetric: Identifiable {
     let tint: Color
 }
 
-// MARK: - Pipeline
-
-enum PipelineStage: String, CaseIterable, Identifiable {
-    case new = "New"
-    case contacted = "Contacted"
-    case proposal = "Proposal"
-    case won = "Won"
-    case lost = "Lost"
-    var id: String { rawValue }
-
-    var color: Color {
-        switch self {
-        case .new: return Theme.sky
-        case .contacted: return Theme.ember
-        case .proposal: return Theme.amber
-        case .won: return Theme.mint
-        case .lost: return Theme.inkFaint
-        }
-    }
-}
-
-struct PipelineColumn: Identifiable {
-    let id = UUID()
-    let stage: PipelineStage
-    let count: Int
-    let value: String
-}
-
 // MARK: - Schedule
 
 enum ScheduleKind: String {
@@ -161,45 +133,6 @@ struct StormEvent: Identifiable {
     }
 }
 
-// MARK: - Leads on map
-
-enum LeadKind: String {
-    case lead, job, storm
-    var color: Color {
-        switch self {
-        case .lead: return Theme.sky
-        case .job: return Theme.mint
-        case .storm: return Theme.ember
-        }
-    }
-    var icon: String {
-        switch self {
-        case .lead: return "mappin"
-        case .job: return "hammer.fill"
-        case .storm: return "bolt.fill"
-        }
-    }
-}
-
-struct MapPin: Identifiable {
-    let id = UUID()
-    let kind: LeadKind
-    let label: String
-    let x: CGFloat
-    let y: CGFloat
-}
-
-// MARK: - AI Training
-
-struct AIReviewItem: Identifiable {
-    let id = UUID()
-    let address: String
-    let damageType: String
-    let confidence: Int   // 0-100
-    let imageURL: String
-    let aiTags: [String]
-}
-
 // MARK: - Tasks
 
 struct TaskItem: Identifiable {
@@ -209,13 +142,4 @@ struct TaskItem: Identifiable {
     var done: Bool
     let tag: String
     let tagColor: Color
-}
-
-struct ActivityEntry: Identifiable {
-    let id = UUID()
-    let icon: String
-    let iconColor: Color
-    let title: String
-    let detail: String
-    let time: String
 }
