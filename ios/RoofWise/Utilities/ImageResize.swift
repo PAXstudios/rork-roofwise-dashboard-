@@ -36,6 +36,16 @@ enum ImageResize {
         return nil
     }
 
+    /// Downsamples to `longestEdge` and returns JPEG `Data` at `quality`.
+    /// Used by the live AR analyzer to send small, fast frames to Gemini.
+    static func encodedJPEGData(from image: UIImage,
+                                longestEdge: CGFloat,
+                                quality: CGFloat) -> Data? {
+        let normalized = image.normalizedOrientation()
+        guard let resized = resize(image: normalized, maxEdge: longestEdge) else { return nil }
+        return resized.jpegData(compressionQuality: quality)
+    }
+
     private static func resize(image: UIImage, maxEdge: CGFloat) -> UIImage? {
         let size = image.size
         let scale = min(maxEdge / max(size.width, size.height), 1.0)

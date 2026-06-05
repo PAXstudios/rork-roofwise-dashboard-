@@ -54,6 +54,8 @@ enum APIKeys {
 
     static let requireAuth: Bool = false // dev bypass; set to true to enforce sign-in
 
+    static let useLiveARAnalysis: Bool = true // toggle for the live AR overlay feature
+
     // MARK: Live-mode accessors
     static var isLiveGoogleMaps: Bool      { !USE_MOCKS && !googleMapsApiKey.isEmpty }
     static var isLiveGoogleSolar: Bool     { !USE_MOCKS && !googleSolarApiKey.isEmpty }

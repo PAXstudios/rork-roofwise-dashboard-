@@ -11,6 +11,7 @@ struct DashboardView: View {
     @State private var alertStore = StormAlertStore.shared
     @State private var pushRouter = PushAlertRouter.shared
     @State private var showMileage = false
+    @State private var showLiveAR = false
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -25,6 +26,10 @@ struct DashboardView: View {
                             .padding(.horizontal, 18)
                     }
                     KPIStrip(onQuickInspection: onQuickInspection)
+                    if APIKeys.useLiveARAnalysis {
+                        LiveARInspectCTA(onTap: { showLiveAR = true })
+                            .padding(.horizontal, 18)
+                    }
                     MileageSummaryCard(onOpen: { showMileage = true })
                     StormAlertHero(
                         alert: alertStore.latestActiveAlert,
@@ -85,6 +90,9 @@ struct DashboardView: View {
             MileageTrackerView()
                 .presentationDragIndicator(.visible)
         }
+        .fullScreenCover(isPresented: $showLiveAR) {
+            LiveARInspectionView(onClose: { showLiveAR = false })
+        }
         .onChange(of: pushRouter.pendingAlertId) { _, newId in
             guard let newId else { return }
             if let match = StormAlertStore.shared.alerts.first(where: { $0.id == newId }) {
@@ -100,6 +108,44 @@ struct DashboardView: View {
         alertStore.markRead(id: alert.id)
         alertStore.markActedOn(id: alert.id)
         path.append(.stormImpact(alert.id))
+    }
+}
+
+/// Home CTA that launches the Live AR Damage Detection experience.
+/// Navy primary button per the pitch-deck spec, gated by `APIKeys.useLiveARAnalysis`.
+struct LiveARInspectCTA: View {
+    var onTap: () -> Void = {}
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 14) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 14).fill(.white.opacity(0.16))
+                    Image(systemName: "arkit")
+                        .font(.system(size: Theme.TypeRamp.title, weight: .heavy))
+                        .foregroundStyle(.white)
+                }
+                .frame(width: 52, height: 52)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Live AR Inspect")
+                        .font(.system(size: Theme.TypeRamp.cta, weight: .heavy))
+                        .foregroundStyle(.white)
+                    Text("Real-time AI damage overlay")
+                        .font(.system(size: Theme.TypeRamp.captionSm, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.78))
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "arrow.right")
+                    .font(.system(size: Theme.TypeRamp.body, weight: .heavy))
+                    .foregroundStyle(.white)
+            }
+            .padding(.horizontal, 18)
+            .frame(maxWidth: .infinity, minHeight: 88)
+            .background(Theme.inkGradient, in: .rect(cornerRadius: 20))
+            .overlay(RoundedRectangle(cornerRadius: 20).stroke(.white.opacity(0.12), lineWidth: 0.6))
+            .shadow(color: Theme.ink.opacity(0.22), radius: 14, y: 6)
+        }
+        .buttonStyle(.plain)
     }
 }
 

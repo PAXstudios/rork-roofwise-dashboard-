@@ -411,10 +411,10 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
-				INFOPLIST_KEY_NSCameraUsageDescription = "RoofWise uses the camera and LiDAR to capture and analyze roof damage during inspections.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "RoofWise uses the camera and LiDAR for live AR roof inspection to capture and analyze roof damage during inspections.";
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "RoofWise uses background location to auto-detect drives and offer to log them as mileage — even when the app is closed.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "RoofWise uses your location to map storm activity, find nearby leads, and log door-knocking visits.";
-				INFOPLIST_KEY_NSMotionUsageDescription = "RoofWise uses motion sensors to measure live roof pitch while you aim the camera.";
+				INFOPLIST_KEY_NSMotionUsageDescription = "RoofWise uses motion sensors to measure roof pitch, detect slope orientation, and ensure safe inspections.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = (
@@ -461,10 +461,10 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
-				INFOPLIST_KEY_NSCameraUsageDescription = "RoofWise uses the camera and LiDAR to capture and analyze roof damage during inspections.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "RoofWise uses the camera and LiDAR for live AR roof inspection to capture and analyze roof damage during inspections.";
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "RoofWise uses background location to auto-detect drives and offer to log them as mileage — even when the app is closed.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "RoofWise uses your location to map storm activity, find nearby leads, and log door-knocking visits.";
-				INFOPLIST_KEY_NSMotionUsageDescription = "RoofWise uses motion sensors to measure live roof pitch while you aim the camera.";
+				INFOPLIST_KEY_NSMotionUsageDescription = "RoofWise uses motion sensors to measure roof pitch, detect slope orientation, and ensure safe inspections.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = (

@@ -6,6 +6,9 @@ import CoreLocation
 final class MotionElevationService: NSObject {
     var pitchDegrees: Double = 22.6
     var rollDegrees: Double = 0
+    /// Device yaw (heading about the vertical axis) in degrees, for the live
+    /// AR compass overlay. Additive — does not affect pitch/elevation behavior.
+    var yawDegrees: Double = 0
     var elevationFeet: Double = 589
     var hasReal: Bool = false
 
@@ -72,6 +75,9 @@ final class MotionElevationService: NSObject {
             // Positive = right side down.
             let roll = atan2(g.x, -g.y) * 180.0 / .pi
             self.rollDegrees = max(-45, min(45, roll))
+            if let attitude = data?.attitude {
+                self.yawDegrees = attitude.yaw * 180.0 / .pi
+            }
             self.hasReal = true
         }
     }

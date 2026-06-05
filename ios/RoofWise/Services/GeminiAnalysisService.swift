@@ -2,6 +2,13 @@ import Foundation
 import UIKit
 import SwiftUI
 
+/// Errors thrown by `GeminiAnalysisService.analyzeLive(imageData:)`.
+nonisolated enum LiveAnalyzeError: Error {
+    case notConfigured
+    case badStatus(Int)
+    case unparseable
+}
+
 /// Gemini 2.5 Flash Vision integration via the Rork toolkit proxy.
 /// Requests are sent to the OpenAI-compatible chat completions endpoint and
 /// authenticated with `EXPO_PUBLIC_RORK_TOOLKIT_SECRET_KEY`.
@@ -61,6 +68,60 @@ struct GeminiAnalysisService {
 
     static func analyzeLiveDamage(image: UIImage) async -> AnalysisResult {
         await GeminiAnalysisService().analyzeLiveDamage(image: image)
+    }
+
+    /// Live AR overlay analysis. Strictly additive sibling to `analyzeFull` — same
+    /// model, same auth, no responseSchema. Returns the shared `AnalysisResult`
+    /// shape but only `damage_markers` are populated (no full findings list).
+    static func analyzeLive(imageData: Data) async throws -> AnalysisResult {
+        try await GeminiAnalysisService().analyzeLive(imageData: imageData)
+    }
+
+    /// Live mode: downsampled camera frame → conservative damage markers only.
+    /// `throws` on any failure so the caller can silently skip the frame.
+    func analyzeLive(imageData: Data) async throws -> AnalysisResult {
+        guard !secret.isEmpty, let url = chatCompletionsURL else {
+            throw LiveAnalyzeError.notConfigured
+        }
+        let base64 = imageData.base64EncodedString()
+
+        // EXACT live-mode preamble, then the shared damage-detection rules
+        // (coordinate normalization + roof gating) mirrored from analyze().
+        let prompt = """
+        You are running in LIVE mode. Return ONLY the damage_markers array. Be conservative — only mark damage you can clearly see. Empty array is correct when uncertain.
+
+        Return STRICT JSON only (no markdown), with this schema:
+        {
+          "damage_markers": [
+            { "type": "hail_strike|crack|granule_loss|missing_shingle|wind_crease|blister|flashing|algae|other", "x": 0.0-1.0, "y": 0.0-1.0, "radius": 0.0-1.0, "severity": "minor|moderate|severe", "confidence": 0-100, "note": "<short pixel evidence>" }
+          ]
+        }
+
+        Coordinates MUST be normalized fractions of the image: x = (pixel_x / image_width), y = (pixel_y / image_height). 0.0 = left/top, 1.0 = right/bottom, top-left origin. (x,y) is the CENTER of the feature; radius is roughly half the feature size relative to the shorter image edge. NEVER return pixel values. NEVER return values outside [0, 1]. Measure coordinates against THIS image as you see it (do not rotate).
+
+        Mark only visible damage locations. Do NOT generate random or evenly spaced markers. If no damage is clearly visible, return "damage_markers": []. If the image is NOT a roof (grass, sky, indoors, person, vehicle), return an empty damage_markers array.
+        """
+
+        let body = Self.chatCompletionBody(systemPrompt: prompt,
+                                            userText: "Analyse this roof frame.",
+                                            base64JPEG: base64,
+                                            temperature: 0.05)
+
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("Bearer \(secret)", forHTTPHeaderField: "Authorization")
+        req.timeoutInterval = 20
+        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: req)
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            throw LiveAnalyzeError.badStatus(http.statusCode)
+        }
+        guard let parsed = Self.parseResponse(data) else {
+            throw LiveAnalyzeError.unparseable
+        }
+        return parsed
     }
 
     /// Lightweight live camera damage check. Reuses the same parsing pipeline, but
