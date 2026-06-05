@@ -123,72 +123,115 @@ struct StructuralInput: Identifiable {
 
 // MARK: - AI Damage Markers (overlay on photos)
 
+/// Locked damage taxonomy — EXACTLY the 13 pitch-deck categories. `.other`
+/// is retained only as an internal fallback for genuinely unknown tokens and
+/// is never emitted by the model. Backward-compatible aliases below keep older
+/// call sites compiling after the rename.
 enum DamageMarkerType: String, CaseIterable {
-    case hailStrike = "hail_strike"
-    case crack = "crack"
+    case hailHits = "hail_hits"
+    case bruising = "bruising"
     case granuleLoss = "granule_loss"
-    case missingShingle = "missing_shingle"
-    case windCrease = "wind_crease"
-    case blister = "blister"
+    case windDamage = "wind_damage"
+    case windCreasing = "wind_creasing"
+    case blistering = "blistering"
+    case cracking = "cracking"
     case flashing = "flashing"
-    case algae = "algae"
-    case other = "other"
+    case algaeMoss = "algae_moss"
+    case missingShingles = "missing_shingles"
+    case splitting = "splitting"
+    case lifted = "lifted"
+    case structuralSagging = "structural_sagging"
+    case other = "other"   // internal fallback only — not one of the 13 categories
 
     var display: String {
         switch self {
-        case .hailStrike: return "Hail Strike"
-        case .crack: return "Crack"
+        case .hailHits: return "Hail Hits"
+        case .bruising: return "Bruising"
         case .granuleLoss: return "Granule Loss"
-        case .missingShingle: return "Missing Shingle"
-        case .windCrease: return "Wind Crease"
-        case .blister: return "Blister"
+        case .windDamage: return "Wind Damage"
+        case .windCreasing: return "Wind Creasing"
+        case .blistering: return "Blistering"
+        case .cracking: return "Cracking"
         case .flashing: return "Flashing"
-        case .algae: return "Algae / Moss"
+        case .algaeMoss: return "Algae / Moss"
+        case .missingShingles: return "Missing Shingles"
+        case .splitting: return "Splitting"
+        case .lifted: return "Lifted"
+        case .structuralSagging: return "Structural Sagging"
         case .other: return "Damage"
         }
     }
 
     var pluralDisplay: String {
         switch self {
-        case .hailStrike: return "hail strikes"
-        case .crack: return "cracks"
+        case .hailHits: return "hail hits"
+        case .bruising: return "bruises"
         case .granuleLoss: return "granule loss spots"
-        case .missingShingle: return "missing shingles"
-        case .windCrease: return "wind creases"
-        case .blister: return "blisters"
+        case .windDamage: return "wind damage areas"
+        case .windCreasing: return "wind creases"
+        case .blistering: return "blisters"
+        case .cracking: return "cracks"
         case .flashing: return "flashing issues"
-        case .algae: return "algae patches"
+        case .algaeMoss: return "algae patches"
+        case .missingShingles: return "missing shingles"
+        case .splitting: return "splits"
+        case .lifted: return "lifted tabs"
+        case .structuralSagging: return "sagging areas"
         case .other: return "damage points"
         }
     }
 
     var icon: String {
         switch self {
-        case .hailStrike: return "circle.hexagongrid.fill"
-        case .crack: return "bolt.horizontal.fill"
+        case .hailHits: return "circle.hexagongrid.fill"
+        case .bruising: return "circle.circle.fill"
         case .granuleLoss: return "circle.dotted"
-        case .missingShingle: return "square.dashed"
-        case .windCrease: return "wind"
-        case .blister: return "circle.grid.cross.fill"
+        case .windDamage: return "tornado"
+        case .windCreasing: return "wind"
+        case .blistering: return "circle.grid.cross.fill"
+        case .cracking: return "bolt.horizontal.fill"
         case .flashing: return "square.stack.3d.up.slash.fill"
-        case .algae: return "leaf.fill"
+        case .algaeMoss: return "leaf.fill"
+        case .missingShingles: return "square.dashed"
+        case .splitting: return "bolt.horizontal"
+        case .lifted: return "arrow.up.square.fill"
+        case .structuralSagging: return "arrow.down.right.and.arrow.up.left"
         case .other: return "exclamationmark.triangle.fill"
         }
     }
 
+    /// Per-category overlay hue (PhotoDamageOverlayView + LiveMarkerLayer).
+    /// All values come from Theme palette tokens — no inline hex here.
     var color: Color {
         switch self {
-        case .hailStrike: return Theme.crimson                              // RED
-        case .windCrease: return Color(red: 1.00, green: 0.55, blue: 0.10)   // ORANGE
-        case .crack: return Color(red: 0.98, green: 0.82, blue: 0.10)        // YELLOW
-        case .missingShingle: return Color(red: 0.62, green: 0.32, blue: 0.86) // PURPLE
-        case .granuleLoss: return Theme.amber
-        case .blister: return Theme.amber
-        case .flashing: return Theme.ember
-        case .algae: return Theme.mint
+        case .hailHits: return Theme.dmgHail               // orange
+        case .bruising: return Theme.dmgBruise             // ember
+        case .granuleLoss: return Theme.dmgGranule         // amber
+        case .windDamage: return Theme.dmgWind             // magenta
+        case .windCreasing: return Theme.dmgCrease         // deep red
+        case .blistering: return Theme.dmgBlister          // yellow
+        case .cracking: return Theme.dmgCrack              // slate
+        case .splitting: return Theme.dmgSplit             // slate light
+        case .flashing: return Theme.dmgFlashing           // gray
+        case .algaeMoss: return Theme.dmgAlgae             // green
+        case .missingShingles: return Theme.dmgMissing     // blue
+        case .lifted: return Theme.dmgLifted               // teal
+        case .structuralSagging: return Theme.dmgSag       // deep purple
         case .other: return Theme.amber
         }
     }
+}
+
+extension DamageMarkerType {
+    // Backward-compatible aliases so existing expression call sites keep
+    // compiling after the rename (these resolve to the new canonical cases).
+    // NOTE: usable in expressions only, not in `switch case` patterns.
+    static let hailStrike = DamageMarkerType.hailHits
+    static let crack = DamageMarkerType.cracking
+    static let windCrease = DamageMarkerType.windCreasing
+    static let missingShingle = DamageMarkerType.missingShingles
+    static let blister = DamageMarkerType.blistering
+    static let algae = DamageMarkerType.algaeMoss
 }
 
 struct DamageMarker: Identifiable {

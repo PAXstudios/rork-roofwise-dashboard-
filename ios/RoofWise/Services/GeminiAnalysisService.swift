@@ -17,6 +17,38 @@ struct GeminiAnalysisService {
     private let secret: String
     private static let model = "google/gemini-2.5-flash"
 
+    // MARK: - Locked damage taxonomy (13 pitch-deck categories)
+
+    /// The 13 canonical snake_case tokens used in BOTH `findings[].label` and
+    /// `damage_markers[].type`. Parity is intentional.
+    static let damageCategoryTokens: [String] = [
+        "hail_hits", "bruising", "granule_loss", "wind_damage", "wind_creasing",
+        "blistering", "cracking", "flashing", "algae_moss", "missing_shingles",
+        "splitting", "lifted", "structural_sagging"
+    ]
+
+    /// Pipe-joined enum list embedded in prompt schemas.
+    private static let categoryEnum = damageCategoryTokens.joined(separator: "|")
+
+    /// One-line distinguishing description per category so the model doesn't
+    /// confuse close pairs (shared by every prompt).
+    private static let categoryGuide = """
+    Category definitions (use the exact snake_case token):
+    - hail_hits = round 1/4-2 inch granule-loss spots from ice impact
+    - bruising = soft deformed shingle surface with no surface loss
+    - granule_loss = generalized loss exposing mat without a distinct impact pattern
+    - wind_damage = uplift / tearing / blown-off corners, NOT creasing
+    - wind_creasing = a specific crease line across a shingle from being folded back
+    - blistering = raised bubble of asphalt
+    - cracking = surface crack line in the shingle
+    - splitting = full-thickness vertical split through the shingle
+    - flashing = damaged metal flashing at penetrations/edges
+    - algae_moss = dark streaks or green growth
+    - missing_shingles = absent tab(s) exposing felt or deck
+    - lifted = shingle tab raised but still attached
+    - structural_sagging = deck deformation visible as a wave/dip
+    """
+
     init() {
         self.toolkitURL = Config.EXPO_PUBLIC_TOOLKIT_URL
         self.secret = Config.EXPO_PUBLIC_RORK_TOOLKIT_SECRET_KEY
@@ -93,9 +125,11 @@ struct GeminiAnalysisService {
         Return STRICT JSON only (no markdown), with this schema:
         {
           "damage_markers": [
-            { "type": "hail_strike|crack|granule_loss|missing_shingle|wind_crease|blister|flashing|algae|other", "x": 0.0-1.0, "y": 0.0-1.0, "radius": 0.0-1.0, "severity": "minor|moderate|severe", "confidence": 0-100, "note": "<short pixel evidence>" }
+            { "type": "\(Self.categoryEnum)", "x": 0.0-1.0, "y": 0.0-1.0, "radius": 0.0-1.0, "severity": "minor|moderate|severe", "confidence": 0-100, "note": "<short pixel evidence>" }
           ]
         }
+
+        \(Self.categoryGuide)
 
         Coordinates MUST be normalized fractions of the image: x = (pixel_x / image_width), y = (pixel_y / image_height). 0.0 = left/top, 1.0 = right/bottom, top-left origin. (x,y) is the CENTER of the feature; radius is roughly half the feature size relative to the shorter image edge. NEVER return pixel values. NEVER return values outside [0, 1]. Measure coordinates against THIS image as you see it (do not rotate).
 
@@ -151,7 +185,7 @@ struct GeminiAnalysisService {
           ],
           "damage_markers": [
             {
-              "type": "hail_strike|crack|missing_shingle|wind_crease|granule_loss|other",
+              "type": "\(Self.categoryEnum)",
               "x": 0.0-1.0,
               "y": 0.0-1.0,
               "width": 0.0-1.0,
@@ -172,6 +206,8 @@ struct GeminiAnalysisService {
         not rotated.
 
         CRITICAL: If the image does NOT clearly show a roof surface, asphalt shingles, tile, metal panels, or any roofing material — for example if it shows grass, sky, ground, indoors, a person, a vehicle, or any non-roof scene — you MUST set analyzed=false, return an empty damage_markers array, and add a finding with label="no_roof_detected" and note="No roof or shingles visible in this photo". Do not fabricate damage findings on non-roof images.
+
+        \(Self.categoryGuide)
 
         Mark only visible damage locations. Do NOT generate random or evenly spaced markers. If no damage is clearly visible, return "damage_markers": []. Coordinates are normalized from top-left.
         """
@@ -248,16 +284,18 @@ struct GeminiAnalysisService {
           "analyzed": true|false,
           "shingle_type": { "type": "3-tab asphalt|architectural asphalt|luxury asphalt|wood shake|wood shingle|metal standing seam|metal shingle|clay tile|concrete tile|slate|synthetic slate|composite|rolled roofing|TPO|EPDM|unknown", "confidence": 0-100, "note": "<short evidence>" },
           "findings": [
-            { "label": "hail_damage|granule_loss|missing_shingles|wind_creasing|blistering|cracking_splitting|flashing_damage|algae_moss|bruising|structural_sagging", "detected": true|false, "severity": "none|minor|moderate|severe", "confidence": 0-100, "count": <int>, "note": "<short evidence>" }
+            { "label": "\(Self.categoryEnum)", "detected": true|false, "severity": "none|minor|moderate|severe", "confidence": 0-100, "count": <int>, "note": "<short evidence>" }
           ],
           "damage_markers": [
-            { "type": "hail_strike|crack|granule_loss|missing_shingle|wind_crease|blister|flashing|algae|other", "x": 0.0-1.0, "y": 0.0-1.0, "radius": 0.0-1.0, "severity": "minor|moderate|severe", "confidence": 0-100, "note": "<short pixel evidence>" }
+            { "type": "\(Self.categoryEnum)", "x": 0.0-1.0, "y": 0.0-1.0, "radius": 0.0-1.0, "severity": "minor|moderate|severe", "confidence": 0-100, "note": "<short pixel evidence>" }
           ]
         }
 
-        Coordinates MUST be normalized fractions of the image: x = (pixel_x / image_width), y = (pixel_y / image_height). 0.0 = left/top, 1.0 = right/bottom, top-left origin. (x,y) is the CENTER of the feature; radius is roughly half the feature size relative to the shorter image edge. NEVER return pixel values. NEVER return values outside [0, 1]. Measure coordinates against THIS image as you see it (do not rotate).
+        \(Self.categoryGuide)
 
-        Include all 10 damage categories in `findings` (set detected=false for ones not present). Mark each visible hail strike individually. If the image is NOT a roof (grass, sky, indoors, person, vehicle), set analyzed=false, return empty `damage_markers`, and add a finding with label="no_roof_detected".
+        The `findings[].label` and `damage_markers[].type` MUST both use the exact same 13 tokens above. Coordinates MUST be normalized fractions of the image: x = (pixel_x / image_width), y = (pixel_y / image_height). 0.0 = left/top, 1.0 = right/bottom, top-left origin. (x,y) is the CENTER of the feature; radius is roughly half the feature size relative to the shorter image edge. NEVER return pixel values. NEVER return values outside [0, 1]. Measure coordinates against THIS image as you see it (do not rotate).
+
+        Include all 13 damage categories in `findings` (set detected=false for ones not present). Mark each visible hail hit individually. If the image is NOT a roof (grass, sky, indoors, person, vehicle), set analyzed=false, return empty `damage_markers`, and add a finding with label="no_roof_detected".
         """
 
         let body = Self.chatCompletionBody(systemPrompt: prompt,
@@ -461,9 +499,26 @@ struct GeminiAnalysisService {
         return s
     }
 
+    /// Normalizes a model-supplied token to one of the 13 canonical categories,
+    /// mapping legacy aliases for backward compatibility. Unknown tokens fall
+    /// back to `.other`.
+    private static func normalizedType(_ raw: String) -> DamageMarkerType {
+        let token = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        switch token {
+        case "hail_strike", "hail_damage", "hail": return .hailHits
+        case "cracking_splitting", "crack": return .cracking
+        case "missing_shingle": return .missingShingles
+        case "wind_crease": return .windCreasing
+        case "algae": return .algaeMoss
+        case "blister": return .blistering
+        case "flashing_damage": return .flashing
+        default: return DamageMarkerType(rawValue: token) ?? .other
+        }
+    }
+
     private static func markerFromDict(_ dict: [String: Any]) -> DamageMarker? {
         let typeRaw = (dict["type"] as? String) ?? "other"
-        let type = DamageMarkerType(rawValue: typeRaw) ?? .other
+        let type = normalizedType(typeRaw)
         guard let xVal = (dict["x"] as? Double) ?? (dict["x"] as? NSNumber)?.doubleValue,
               let yVal = (dict["y"] as? Double) ?? (dict["y"] as? NSNumber)?.doubleValue else {
             return nil
@@ -540,21 +595,29 @@ struct GeminiAnalysisService {
 
     private static func displayMeta(for label: String) -> (display: String, icon: String, fallback: String) {
         switch label {
-        case "hail_damage", "bruising":
-            return ("Bruising", "circle.hexagongrid.fill", "Hail bruising on mat")
+        case "hail_hits", "hail_damage", "hail_strike":
+            return ("Hail Hits", "circle.hexagongrid.fill", "Hail impact marks")
+        case "bruising":
+            return ("Bruising", "circle.circle.fill", "Soft mat bruising")
         case "granule_loss":
             return ("Granule Loss", "circle.dotted", "Granule displacement")
-        case "missing_shingles":
+        case "wind_damage":
+            return ("Wind Damage", "tornado", "Uplift / tearing / blow-off")
+        case "missing_shingles", "missing_shingle":
             return ("Missing Shingles", "square.dashed", "Tabs missing")
-        case "wind_creasing":
+        case "wind_creasing", "wind_crease":
             return ("Wind Creasing", "wind", "Creases at nail line")
         case "blistering":
             return ("Blistering", "circle.grid.cross.fill", "Raised pockets in mat")
-        case "cracking_splitting":
-            return ("Cracking / Splitting", "bolt.horizontal.fill", "Hairline splits")
-        case "flashing_damage":
-            return ("Flashing Damage", "square.stack.3d.up.slash.fill", "Lifted step flashing")
-        case "algae_moss":
+        case "cracking", "cracking_splitting":
+            return ("Cracking", "bolt.horizontal.fill", "Surface crack lines")
+        case "splitting":
+            return ("Splitting", "bolt.horizontal", "Full-thickness splits")
+        case "lifted":
+            return ("Lifted", "arrow.up.square.fill", "Raised but attached tab")
+        case "flashing", "flashing_damage":
+            return ("Flashing", "square.stack.3d.up.slash.fill", "Lifted step flashing")
+        case "algae_moss", "algae":
             return ("Algae / Moss", "leaf.fill", "Biological staining")
         case "structural_sagging":
             return ("Structural Sagging", "arrow.down.right.and.arrow.up.left", "Decking deflection")

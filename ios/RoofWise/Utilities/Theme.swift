@@ -23,6 +23,23 @@ enum Theme {
     static let amberSoft = Color(red: 1.00, green: 0.96, blue: 0.86)
     static let crimson = Color(red: 0.86, green: 0.22, blue: 0.31)
 
+    // Damage category overlay hues — 13 visually distinct markers for the
+    // locked damage taxonomy. Kept here so DamageMarkerType maps to palette
+    // tokens rather than inline hex.
+    static let dmgHail = Color(red: 1.00, green: 0.50, blue: 0.12)        // orange
+    static let dmgBruise = ember                                          // ember
+    static let dmgGranule = amber                                         // amber
+    static let dmgWind = Color(red: 0.85, green: 0.18, blue: 0.62)        // magenta
+    static let dmgCrease = crimson                                        // deep red
+    static let dmgBlister = Color(red: 0.98, green: 0.82, blue: 0.10)     // yellow
+    static let dmgCrack = inkSoft                                         // slate
+    static let dmgSplit = inkFaint                                        // slate light
+    static let dmgFlashing = Color(red: 0.55, green: 0.58, blue: 0.62)    // gray
+    static let dmgAlgae = mint                                            // green
+    static let dmgMissing = sky                                          // blue
+    static let dmgLifted = Color(red: 0.10, green: 0.68, blue: 0.66)      // teal
+    static let dmgSag = Color(red: 0.45, green: 0.22, blue: 0.78)         // deep purple
+
     // Map terrain
     static let mapLand = Color(red: 0.95, green: 0.94, blue: 0.91)
     static let mapBlock = Color(red: 0.92, green: 0.91, blue: 0.87)

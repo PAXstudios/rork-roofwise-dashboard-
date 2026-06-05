@@ -207,10 +207,10 @@ struct MarkDamageSheet: View {
 
     private func shortLabel(for type: DamageMarkerType) -> String {
         switch type {
-        case .hailStrike: return "Hail"
-        case .windCrease: return "Wind"
-        case .crack: return "Crack"
-        case .missingShingle: return "Missing"
+        case .hailHits: return "Hail"
+        case .windCreasing: return "Wind"
+        case .cracking: return "Crack"
+        case .missingShingles: return "Missing"
         default: return type.display
         }
     }
