@@ -53,6 +53,77 @@ extension Theme {
     }
 }
 
+// MARK: - Motion
+//
+// Centralized spring physics + motion tokens. Every animated surface in the
+// app should pull from these so timing/feel stays consistent. Springs are
+// tuned for a lively-but-grounded feel: snappy entrances, soft settles.
+extension Theme {
+    enum Motion {
+        /// Quick, crisp UI feedback (taps, toggles, chips).
+        static let snappy = Animation.spring(response: 0.28, dampingFraction: 0.74)
+        /// Standard interactive transition (tabs, selections).
+        static let standard = Animation.spring(response: 0.40, dampingFraction: 0.82)
+        /// Soft, settled entrance for cards / large surfaces.
+        static let entrance = Animation.spring(response: 0.55, dampingFraction: 0.80)
+        /// Bouncy emphasis for hero / celebratory moments.
+        static let bouncy = Animation.spring(response: 0.45, dampingFraction: 0.58)
+        /// Physics used while a draggable card is in flight (Tinder deck).
+        static let cardFling = Animation.spring(response: 0.32, dampingFraction: 0.72)
+        /// Card returns to center when a swipe doesn't commit.
+        static let cardReturn = Animation.spring(response: 0.42, dampingFraction: 0.68)
+        /// Per-item delay used to stagger a list/grid of cards into view.
+        static let staggerStep: Double = 0.06
+        /// Continuous slow pulse loop (alerts, live indicators).
+        static let pulse = Animation.easeInOut(duration: 1.3).repeatForever(autoreverses: true)
+    }
+}
+
+// MARK: - Staggered entrance
+//
+// Drop-in modifier that fades + lifts a view into place with a spring,
+// delayed by its index so a column of cards cascades in. Apply on appear.
+struct StaggeredAppear: ViewModifier {
+    let index: Int
+    var animated: Bool
+    @State private var shown = false
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(shown ? 1 : 0)
+            .offset(y: shown ? 0 : 18)
+            .onAppear {
+                guard animated else { shown = true; return }
+                withAnimation(Theme.Motion.entrance.delay(Double(index) * Theme.Motion.staggerStep)) {
+                    shown = true
+                }
+            }
+    }
+}
+
+extension View {
+    /// Cascade this view into place, delayed by `index`. Set `animated` to
+    /// false to render instantly (e.g. reduce-motion / non-first appearances).
+    func staggeredAppear(_ index: Int, animated: Bool = true) -> some View {
+        modifier(StaggeredAppear(index: index, animated: animated))
+    }
+
+    /// Spring-scale feedback while pressed — pairs with Button(.plain).
+    func pressBounce(_ scale: CGFloat = 0.96) -> some View {
+        buttonStyle(PressBounceStyle(scale: scale))
+    }
+}
+
+/// Button style that springs down on press and back on release.
+struct PressBounceStyle: ButtonStyle {
+    var scale: CGFloat = 0.96
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? scale : 1)
+            .animation(Theme.Motion.snappy, value: configuration.isPressed)
+    }
+}
+
 // MARK: - Type ramp
 //
 // Audited from existing Plan / Training / Quick Inspection screens.

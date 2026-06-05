@@ -14,6 +14,7 @@ struct SwipeReviewView: View {
     @State private var editedCount: Int = 0
     @State private var falsePositiveCount: Int = 0
     @State private var dragOffset: CGSize = .zero
+    @State private var isFlinging: Bool = false
     @State private var editingItem: TrainingItem? = nil
     @State private var showDone: Bool = false
 
@@ -58,18 +59,81 @@ struct SwipeReviewView: View {
     private var reviewStack: some View {
         VStack(spacing: 14) {
             progressStrip
-            if let item = current {
-                cardView(for: item)
-                    .offset(dragOffset)
-                    .rotationEffect(.degrees(Double(dragOffset.width / 18)))
-                    .gesture(swipeGesture)
-                    .animation(.spring(response: 0.35, dampingFraction: 0.78), value: dragOffset)
-                    .transition(.opacity)
+            ZStack {
+                // Peeking next card for depth — scales/rises as the top card leaves.
+                if let next = nextItem {
+                    cardView(for: next)
+                        .scaleEffect(peekScale)
+                        .offset(y: 18 * (1 - peekProgress))
+                        .opacity(0.55 + 0.45 * peekProgress)
+                        .allowsHitTesting(false)
+                }
+                if let item = current {
+                    cardView(for: item)
+                        .overlay(alignment: .top) { stampOverlay }
+                        .offset(dragOffset)
+                        .rotationEffect(.degrees(Double(dragOffset.width / 14)), anchor: .bottom)
+                        .gesture(swipeGesture)
+                        .animation(isFlinging ? Theme.Motion.cardFling : Theme.Motion.cardReturn,
+                                   value: dragOffset)
+                        .id(item.id)
+                        .transition(.scale(scale: 0.92).combined(with: .opacity))
+                }
             }
             actionButtons
         }
         .padding(.horizontal, 18)
         .padding(.bottom, 16)
+    }
+
+    private var nextItem: TrainingItem? {
+        let n = index + 1
+        guard n >= 0, n < items.count else { return nil }
+        return items[n]
+    }
+
+    /// 0 at rest, approaches 1 as the top card is dragged toward commit.
+    private var peekProgress: CGFloat {
+        let mag = max(abs(dragOffset.width), abs(dragOffset.height))
+        return min(mag / 120, 1)
+    }
+
+    private var peekScale: CGFloat { 0.92 + 0.08 * peekProgress }
+
+    /// Tinder-style directional stamp that fades in with drag intent.
+    @ViewBuilder
+    private var stampOverlay: some View {
+        let h = dragOffset.width
+        let v = dragOffset.height
+        let horizontal = abs(h) > abs(v)
+        Group {
+            if horizontal && h > 0 {
+                stamp("CORRECT", color: Theme.mint, rotation: -14, alignment: .topLeading)
+            } else if horizontal && h < 0 {
+                stamp("EDIT", color: Theme.ember, rotation: 14, alignment: .topTrailing)
+            } else if !horizontal && v < 0 {
+                stamp("SKIP", color: Theme.inkSoft, rotation: -6, alignment: .top)
+            } else if !horizontal && v > 0 {
+                stamp("NOT DAMAGE", color: Theme.crimson, rotation: 6, alignment: .top)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .padding(20)
+    }
+
+    private func stamp(_ text: String, color: Color, rotation: Double,
+                       alignment: Alignment) -> some View {
+        let mag = max(abs(dragOffset.width), abs(dragOffset.height))
+        let opacity = min(Double(mag) / 90, 1)
+        return Text(text)
+            .font(.system(size: Theme.TypeRamp.title, weight: .heavy))
+            .tracking(1.5)
+            .foregroundStyle(color)
+            .padding(.horizontal, 12).padding(.vertical, 6)
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(color, lineWidth: 4))
+            .rotationEffect(.degrees(rotation))
+            .opacity(opacity)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: alignment)
     }
 
     private var progressStrip: some View {
@@ -200,19 +264,48 @@ struct SwipeReviewView: View {
 
     private var swipeGesture: some Gesture {
         DragGesture()
-            .onChanged { value in dragOffset = value.translation }
+            .onChanged { value in
+                isFlinging = false
+                dragOffset = value.translation
+            }
             .onEnded { value in
+                // Project where the card would land given the release velocity,
+                // so a fast flick commits even on a short drag (real deck feel).
+                let proj = value.predictedEndTranslation
                 let h = value.translation.width
                 let v = value.translation.height
-                if abs(h) > 120 || abs(v) > 120 {
-                    if abs(h) > abs(v) {
-                        if h > 0 { confirm() } else { openEditor() }
-                    } else {
-                        if v > 0 { markFalsePositive() } else { skip() }
+                let ph = proj.width
+                let pv = proj.height
+                let commitH = abs(h) > 110 || abs(ph) > 320
+                let commitV = abs(v) > 110 || abs(pv) > 320
+                if commitH && abs(h) >= abs(v) {
+                    fling(towards: CGSize(width: h > 0 ? 700 : -700,
+                                          height: proj.height * 0.4)) {
+                        h > 0 ? confirm() : openEditor()
                     }
+                } else if commitV {
+                    fling(towards: CGSize(width: proj.width * 0.4,
+                                          height: v > 0 ? 900 : -900)) {
+                        v > 0 ? markFalsePositive() : skip()
+                    }
+                } else {
+                    // Didn't commit — spring back to center.
+                    isFlinging = false
+                    withAnimation(Theme.Motion.cardReturn) { dragOffset = .zero }
                 }
-                dragOffset = .zero
             }
+    }
+
+    /// Flicks the top card off-screen, runs the action, then resets for the
+    /// next card without a visible snap-back.
+    private func fling(towards target: CGSize, _ action: @escaping () -> Void) {
+        isFlinging = true
+        withAnimation(Theme.Motion.cardFling) { dragOffset = target }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) {
+            action()
+            isFlinging = false
+            dragOffset = .zero
+        }
     }
 
     // MARK: Mutations

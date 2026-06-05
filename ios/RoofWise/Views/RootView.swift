@@ -24,6 +24,7 @@ enum AppTab: Int, CaseIterable {
 
 struct RootView: View {
     @State private var tab: AppTab = .home
+    @State private var previousTab: AppTab = .home
     @State private var showQuickAction = false
     @State private var showInspection = false
     @State private var showInspectionChooser = false
@@ -59,6 +60,25 @@ struct RootView: View {
         .animation(.easeInOut(duration: 0.25), value: stateKey)
     }
 
+    /// Switches tabs with a spring, remembering the prior tab so the content
+    /// transition can slide in the correct horizontal direction.
+    private func selectTab(_ t: AppTab) {
+        guard t != tab else { return }
+        previousTab = tab
+        withAnimation(Theme.Motion.standard) { tab = t }
+    }
+
+    /// Asymmetric slide based on travel direction across the tab order.
+    private var tabTransition: AnyTransition {
+        let forward = tab.rawValue >= previousTab.rawValue
+        let insertEdge: Edge = forward ? .trailing : .leading
+        let removeEdge: Edge = forward ? .leading : .trailing
+        return .asymmetric(
+            insertion: .move(edge: insertEdge).combined(with: .opacity),
+            removal: .move(edge: removeEdge).combined(with: .opacity)
+        )
+    }
+
     private var stateKey: Int {
         switch auth.state {
         case .unknown: return 0
@@ -75,14 +95,14 @@ struct RootView: View {
                 switch tab {
                 case .home: DashboardView(
                     onQuickInspection: { showInspectionChooser = true },
-                    onOpenTraining: { tab = .training },
+                    onOpenTraining: { selectTab(.training) },
                     onOpenLeads: {
                         leadsFilter = nil
-                        withAnimation(.spring(duration: 0.3)) { tab = .leads }
+                        selectTab(.leads)
                     },
                     onOpenLeadsStage: { stage in
                         leadsFilter = stage
-                        withAnimation(.spring(duration: 0.3)) { tab = .leads }
+                        selectTab(.leads)
                     }
                 )
                 case .leads: LeadsView(filter: $leadsFilter)
@@ -91,9 +111,11 @@ struct RootView: View {
                 case .training: TrainingView()
                 }
             }
+            .id(tab)
+            .transition(tabTransition)
             .safeAreaPadding(.bottom, 96)
 
-            BottomTabBar(tab: $tab) { showQuickAction = true }
+            BottomTabBar(tab: $tab, onSelect: { selectTab($0) }) { showQuickAction = true }
         }
         .sheet(isPresented: $showQuickAction) {
             QuickActionSheet(onStartInspection: {
@@ -162,6 +184,7 @@ struct LaunchSplashView: View {
 
 struct BottomTabBar: View {
     @Binding var tab: AppTab
+    var onSelect: (AppTab) -> Void
     var onPlus: () -> Void
 
     var body: some View {
@@ -188,18 +211,23 @@ struct BottomTabBar: View {
     }
 
     private func tabItem(_ t: AppTab) -> some View {
-        Button {
-            withAnimation(.spring(duration: 0.3)) { tab = t }
+        let selected = tab == t
+        return Button {
+            UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+            onSelect(t)
         } label: {
             VStack(spacing: 4) {
                 Image(systemName: t.icon)
                     .font(.system(size: 17, weight: .semibold))
+                    .symbolEffect(.bounce, value: selected)
+                    .scaleEffect(selected ? 1.12 : 1.0)
                 Text(t.title)
                     .font(.system(size: 9.5, weight: .semibold))
             }
-            .foregroundStyle(tab == t ? Theme.ember : Theme.inkFaint)
+            .foregroundStyle(selected ? Theme.ember : Theme.inkFaint)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 6)
+            .animation(Theme.Motion.snappy, value: selected)
         }
         .buttonStyle(.plain)
     }

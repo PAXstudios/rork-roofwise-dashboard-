@@ -683,6 +683,8 @@ struct LineItemEditSheet: View {
                         .font(.system(size: Theme.TypeRamp.display, weight: .heavy))
                         .foregroundStyle(Theme.ink)
                         .monospacedDigit()
+                        .contentTransition(.numericText(value: item.totalPrice))
+                        .animation(Theme.Motion.snappy, value: item.totalPrice)
 
                     Color.clear.frame(height: 24)
                 }
@@ -709,7 +711,10 @@ struct LineItemEditSheet: View {
     }
 
     private func stepperButton(_ icon: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+        Button {
+            withAnimation(Theme.Motion.snappy) { action() }
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        } label: {
             Image(systemName: icon)
                 .font(.system(size: 18, weight: .heavy))
                 .foregroundStyle(Theme.ink)
@@ -717,7 +722,7 @@ struct LineItemEditSheet: View {
                 .background(Theme.card, in: .rect(cornerRadius: 16))
                 .overlay(RoundedRectangle(cornerRadius: 16).stroke(Theme.hairline, lineWidth: 1))
         }
-        .buttonStyle(.plain)
+        .pressBounce(0.9)
     }
 
     private func sectionLabel(_ s: String) -> some View {

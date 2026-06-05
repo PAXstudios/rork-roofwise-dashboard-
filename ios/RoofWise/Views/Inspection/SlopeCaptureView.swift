@@ -693,7 +693,9 @@ private struct StepperRow: View {
             FieldLabel(text: label)
             HStack(spacing: 12) {
                 Button {
-                    value = max(range.lowerBound, value - 1)
+                    withAnimation(Theme.Motion.snappy) {
+                        value = max(range.lowerBound, value - 1)
+                    }
                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 } label: {
                     Image(systemName: "minus")
@@ -703,20 +705,23 @@ private struct StepperRow: View {
                         .background(Theme.card, in: .circle)
                         .overlay(Circle().stroke(Theme.hairline, lineWidth: 1))
                 }
-                .buttonStyle(.plain)
+                .pressBounce(0.9)
                 .disabled(value <= range.lowerBound)
 
                 Text("\(value)")
                     .font(.system(size: 28, weight: .heavy))
                     .foregroundStyle(Theme.ink)
                     .monospacedDigit()
+                    .contentTransition(.numericText(value: Double(value)))
                     .frame(maxWidth: .infinity, minHeight: 64)
                     .background(Theme.canvas, in: .rect(cornerRadius: 16))
                     .overlay(RoundedRectangle(cornerRadius: 16)
                         .stroke(Theme.hairline, lineWidth: 1))
 
                 Button {
-                    value = min(range.upperBound, value + 1)
+                    withAnimation(Theme.Motion.snappy) {
+                        value = min(range.upperBound, value + 1)
+                    }
                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 } label: {
                     Image(systemName: "plus")
@@ -725,7 +730,7 @@ private struct StepperRow: View {
                         .frame(width: 64, height: 64)
                         .background(Theme.ember, in: .circle)
                 }
-                .buttonStyle(.plain)
+                .pressBounce(0.9)
                 .disabled(value >= range.upperBound)
             }
         }

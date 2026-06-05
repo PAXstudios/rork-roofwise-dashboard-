@@ -119,6 +119,7 @@ struct StormAlertHero: View {
 
     @State private var store = StormAlertStore.shared
     @State private var showDismissConfirm: Bool = false
+    @State private var pulse: Bool = false
 
     private var resolvedAlert: StormAlert? { alert ?? store.latestActiveAlert }
 
@@ -218,13 +219,26 @@ struct StormAlertHero: View {
 
             VStack(alignment: .leading, spacing: 18) {
                 HStack(spacing: 8) {
-                    Text(theme.badge)
-                        .font(.system(size: Theme.TypeRamp.captionSm, weight: .heavy))
-                        .tracking(1.0)
-                        .foregroundStyle(theme.accent)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 7)
-                        .background(.white, in: .capsule)
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(theme.accent)
+                            .frame(width: 7, height: 7)
+                            .scaleEffect(pulse ? 1.0 : 0.55)
+                            .shadow(color: theme.accent.opacity(pulse ? 0.0 : 0.7),
+                                    radius: pulse ? 7 : 0)
+                        Text(theme.badge)
+                            .font(.system(size: Theme.TypeRamp.captionSm, weight: .heavy))
+                            .tracking(1.0)
+                            .foregroundStyle(theme.accent)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .background(.white, in: .capsule)
+                    .scaleEffect(pulse ? 1.03 : 1.0)
+                    .onAppear {
+                        guard !pulse else { return }
+                        withAnimation(Theme.Motion.pulse) { pulse = true }
+                    }
                     Spacer(minLength: 0)
                     Text(a.eventDate.formatted(.relative(presentation: .numeric, unitsStyle: .abbreviated)))
                         .font(.system(size: Theme.TypeRamp.metaSm, weight: .heavy))

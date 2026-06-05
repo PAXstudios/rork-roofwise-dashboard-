@@ -12,6 +12,9 @@ struct DashboardView: View {
     @State private var pushRouter = PushAlertRouter.shared
     @State private var showMileage = false
     @State private var showLiveAR = false
+    /// Tracks whether the home cards have already cascaded in, so the
+    /// staggered entrance plays only on the first appearance.
+    @State private var didStagger = false
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -26,11 +29,14 @@ struct DashboardView: View {
                             .padding(.horizontal, 18)
                     }
                     KPIStrip(onQuickInspection: onQuickInspection)
+                        .staggeredAppear(0, animated: didStagger == false)
                     if APIKeys.useLiveARAnalysis {
                         LiveARInspectCTA(onTap: { showLiveAR = true })
                             .padding(.horizontal, 18)
+                            .staggeredAppear(1, animated: didStagger == false)
                     }
                     MileageSummaryCard(onOpen: { showMileage = true })
+                        .staggeredAppear(2, animated: didStagger == false)
                     StormAlertHero(
                         alert: alertStore.latestActiveAlert,
                         onView: {
@@ -41,28 +47,45 @@ struct DashboardView: View {
                             }
                         }
                     )
+                    .staggeredAppear(3, animated: didStagger == false)
                     WeatherTile()
+                        .staggeredAppear(4, animated: didStagger == false)
                     RecentJobsHomeSection(
                         onSeeAll: onOpenLeads,
                         onOpenJob: { _ in onOpenLeads() }
                     )
+                    .staggeredAppear(5, animated: didStagger == false)
                     SavedEstimatesSection()
+                        .staggeredAppear(6, animated: didStagger == false)
                     PipelineMiniSection(
                         onOpenBoard: { onOpenLeadsStage(nil) },
                         onTapStage: { stage in onOpenLeadsStage(stage.mappedStage) }
                     )
+                    .staggeredAppear(7, animated: didStagger == false)
                     TodaysGoalsCard()
+                        .staggeredAppear(8, animated: didStagger == false)
                     LeaderboardCard()
+                        .staggeredAppear(9, animated: didStagger == false)
                     RecentWinsCard()
+                        .staggeredAppear(10, animated: didStagger == false)
                     AICalibrationCard()
+                        .staggeredAppear(11, animated: didStagger == false)
                     HomeCardsCarousel(onOpenTraining: onOpenTraining)
+                        .staggeredAppear(12, animated: didStagger == false)
                     CoachingActivityCard(onOpenTraining: onOpenTraining)
+                        .staggeredAppear(13, animated: didStagger == false)
                     StormAlertSubscriptionCard()
+                        .staggeredAppear(14, animated: didStagger == false)
                     PipelineCard()
+                        .staggeredAppear(15, animated: didStagger == false)
                     ScheduleCard()
+                        .staggeredAppear(16, animated: didStagger == false)
                     RecentJobsRow(onOpenCustomer: { id in path.append(.customer(id)) })
+                        .staggeredAppear(17, animated: didStagger == false)
                     AIInsightsCard()
+                        .staggeredAppear(18, animated: didStagger == false)
                     Color.clear.frame(height: 120)
+                        .onAppear { didStagger = true }
                 }
                 .padding(.top, 8)
             }
