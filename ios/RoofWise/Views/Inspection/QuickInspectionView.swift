@@ -35,6 +35,8 @@ struct QuickInspectionView: View {
     @State private var zoomLevel: CGFloat = 1.0
     @State private var capturedPhotos: [CapturedPhoto] = []
     @State private var previewPhoto: CapturedPhoto?
+    // In-the-moment AI marker correction launched from PhotoDamageOverlayView.
+    @State private var markersEditPhoto: CapturedPhoto?
     // Guided inspection mode
     @State private var isGuidedMode: Bool = false
     @State private var guidedZoneCounts: [GuidedZone: Int] = [:]
@@ -189,8 +191,20 @@ struct QuickInspectionView: View {
                 },
                 onRetry: {
                     await retryAnalysis(for: photo.id)
-                }
+                },
+                onEditMarkers: { markersEditPhoto = photo }
             )
+            .sheet(item: $markersEditPhoto) { editPhoto in
+                NavigationStack {
+                    OverlayEditorView(
+                        item: editPhoto.makeTrainingItem(
+                            inspectionId: analyzeContext?.reportId ?? editPhoto.id.uuidString,
+                            orientation: analyzeContext?.orientation ?? editPhoto.slope.shortName)
+                    ) { delta in
+                        applyMarkerEdits(delta, to: editPhoto)
+                    }
+                }
+            }
         }
         .fullScreenCover(item: $claimPacket) { packet in
             ClaimPacketView(packet: packet,
@@ -216,6 +230,31 @@ struct QuickInspectionView: View {
             guard !newItems.isEmpty else { return }
             importLibraryPhotos(newItems)
         }
+    }
+
+    /// Applies inspector marker corrections from `OverlayEditorView`. Dual-write:
+    /// (1) update the photo's markers in-session so PhotoDamageOverlayView shows
+    /// the fix immediately, (2) record a `Correction` so the learning loop
+    /// learns from it. Keeps the slope's AI findings in lock-step when tied to
+    /// an inspection.
+    private func applyMarkerEdits(_ delta: DetectionDelta, to photo: CapturedPhoto) {
+        defer { markersEditPhoto = nil }
+        guard !delta.isEmpty else { return }
+        let updated = photo.applyingMarkerDelta(delta)
+        if let idx = capturedPhotos.firstIndex(where: { $0.id == photo.id }) {
+            capturedPhotos[idx].damageMarkers = updated
+            if previewPhoto?.id == photo.id { previewPhoto = capturedPhotos[idx] }
+        } else if previewPhoto?.id == photo.id {
+            previewPhoto?.damageMarkers = updated
+        }
+        if let ctx = analyzeContext {
+            InspectionStore.shared.setAIFindings(photo.findings,
+                                                 for: ctx.reportId,
+                                                 orientation: ctx.orientation)
+        }
+        CorrectionsStore.shared.append(
+            photo.makeCorrection(delta: delta,
+                                 inspectionId: analyzeContext?.reportId ?? photo.id.uuidString))
     }
 
     private func importLibraryPhotos(_ items: [PhotosPickerItem]) {

@@ -46,8 +46,16 @@ struct LiveAROverlayChrome: View {
     @Binding var slope: SlopeType
     let isCapturing: Bool
     let captureEligible: Bool
+    let isAnalyzing: Bool
     let onClose: () -> Void
     let onShutter: () -> Void
+
+    /// Keeps the "Analyzing…" pill up for 0.8s after analysis finishes.
+    @State private var lingerAnalyzing: Bool = false
+
+    private var showAnalyzingPill: Bool {
+        (isAnalyzing || lingerAnalyzing) && markerCount == 0
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -58,6 +66,16 @@ struct LiveAROverlayChrome: View {
         .padding(.horizontal, 16)
         .padding(.top, 54)
         .padding(.bottom, 40)
+        .onChange(of: isAnalyzing) { _, now in
+            if now {
+                lingerAnalyzing = true
+            } else {
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(800))
+                    if !isAnalyzing { lingerAnalyzing = false }
+                }
+            }
+        }
     }
 
     // MARK: Top
@@ -78,8 +96,24 @@ struct LiveAROverlayChrome: View {
         }
     }
 
+    private var analyzingPill: some View {
+        HStack(spacing: 7) {
+            ProgressView().controlSize(.mini).tint(.white)
+            Text("Analyzing…")
+                .font(.system(size: Theme.TypeRamp.caption, weight: .heavy))
+                .foregroundStyle(.white)
+        }
+        .padding(.horizontal, 14).padding(.vertical, 8)
+        .background(.ultraThinMaterial, in: .capsule)
+        .overlay(Capsule().stroke(Theme.ember.opacity(0.5), lineWidth: 0.8))
+        .transition(.opacity.combined(with: .scale))
+    }
+
     private var centerCluster: some View {
         VStack(spacing: 8) {
+            if showAnalyzingPill {
+                analyzingPill
+            }
             HStack(spacing: 6) {
                 Image(systemName: arUnavailable ? "arkit.badge.xmark" : "arkit")
                     .font(.system(size: Theme.TypeRamp.captionSm, weight: .heavy))
@@ -269,32 +303,48 @@ struct LiveAROverlayChrome: View {
 
 /// CAShapeLayer host that draws pulsing damage circles over the camera feed.
 final class LiveMarkerLayer: CAShapeLayer {
-    private var renderedIDs: Set<String> = []
+    private var layersByID: [String: CAShapeLayer] = [:]
 
+    /// Diff-based render: reuses existing layers keyed by marker id, only adds
+    /// new ones (with a pulse), removes vanished ones, and updates geometry
+    /// in-place inside a CATransaction with implicit animations disabled to
+    /// eliminate per-frame flicker.
     func render(_ markers: [DamageMarker], in bounds: CGRect) {
-        sublayers?.forEach { $0.removeFromSuperlayer() }
         guard bounds.width > 0, bounds.height > 0 else { return }
-
-        var newIDs: Set<String> = []
         let minEdge = min(bounds.width, bounds.height)
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+
+        var seen: Set<String> = []
         for marker in markers {
             let id = marker.id.uuidString
-            newIDs.insert(id)
+            seen.insert(id)
 
             let radius = max(8, minEdge * marker.radius)
             let diameter = radius * 2
             let center = CGPoint(x: bounds.width * marker.x, y: bounds.height * marker.y)
-            let circle = CAShapeLayer()
-            circle.frame = CGRect(x: center.x - radius, y: center.y - radius,
-                                  width: diameter, height: diameter)
-            circle.path = UIBezierPath(ovalIn: CGRect(x: 0, y: 0, width: diameter, height: diameter)).cgPath
+            let frame = CGRect(x: center.x - radius, y: center.y - radius,
+                               width: diameter, height: diameter)
+            let path = UIBezierPath(ovalIn: CGRect(x: 0, y: 0, width: diameter, height: diameter)).cgPath
             let color = UIColor(marker.type.color)
-            circle.strokeColor = color.cgColor
-            circle.fillColor = color.withAlphaComponent(0.18).cgColor
-            circle.lineWidth = 2
-            addSublayer(circle)
 
-            if !renderedIDs.contains(id) {
+            if let existing = layersByID[id] {
+                // Update geometry/appearance in-place (no flicker, no re-add).
+                existing.frame = frame
+                existing.path = path
+                existing.strokeColor = color.cgColor
+                existing.fillColor = color.withAlphaComponent(0.18).cgColor
+            } else {
+                let circle = CAShapeLayer()
+                circle.frame = frame
+                circle.path = path
+                circle.strokeColor = color.cgColor
+                circle.fillColor = color.withAlphaComponent(0.18).cgColor
+                circle.lineWidth = 2
+                addSublayer(circle)
+                layersByID[id] = circle
+                // Pulse only on first appearance (explicit anim still runs).
                 let anim = CABasicAnimation(keyPath: "transform.scale")
                 anim.fromValue = 0.5
                 anim.toValue = 1.0
@@ -303,7 +353,14 @@ final class LiveMarkerLayer: CAShapeLayer {
                 circle.add(anim, forKey: "appear")
             }
         }
-        renderedIDs = newIDs
+
+        // Remove only markers whose id disappeared from the new array.
+        for (id, layer) in layersByID where !seen.contains(id) {
+            layer.removeFromSuperlayer()
+            layersByID.removeValue(forKey: id)
+        }
+
+        CATransaction.commit()
     }
 }
 
@@ -374,6 +431,7 @@ struct LiveARFallbackStage: View {
                 slope: $slope,
                 isCapturing: isCapturing,
                 captureEligible: !isCapturing,
+                isAnalyzing: analyzer.isAnalyzing,
                 onClose: onClose,
                 onShutter: capture
             )
@@ -477,6 +535,7 @@ struct LiveARDeviceStage: View {
                 slope: $slope,
                 isCapturing: isCapturing,
                 captureEligible: !isCapturing,
+                isAnalyzing: analyzer.isAnalyzing,
                 onClose: onClose,
                 onShutter: capture
             )

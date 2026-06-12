@@ -33,6 +33,8 @@ final class LiveARAnalyzer: NSObject, ARSessionDelegate {
     var lastMarkers: [DamageMarker] = []
     /// Average marker confidence (0-1) from the most recent successful analysis.
     var liveConfidence: Double = 0
+    /// True while a frame is being analyzed. Drives the "Analyzing…" HUD pill.
+    var isAnalyzing: Bool = false
 
     private weak var session: ARSession?
     private nonisolated let gate = AnalyzerGate()
@@ -68,7 +70,11 @@ final class LiveARAnalyzer: NSObject, ARSessionDelegate {
 
         Task.detached(priority: .userInitiated) { [weak self] in
             guard let self else { return }
-            defer { self.gate.end() }
+            await MainActor.run { self.isAnalyzing = true }
+            defer {
+                self.gate.end()
+                Task { @MainActor in self.isAnalyzing = false }
+            }
             do {
                 let result = try await GeminiAnalysisService.analyzeLive(imageData: data)
                 let avg = Self.averageConfidence(of: result.markers)

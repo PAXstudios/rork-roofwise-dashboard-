@@ -49,6 +49,26 @@ struct GeminiAnalysisService {
     - structural_sagging = deck deformation visible as a wave/dip
     """
 
+    /// Per-category severity calibration so the model assigns minor/moderate/
+    /// severe consistently across every prompt.
+    private static let severityGuide = """
+    Severity scale per category (apply consistently): hail_hits = count of impacts in a 10ft x 10ft square (minor: 1-8, moderate: 9-14, severe: 15+); bruising = % of shingles in view showing soft deformation (minor: <10%, moderate: 10-30%, severe: >30%); granule_loss = % area of exposed dark mat (minor: <10%, moderate: 10-25%, severe: >25%); wind_damage = count of torn/blown-off corners (minor: 1-2, moderate: 3-5, severe: 6+); wind_creasing = count of creased shingles (minor: 1-3, moderate: 4-8, severe: 9+); blistering = count of raised blisters per 10ft x 10ft (minor: <10, moderate: 10-30, severe: >30); cracking = count of surface cracks per 10ft x 10ft (minor: 1-5, moderate: 6-15, severe: 16+); flashing = condition of metal flashing (minor: surface rust/light separation, moderate: visible gap or partial detachment, severe: missing/torn/major separation); algae_moss = % area covered (minor: <15%, moderate: 15-40%, severe: >40%); missing_shingles = count of absent tabs/shingles (minor: 1, moderate: 2-4, severe: 5+); splitting = count of full-thickness vertical splits (minor: 1-2, moderate: 3-5, severe: 6+); lifted = count of raised tabs (minor: 1-3, moderate: 4-8, severe: 9+); structural_sagging = visible deck deformation (minor: slight wave, moderate: clear dip 1-3in, severe: dip >3in or collapse). When evidence is ambiguous or partially visible, downgrade one severity level. When the photo doesn't clearly show enough roof area to apply the count rule (e.g. close-up of a single shingle), use proportional judgment: scale the count down by the visible area.
+    """
+
+    /// Gemini-native spatial localization rules. Gemini 2.5 is trained to emit
+    /// detections as `box_2d` = [ymin, xmin, ymax, xmax] normalized to 0-1000;
+    /// asking for free-form x/y/radius floats is off-distribution and makes the
+    /// model fall back to a degenerate evenly-spaced row of markers. Requesting
+    /// box_2d gives true per-feature localization and accurate counts.
+    private static let spatialGuide = """
+    Localize EACH damage feature using your native 2D detection format. For every entry in damage_markers, return "box_2d": [ymin, xmin, ymax, xmax] as INTEGERS normalized to 0-1000 (top-left origin: [0,0] = top-left corner, [1000,1000] = bottom-right; the Y coordinate comes FIRST). The box must tightly enclose ONE distinct damage feature at its true location in the image.
+    - Detect EVERY visible hail hit individually — one tight box per impact — and count them all, even if there are 20 or more.
+    - Place each box exactly where the feature is. Real damage is irregularly scattered; do NOT output a straight row, a uniform grid, or evenly spaced boxes.
+    - Do NOT fabricate boxes for features you cannot clearly see. An empty damage_markers array is correct when nothing is visible.
+    - For point-like damage (hail hits, blisters) use a small tight box around the single spot; for area damage (missing shingles, flashing, algae, sagging) box the whole affected region.
+    - Return up to 60 boxes. Measure every box against THIS image exactly as you see it (do not rotate).
+    """
+
     init() {
         self.toolkitURL = Config.EXPO_PUBLIC_TOOLKIT_URL
         self.secret = Config.EXPO_PUBLIC_RORK_TOOLKIT_SECRET_KEY
@@ -125,15 +145,17 @@ struct GeminiAnalysisService {
         Return STRICT JSON only (no markdown), with this schema:
         {
           "damage_markers": [
-            { "type": "\(Self.categoryEnum)", "x": 0.0-1.0, "y": 0.0-1.0, "radius": 0.0-1.0, "severity": "minor|moderate|severe", "confidence": 0-100, "note": "<short pixel evidence>" }
+            { "type": "\(Self.categoryEnum)", "box_2d": [ymin, xmin, ymax, xmax], "severity": "minor|moderate|severe", "confidence": 0-100, "note": "<short pixel evidence>" }
           ]
         }
 
         \(Self.categoryGuide)
 
-        Coordinates MUST be normalized fractions of the image: x = (pixel_x / image_width), y = (pixel_y / image_height). 0.0 = left/top, 1.0 = right/bottom, top-left origin. (x,y) is the CENTER of the feature; radius is roughly half the feature size relative to the shorter image edge. NEVER return pixel values. NEVER return values outside [0, 1]. Measure coordinates against THIS image as you see it (do not rotate).
+        \(Self.severityGuide)
 
-        Mark only visible damage locations. Do NOT generate random or evenly spaced markers. If no damage is clearly visible, return "damage_markers": []. If the image is NOT a roof (grass, sky, indoors, person, vehicle), return an empty damage_markers array.
+        \(Self.spatialGuide)
+
+        If no damage is clearly visible, return "damage_markers": []. If the image is NOT a roof (grass, sky, indoors, person, vehicle), return an empty damage_markers array.
         """
 
         let body = Self.chatCompletionBody(systemPrompt: prompt,
@@ -186,11 +208,7 @@ struct GeminiAnalysisService {
           "damage_markers": [
             {
               "type": "\(Self.categoryEnum)",
-              "x": 0.0-1.0,
-              "y": 0.0-1.0,
-              "width": 0.0-1.0,
-              "height": 0.0-1.0,
-              "radius": 0.0-1.0,
+              "box_2d": [ymin, xmin, ymax, xmax],
               "severity": "minor|moderate|severe",
               "confidence": 0-100,
               "note": "short visible pixel evidence"
@@ -198,18 +216,15 @@ struct GeminiAnalysisService {
           ]
         }
 
-        Coordinates x, y, width, height are NORMALIZED FRACTIONS of the image
-        (0.0 = left/top edge, 1.0 = right/bottom edge), TOP-LEFT origin. (x, y)
-        is the CENTER of the bounding box; width/height are the bbox size as
-        fractions of the image. NEVER return pixel values. NEVER return values
-        > 1.0. Coordinates must be measured against THIS image as you see it,
-        not rotated.
-
         CRITICAL: If the image does NOT clearly show a roof surface, asphalt shingles, tile, metal panels, or any roofing material — for example if it shows grass, sky, ground, indoors, a person, a vehicle, or any non-roof scene — you MUST set analyzed=false, return an empty damage_markers array, and add a finding with label="no_roof_detected" and note="No roof or shingles visible in this photo". Do not fabricate damage findings on non-roof images.
 
         \(Self.categoryGuide)
 
-        Mark only visible damage locations. Do NOT generate random or evenly spaced markers. If no damage is clearly visible, return "damage_markers": []. Coordinates are normalized from top-left.
+        \(Self.severityGuide)
+
+        \(Self.spatialGuide)
+
+        If no damage is clearly visible, return "damage_markers": [].
         """
 
         let body = Self.chatCompletionBody(systemPrompt: prompt,
@@ -287,15 +302,17 @@ struct GeminiAnalysisService {
             { "label": "\(Self.categoryEnum)", "detected": true|false, "severity": "none|minor|moderate|severe", "confidence": 0-100, "count": <int>, "note": "<short evidence>" }
           ],
           "damage_markers": [
-            { "type": "\(Self.categoryEnum)", "x": 0.0-1.0, "y": 0.0-1.0, "radius": 0.0-1.0, "severity": "minor|moderate|severe", "confidence": 0-100, "note": "<short pixel evidence>" }
+            { "type": "\(Self.categoryEnum)", "box_2d": [ymin, xmin, ymax, xmax], "severity": "minor|moderate|severe", "confidence": 0-100, "note": "<short pixel evidence>" }
           ]
         }
 
         \(Self.categoryGuide)
 
-        The `findings[].label` and `damage_markers[].type` MUST both use the exact same 13 tokens above. Coordinates MUST be normalized fractions of the image: x = (pixel_x / image_width), y = (pixel_y / image_height). 0.0 = left/top, 1.0 = right/bottom, top-left origin. (x,y) is the CENTER of the feature; radius is roughly half the feature size relative to the shorter image edge. NEVER return pixel values. NEVER return values outside [0, 1]. Measure coordinates against THIS image as you see it (do not rotate).
+        \(Self.severityGuide)
 
-        Include all 13 damage categories in `findings` (set detected=false for ones not present). Mark each visible hail hit individually. If the image is NOT a roof (grass, sky, indoors, person, vehicle), set analyzed=false, return empty `damage_markers`, and add a finding with label="no_roof_detected".
+        \(Self.spatialGuide)
+
+        The `findings[].label` and `damage_markers[].type` MUST both use the exact same 13 tokens above. Include all 13 damage categories in `findings` (set detected=false for ones not present). If the image is NOT a roof (grass, sky, indoors, person, vehicle), set analyzed=false, return empty `damage_markers`, and add a finding with label="no_roof_detected".
         """
 
         let body = Self.chatCompletionBody(systemPrompt: prompt,
@@ -517,22 +534,10 @@ struct GeminiAnalysisService {
     }
 
     private static func markerFromDict(_ dict: [String: Any]) -> DamageMarker? {
-        let typeRaw = (dict["type"] as? String) ?? "other"
+        // Accept "type" (our schema) or "label" (Gemini's native detection key).
+        let typeRaw = (dict["type"] as? String) ?? (dict["label"] as? String) ?? "other"
         let type = normalizedType(typeRaw)
-        guard let xVal = (dict["x"] as? Double) ?? (dict["x"] as? NSNumber)?.doubleValue,
-              let yVal = (dict["y"] as? Double) ?? (dict["y"] as? NSNumber)?.doubleValue else {
-            return nil
-        }
-        // Prefer explicit radius. Otherwise derive from bbox width/height if Gemini
-        // returned a bounding box (newer schema), so single-strike pins land at the right size.
-        let explicitRadius = (dict["radius"] as? Double) ?? (dict["radius"] as? NSNumber)?.doubleValue
-        let bboxW = (dict["width"] as? Double) ?? (dict["width"] as? NSNumber)?.doubleValue
-        let bboxH = (dict["height"] as? Double) ?? (dict["height"] as? NSNumber)?.doubleValue
-        let radius: Double = {
-            if let r = explicitRadius { return r }
-            if let w = bboxW, let h = bboxH { return max(w, h) / 2 }
-            return 0.04
-        }()
+
         let severityRaw = (dict["severity"] as? String ?? "moderate").capitalized
         let severity = FindingSeverity(rawValue: severityRaw) ?? .moderate
         let note = dict["note"] as? String ?? type.display
@@ -546,13 +551,65 @@ struct GeminiAnalysisService {
             return 0
         }()
         let clamp: (Double) -> CGFloat = { CGFloat(max(0, min(1, $0))) }
-        return DamageMarker(x: clamp(xVal),
-                            y: clamp(yVal),
-                            radius: clamp(radius),
-                            type: type,
-                            severity: severity,
-                            note: note,
-                            confidence: confidence)
+
+        // Preferred path: Gemini-native 2D detection box [ymin, xmin, ymax, xmax].
+        // Values are normalized to 0-1000 (we also tolerate 0-1 just in case).
+        if let box = doubleArray(dict["box_2d"]), box.count == 4 {
+            let scale: Double = (box.max() ?? 0) > 1.5 ? 1000.0 : 1.0
+            let yMin = min(box[0], box[2]) / scale
+            let xMin = min(box[1], box[3]) / scale
+            let yMax = max(box[0], box[2]) / scale
+            let xMax = max(box[1], box[3]) / scale
+            let cx = (xMin + xMax) / 2
+            let cy = (yMin + yMax) / 2
+            // Radius = half the larger box edge; floored so tiny hail boxes stay
+            // visible/tappable, capped so a huge box doesn't swallow the photo.
+            let r = max(0.012, min(0.5, max(xMax - xMin, yMax - yMin) / 2))
+            return DamageMarker(x: clamp(cx), y: clamp(cy), radius: CGFloat(r),
+                                type: type, severity: severity,
+                                note: note, confidence: confidence)
+        }
+
+        // Gemini-native point [y, x] (0-1000) for point-like features.
+        if let pt = doubleArray(dict["point"]), pt.count == 2 {
+            let scale: Double = (pt.max() ?? 0) > 1.5 ? 1000.0 : 1.0
+            return DamageMarker(x: clamp(pt[1] / scale), y: clamp(pt[0] / scale),
+                                radius: 0.03, type: type, severity: severity,
+                                note: note, confidence: confidence)
+        }
+
+        // Legacy fallback: free-form x/y (+ radius or bbox width/height) in 0-1.
+        guard let xVal = (dict["x"] as? Double) ?? (dict["x"] as? NSNumber)?.doubleValue,
+              let yVal = (dict["y"] as? Double) ?? (dict["y"] as? NSNumber)?.doubleValue else {
+            return nil
+        }
+        let explicitRadius = (dict["radius"] as? Double) ?? (dict["radius"] as? NSNumber)?.doubleValue
+        let bboxW = (dict["width"] as? Double) ?? (dict["width"] as? NSNumber)?.doubleValue
+        let bboxH = (dict["height"] as? Double) ?? (dict["height"] as? NSNumber)?.doubleValue
+        let radius: Double = {
+            if let r = explicitRadius { return r }
+            if let w = bboxW, let h = bboxH { return max(w, h) / 2 }
+            return 0.04
+        }()
+        return DamageMarker(x: clamp(xVal), y: clamp(yVal), radius: clamp(radius),
+                            type: type, severity: severity,
+                            note: note, confidence: confidence)
+    }
+
+    /// Parses a JSON array of numbers (Gemini returns NSNumber elements) into
+    /// `[Double]`. Returns nil if the value isn't an array of numbers.
+    private static func doubleArray(_ any: Any?) -> [Double]? {
+        guard let arr = any as? [Any] else { return nil }
+        var out: [Double] = []
+        out.reserveCapacity(arr.count)
+        for v in arr {
+            if let n = v as? NSNumber { out.append(n.doubleValue) }
+            else if let d = v as? Double { out.append(d) }
+            else if let i = v as? Int { out.append(Double(i)) }
+            else if let s = v as? String, let d = Double(s) { out.append(d) }
+            else { return nil }
+        }
+        return out
     }
 
     private static func shingleTypeFinding(from dict: [String: Any]) -> InspectionFinding? {

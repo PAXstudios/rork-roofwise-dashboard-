@@ -12,6 +12,11 @@ struct PhotoDamageOverlayView: View {
     /// previous analysis failed (`analyzed == false`), a "Retry AI Analysis"
     /// button is shown.
     var onRetry: (() async -> Void)? = nil
+    /// Opt-in in-the-moment marker correction. When provided, an "Edit Markers"
+    /// CTA is shown so the inspector can correct AI detections without leaving
+    /// for the Training tab. Read-only contexts (reports, customer share) leave
+    /// this nil and the button silently hides.
+    var onEditMarkers: (() -> Void)? = nil
 
     @State private var selectedMarker: DamageMarker? = nil
     @State private var showLegend: Bool = true
@@ -87,6 +92,15 @@ struct PhotoDamageOverlayView: View {
             VStack(spacing: 0) {
                 topBar
                 Spacer(minLength: 0)
+                if onEditMarkers != nil {
+                    HStack {
+                        Spacer()
+                        editMarkersPill
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 10)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                }
                 if analysisFailed && onRetry != nil {
                     retryBanner
                         .padding(.horizontal, 14)
@@ -193,6 +207,29 @@ struct PhotoDamageOverlayView: View {
             LinearGradient(colors: [.black.opacity(0.55), .clear],
                            startPoint: .top, endPoint: .bottom)
         )
+    }
+
+    // MARK: - Edit Markers CTA
+
+    private var editMarkersPill: some View {
+        Button {
+            let g = UIImpactFeedbackGenerator(style: .medium); g.impactOccurred()
+            onEditMarkers?()
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "pencil.and.outline")
+                    .font(.system(size: 15, weight: .heavy))
+                Text("Edit Markers")
+                    .font(.system(size: Theme.TypeRamp.meta, weight: .heavy))
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 18)
+            .frame(minHeight: 64)
+            .background(Theme.ember, in: .capsule)
+            .overlay(Capsule().stroke(.white.opacity(0.2), lineWidth: 0.6))
+            .shadow(color: Theme.ember.opacity(0.4), radius: 12, y: 6)
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Markers
@@ -670,6 +707,124 @@ struct PhotoDamageOverlayView: View {
         .padding(10)
         .background(Theme.card, in: .rect(cornerRadius: 10))
         .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.hairline, lineWidth: 0.6))
+    }
+}
+
+// MARK: - In-the-moment correction helpers
+
+extension CapturedPhoto {
+    /// Applies an inspector `DetectionDelta` (from `OverlayEditorView`) onto this
+    /// photo's AI markers and returns the updated array. The editor authors its
+    /// own marker ids, so added markers are appended (and any in-session
+    /// move/resize/recategorize folds into them); deletes also drop matching
+    /// pre-existing AI markers when ids line up.
+    func applyingMarkerDelta(_ delta: DetectionDelta) -> [DamageMarker] {
+        struct Draft {
+            var x: Double; var y: Double; var radius: Double
+            var category: String?; var severity: String?; var note: String?
+        }
+        var existing = damageMarkers
+        var drafts: [UUID: Draft] = [:]
+        var order: [UUID] = []
+        for op in delta.ops {
+            switch op.kind {
+            case .added:
+                drafts[op.markerId] = Draft(x: op.x ?? 0.5, y: op.y ?? 0.5,
+                                            radius: op.radius ?? 0.04,
+                                            category: op.category, severity: op.severity,
+                                            note: op.note)
+                order.append(op.markerId)
+            case .moved:
+                if var d = drafts[op.markerId] {
+                    d.x = op.x ?? d.x; d.y = op.y ?? d.y; drafts[op.markerId] = d
+                }
+            case .resized:
+                if var d = drafts[op.markerId] {
+                    d.radius = op.radius ?? d.radius; drafts[op.markerId] = d
+                }
+            case .recategorized:
+                if var d = drafts[op.markerId] {
+                    d.category = op.category ?? d.category
+                    d.severity = op.severity ?? d.severity
+                    drafts[op.markerId] = d
+                }
+            case .deleted:
+                if drafts[op.markerId] != nil {
+                    drafts[op.markerId] = nil
+                    order.removeAll { $0 == op.markerId }
+                } else {
+                    existing.removeAll { $0.id == op.markerId }
+                }
+            }
+        }
+        let added: [DamageMarker] = order.compactMap { id in
+            guard let d = drafts[id] else { return nil }
+            let type = d.category.flatMap { DamageMarkerType(rawValue: $0) } ?? .other
+            return DamageMarker(x: CGFloat(d.x), y: CGFloat(d.y), radius: CGFloat(d.radius),
+                                type: type,
+                                severity: Self.findingSeverity(from: d.severity),
+                                note: (d.note?.isEmpty == false ? d.note! : "Inspector-added"),
+                                confidence: 100)
+        }
+        return existing + added
+    }
+
+    private static func findingSeverity(from raw: String?) -> FindingSeverity {
+        switch (raw ?? "").lowercased() {
+        case "minor": return .minor
+        case "moderate": return .moderate
+        case "severe": return .severe
+        default: return .moderate
+        }
+    }
+
+    /// Dominant marker category mapped onto the Training-queue `Kind` so the
+    /// editor header reads sensibly. Defaults to a hail bruise.
+    private var dominantTrainingKind: TrainingItem.Kind {
+        switch markersByType.first?.type {
+        case .windCreasing: return .windCrease
+        case .missingShingles: return .windMissing
+        case .lifted: return .windLifted
+        case .granuleLoss: return .hailGranule
+        case .cracking, .splitting: return .hailFracture
+        default: return .hailBruise
+        }
+    }
+
+    /// Builds the `TrainingItem` `OverlayEditorView` expects from this photo and
+    /// the active inspection context.
+    func makeTrainingItem(inspectionId: String, orientation: String) -> TrainingItem {
+        let avgConfidence: Double = damageMarkers.isEmpty
+            ? 0.85
+            : Double(damageMarkers.map(\.confidence).reduce(0, +))
+                / Double(damageMarkers.count) / 100.0
+        return TrainingItem(
+            inspectionId: inspectionId,
+            slopeOrientation: orientation,
+            photoPath: id.uuidString,
+            kind: dominantTrainingKind,
+            aiCount: damageMarkers.count,
+            aiConfidence: avgConfidence
+        )
+    }
+
+    /// Builds a `Correction` record (same callsite pattern as SwipeReviewView)
+    /// so the learning loop receives the inspector's in-the-moment edit.
+    func makeCorrection(delta: DetectionDelta, inspectionId: String) -> Correction {
+        let before = CorrectionDetectionSnapshot.from(findings: findings, markers: damageMarkers)
+        let after = CorrectionDetectionSnapshot.from(findings: findings,
+                                                     markers: applyingMarkerDelta(delta))
+        let isOnlyAdds = !delta.ops.isEmpty && delta.ops.allSatisfy { $0.kind == .added }
+        return Correction(
+            inspectionId: CorrectionsStore.deterministicUUID(from: inspectionId),
+            photoId: CorrectionsStore.deterministicUUID(from: id.uuidString),
+            originalDetection: CorrectionsStore.encode(before),
+            correctedDetection: CorrectionsStore.encode(after),
+            correctionType: isOnlyAdds ? .addedMissed : .edited,
+            categoriesAffected: delta.ops.compactMap { $0.category },
+            delta: CorrectionsStore.encode(delta),
+            correctedBy: CorrectionsStore.localUserId
+        )
     }
 }
 

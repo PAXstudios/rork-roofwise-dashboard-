@@ -11,6 +11,7 @@ struct CustomerProfileView: View {
     @State private var showAddNote = false
     @State private var newNoteText = ""
     @State private var previewPhoto: CapturedPhoto?
+    @State private var markersEditPhoto: CapturedPhoto?
     @State private var slopeBeingViewed: SlopeType?
     @State private var isEditing = false
     @State private var draft: Customer?
@@ -134,9 +135,36 @@ struct CustomerProfileView: View {
                     }
                     let g = UINotificationFeedbackGenerator()
                     g.notificationOccurred(result.failed ? .error : .success)
-                }
+                },
+                onEditMarkers: { markersEditPhoto = photo }
             )
+            .sheet(item: $markersEditPhoto) { editPhoto in
+                NavigationStack {
+                    OverlayEditorView(
+                        item: editPhoto.makeTrainingItem(
+                            inspectionId: customer.id.uuidString,
+                            orientation: editPhoto.slope.shortName)
+                    ) { delta in
+                        applyMarkerEdits(delta, to: editPhoto)
+                    }
+                }
+            }
         }
+    }
+
+    /// Dual-write inspector marker corrections: persist updated markers onto the
+    /// customer's photo so the overlay refreshes immediately, and record a
+    /// `Correction` so the learning loop learns from the edit.
+    private func applyMarkerEdits(_ delta: DetectionDelta, to photo: CapturedPhoto) {
+        defer { markersEditPhoto = nil }
+        guard !delta.isEmpty else { return }
+        var c = customer
+        guard let idx = c.photos.firstIndex(where: { $0.id == photo.id }) else { return }
+        c.photos[idx].damageMarkers = photo.applyingMarkerDelta(delta)
+        store.update(c)
+        if previewPhoto?.id == photo.id { previewPhoto = c.photos[idx] }
+        CorrectionsStore.shared.append(
+            photo.makeCorrection(delta: delta, inspectionId: customer.id.uuidString))
     }
 
     // MARK: Header
