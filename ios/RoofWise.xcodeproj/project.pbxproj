@@ -410,6 +410,7 @@
 				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "RoofWise-Info.plist";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSCameraUsageDescription = "RoofWise uses the camera and LiDAR for live AR roof inspection to capture and analyze roof damage during inspections.";
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "RoofWise uses background location to auto-detect drives and offer to log them as mileage — even when the app is closed.";
@@ -422,14 +423,6 @@
 				INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = (
 					app.roofwise.stormwatch,
 					com.roofwise.calibration_weekly,
-				);
-				INFOPLIST_KEY_CFBundleURLTypes = (
-					{
-						CFBundleURLName = "com.paxconsulting.roofwise.deeplink";
-						CFBundleURLSchemes = (
-							roofwise,
-						);
-					},
 				);
 				INFOPLIST_KEY_UIBackgroundModes = "location fetch processing";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -462,6 +455,7 @@
 				DEVELOPMENT_TEAM = "";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "RoofWise-Info.plist";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSCameraUsageDescription = "RoofWise uses the camera and LiDAR for live AR roof inspection to capture and analyze roof damage during inspections.";
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "RoofWise uses background location to auto-detect drives and offer to log them as mileage — even when the app is closed.";
@@ -474,14 +468,6 @@
 				INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = (
 					app.roofwise.stormwatch,
 					com.roofwise.calibration_weekly,
-				);
-				INFOPLIST_KEY_CFBundleURLTypes = (
-					{
-						CFBundleURLName = "com.paxconsulting.roofwise.deeplink";
-						CFBundleURLSchemes = (
-							roofwise,
-						);
-					},
 				);
 				INFOPLIST_KEY_UIBackgroundModes = "location fetch processing";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
