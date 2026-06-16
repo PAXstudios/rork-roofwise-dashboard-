@@ -66,6 +66,7 @@ final class CustomerStore {
         if customers[i].stage.stepIndex < JobPipelineStage.inspectionComplete.stepIndex {
             customers[i].stage = .inspectionComplete
         }
+        Task { await PhotoSyncService.shared.sync(photos, for: id) }
     }
 
     func updateAnalysis(for id: UUID, photos: [CapturedPhoto], findings: [InspectionFinding]) {
@@ -81,6 +82,7 @@ final class CustomerStore {
         }
         customers[i].photos = existing
         customers[i].damageFindings = findings
+        Task { await PhotoSyncService.shared.sync(photos, for: id) }
     }
 
     func attachClaim(for id: UUID, packet: ClaimPacket) {

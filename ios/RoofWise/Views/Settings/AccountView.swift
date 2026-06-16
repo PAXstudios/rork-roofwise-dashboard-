@@ -28,6 +28,7 @@ struct AccountView: View {
             Button("Sign out", role: .destructive) {
                 Task {
                     LeadsSyncService.shared.resetLedger()
+                    PhotoSyncService.shared.resetLedger()
                     await auth.signOut()
                 }
             }
