@@ -12,13 +12,21 @@ struct PhotoDamageOverlayView: View {
     /// previous analysis failed (`analyzed == false`), a "Retry AI Analysis"
     /// button is shown.
     var onRetry: (() async -> Void)? = nil
-    /// Opt-in in-the-moment marker correction. When provided, an "Edit Markers"
-    /// CTA is shown so the inspector can correct AI detections without leaving
-    /// for the Training tab. Read-only contexts (reports, customer share) leave
-    /// this nil and the button silently hides.
-    var onEditMarkers: (() -> Void)? = nil
+    /// Opt-in in-the-moment marker correction. When `onApplyMarkers` is provided,
+    /// an "Edit Detection" CTA opens the full `EditDetectionView` so the inspector
+    /// can correct AI detections (and feed the recursive learning loop) without
+    /// leaving for the Training tab. Read-only contexts (reports, customer share)
+    /// leave these nil and the button silently hides.
+    /// Stable inspection identifier used to tag the resulting corrections.
+    var inspectionId: String? = nil
+    /// Persists the corrected marker set back to the caller's store.
+    var onApplyMarkers: (([DamageMarker]) -> Void)? = nil
 
     @State private var selectedMarker: DamageMarker? = nil
+    /// In-view mirror of the marker set after an edit so the overlay reflects
+    /// corrections immediately without waiting for the parent's store update.
+    @State private var liveMarkers: [DamageMarker]? = nil
+    @State private var showEditor: Bool = false
     @State private var showLegend: Bool = true
     @State private var showAllMarkers: Bool = true
     @State private var pulse: Bool = false
@@ -29,15 +37,25 @@ struct PhotoDamageOverlayView: View {
     /// markers are mapped against.
     @State private var debugShowImageRect: Bool = false
 
+    /// Markers currently shown — the live edited set if the inspector just
+    /// corrected them, otherwise the photo's stored AI markers.
+    private var activeMarkers: [DamageMarker] { liveMarkers ?? photo.damageMarkers }
+
+    private func photoWithActiveMarkers() -> CapturedPhoto {
+        var p = photo
+        p.damageMarkers = activeMarkers
+        return p
+    }
+
     private var grouped: [(type: DamageMarkerType, items: [DamageMarker])] {
-        let dict = Dictionary(grouping: photo.damageMarkers, by: \.type)
+        let dict = Dictionary(grouping: activeMarkers, by: \.type)
         return DamageMarkerType.allCases.compactMap { type in
             guard let items = dict[type], !items.isEmpty else { return nil }
             return (type, items)
         }
     }
 
-    private var totalMarkers: Int { photo.damageMarkers.count }
+    private var totalMarkers: Int { activeMarkers.count }
 
     /// Compact comma-joined summary like "12 hail strikes, 3 wind creases, 1 crack"
     /// computed by grouping `photo.damageMarkers` by type. Empty when no markers.
@@ -92,7 +110,7 @@ struct PhotoDamageOverlayView: View {
             VStack(spacing: 0) {
                 topBar
                 Spacer(minLength: 0)
-                if onEditMarkers != nil {
+                if onApplyMarkers != nil {
                     HStack {
                         Spacer()
                         editMarkersPill
@@ -129,6 +147,17 @@ struct PhotoDamageOverlayView: View {
             markerDetail(marker)
                 .presentationDetents([.fraction(0.32), .medium])
                 .presentationDragIndicator(.visible)
+        }
+        .fullScreenCover(isPresented: $showEditor) {
+            EditDetectionView(
+                photo: photoWithActiveMarkers(),
+                inspectionId: inspectionId ?? photo.id.uuidString,
+                onApply: { newMarkers in
+                    withAnimation(.easeInOut(duration: 0.2)) { liveMarkers = newMarkers }
+                    onApplyMarkers?(newMarkers)
+                },
+                onClose: { showEditor = false }
+            )
         }
     }
 
@@ -214,12 +243,12 @@ struct PhotoDamageOverlayView: View {
     private var editMarkersPill: some View {
         Button {
             let g = UIImpactFeedbackGenerator(style: .medium); g.impactOccurred()
-            onEditMarkers?()
+            showEditor = true
         } label: {
             HStack(spacing: 8) {
-                Image(systemName: "pencil.and.outline")
+                Image(systemName: "pencil.and.ruler.fill")
                     .font(.system(size: 15, weight: .heavy))
-                Text("Edit Markers")
+                Text("Edit Detection")
                     .font(.system(size: Theme.TypeRamp.meta, weight: .heavy))
             }
             .foregroundStyle(.white)
@@ -236,7 +265,7 @@ struct PhotoDamageOverlayView: View {
 
     private func markersLayer(in rect: CGRect) -> some View {
         ZStack {
-            ForEach(photo.damageMarkers) { marker in
+            ForEach(activeMarkers) { marker in
                 MarkerPin(marker: marker,
                           pulsing: pulse,
                           isSelected: selectedMarker?.id == marker.id) {
@@ -507,8 +536,8 @@ struct PhotoDamageOverlayView: View {
                                  value: "\(Int(photo.elevationFeet)) ft")
                         infoStat(icon: "scope",
                                  tint: Theme.crimson,
-                                 label: "AI Markers",
-                                 value: "\(photo.damageMarkers.count)")
+                                 label: "Markers",
+                                 value: "\(activeMarkers.count)")
                         infoStat(icon: "square.dashed.inset.filled",
                                  tint: Theme.ember,
                                  label: "Test Squares",

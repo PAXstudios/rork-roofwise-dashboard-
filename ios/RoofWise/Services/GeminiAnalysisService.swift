@@ -16,6 +16,9 @@ struct GeminiAnalysisService {
     private let toolkitURL: String
     private let secret: String
     private static let model = "google/gemini-2.5-flash"
+    /// Public mirror of the active model id, stamped into `damage_feedback.ai_model_version`
+    /// so each correction records which model produced the prediction.
+    static let modelVersion = "google/gemini-2.5-flash"
 
     // MARK: - Locked damage taxonomy (13 pitch-deck categories)
 

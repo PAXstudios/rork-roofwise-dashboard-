@@ -61,10 +61,12 @@ final class CorrectionsStore {
     func append(_ correction: Correction) -> Correction {
         items.insert(correction, at: 0)
         persist()
-        // Surface to learning engine + local outbox + cloud feedback tables.
+        // Surface to learning engine + local JSONL outbox. Structured cloud
+        // `damage_feedback` rows are written separately by `DamageFeedbackService`
+        // (from `EditDetectionView`), which holds the real photo id needed for the
+        // table's foreign key.
         LocalLearningEngine.shared.recomputeFromStore()
         CorrectionsSyncService.shared.enqueueOutbox(correction)
-        FeedbackSyncService.shared.enqueue(correction)
         return correction
     }
 

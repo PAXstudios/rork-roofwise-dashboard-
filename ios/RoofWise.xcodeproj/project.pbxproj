@@ -415,6 +415,8 @@
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "RoofWise uses background location to auto-detect drives and offer to log them as mileage — even when the app is closed.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "RoofWise uses your location to map storm activity, find nearby leads, and log door-knocking visits.";
 				INFOPLIST_KEY_NSMotionUsageDescription = "RoofWise uses motion sensors to measure roof pitch, detect slope orientation, and ensure safe inspections.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "RoofWise uses the microphone so you can dictate damage notes hands-free while inspecting a roof.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "RoofWise transcribes your spoken damage notes into text so you can annotate detections without typing.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = (
@@ -465,6 +467,8 @@
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "RoofWise uses background location to auto-detect drives and offer to log them as mileage — even when the app is closed.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "RoofWise uses your location to map storm activity, find nearby leads, and log door-knocking visits.";
 				INFOPLIST_KEY_NSMotionUsageDescription = "RoofWise uses motion sensors to measure roof pitch, detect slope orientation, and ensure safe inspections.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "RoofWise uses the microphone so you can dictate damage notes hands-free while inspecting a roof.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "RoofWise transcribes your spoken damage notes into text so you can annotate detections without typing.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_BGTaskSchedulerPermittedIdentifiers = (
