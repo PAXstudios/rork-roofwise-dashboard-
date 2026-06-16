@@ -61,9 +61,10 @@ final class CorrectionsStore {
     func append(_ correction: Correction) -> Correction {
         items.insert(correction, at: 0)
         persist()
-        // Surface to learning engine + outbox.
+        // Surface to learning engine + local outbox + cloud feedback tables.
         LocalLearningEngine.shared.recomputeFromStore()
         CorrectionsSyncService.shared.enqueueOutbox(correction)
+        FeedbackSyncService.shared.enqueue(correction)
         return correction
     }
 
