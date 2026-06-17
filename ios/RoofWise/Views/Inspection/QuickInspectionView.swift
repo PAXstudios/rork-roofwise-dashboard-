@@ -35,6 +35,7 @@ struct QuickInspectionView: View {
     @State private var zoomLevel: CGFloat = 1.0
     @State private var capturedPhotos: [CapturedPhoto] = []
     @State private var previewPhoto: CapturedPhoto?
+    @State private var showDonePrompt = false
     // In-the-moment AI marker correction launched from PhotoDamageOverlayView.
     // Guided inspection mode
     @State private var isGuidedMode: Bool = false
@@ -210,6 +211,15 @@ struct QuickInspectionView: View {
                             customer: customerStore.activeCustomer) {
                 claimPacket = nil
             }
+        }
+        .confirmationDialog("Finish Inspection",
+                            isPresented: $showDonePrompt,
+                            titleVisibility: .visible) {
+            Button("Run RoofWise AI Analysis") { finishSession() }
+            Button("Save Without Analyzing") { saveWithoutAnalysis() }
+            Button("Keep Shooting", role: .cancel) { }
+        } message: {
+            Text("Analyze \(capturedPhotos.count) photo\(capturedPhotos.count == 1 ? "" : "s") for hail, wind & wear now with RoofWise Vision, or save them to the profile and analyze later.")
         }
         .onAppear {
             motion.start()
@@ -806,7 +816,8 @@ struct QuickInspectionView: View {
                 // Done / finalize
                 Button {
                     if !capturedPhotos.isEmpty {
-                        finishSession()
+                        let g = UIImpactFeedbackGenerator(style: .medium); g.impactOccurred()
+                        showDonePrompt = true
                     }
                 } label: {
                     VStack(spacing: 4) {
@@ -993,6 +1004,14 @@ struct QuickInspectionView: View {
         let gen = UIImpactFeedbackGenerator(style: .heavy); gen.impactOccurred()
         withAnimation(.easeInOut(duration: 0.4)) { step = .scanning }
         runScan()
+    }
+
+    /// Done → "Save Without Analyzing". Photos were already attached to the active
+    /// customer as they were captured, so we just confirm and return to the
+    /// profile. The inspector can run RoofWise Vision later from the profile.
+    private func saveWithoutAnalysis() {
+        let g = UINotificationFeedbackGenerator(); g.notificationOccurred(.success)
+        dismiss()
     }
 
     private func runScan() {

@@ -185,6 +185,36 @@ struct PhotoDamageOverlayView: View {
 
             Spacer()
 
+            if onRetry != nil {
+                Button {
+                    guard let onRetry, !isRetrying else { return }
+                    let g = UIImpactFeedbackGenerator(style: .medium); g.impactOccurred()
+                    isRetrying = true
+                    Task {
+                        await onRetry()
+                        isRetrying = false
+                    }
+                } label: {
+                    Group {
+                        if isRetrying {
+                            ProgressView()
+                                .progressViewStyle(.circular)
+                                .tint(.white)
+                                .scaleEffect(0.8)
+                        } else {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.system(size: 13, weight: .heavy))
+                                .foregroundStyle(.white)
+                        }
+                    }
+                    .frame(width: 38, height: 38)
+                    .background(.black.opacity(0.55), in: .circle)
+                    .overlay(Circle().stroke(.white.opacity(0.15), lineWidth: 0.5))
+                }
+                .buttonStyle(.plain)
+                .disabled(isRetrying)
+            }
+
             Button {
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
                     showAllMarkers.toggle()

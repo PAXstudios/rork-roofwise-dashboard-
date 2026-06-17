@@ -18,13 +18,6 @@ enum InspectionWizardStep: Int, CaseIterable, Identifiable {
     }
 }
 
-// MARK: - Carrier list
-
-private let kCarriers: [String] = [
-    "State Farm", "Allstate", "USAA", "Farmers",
-    "Liberty Mutual", "Travelers", "Nationwide", "Other"
-]
-
 // MARK: - Root wizard
 
 struct NewJobWizard: View {
@@ -257,7 +250,15 @@ struct NewJobWizard: View {
         let saved = store.add(draft)
         // Mirror the inspection into a Customer so the job is visible and
         // reachable from the Leads list and the customer profile.
-        customerStore.upsertFromInspection(saved, phone: phone, email: email)
+        let customerID = customerStore.upsertFromInspection(saved, phone: phone, email: email)
+        // Kick off the background roof measurement + repair estimate so the
+        // numbers are ready by the time the inspector opens the profile.
+        RoofEstimateService.computeInBackground(
+            customerID: customerID,
+            address: saved.job.propertyAddress,
+            material: saved.roof.primaryMaterial,
+            store: customerStore
+        )
         UINotificationFeedbackGenerator().notificationOccurred(.success)
         onCreated(saved.job.reportId)
         createdReportId = saved.job.reportId
@@ -629,10 +630,7 @@ private struct InsuranceStep: View {
             subtitle: "Carrier and claim numbers for the report.",
             icon: "shield.fill"
         ) {
-            StringChipGrid(label: "Carrier",
-                           options: kCarriers,
-                           selection: $draft.job.carrierName,
-                           minimum: 150)
+            CarrierPickerField(label: "Carrier", carrier: $draft.job.carrierName)
             MicField(label: "Policy #",
                      text: $draft.job.policyNumber,
                      placeholder: "POL-1234567")

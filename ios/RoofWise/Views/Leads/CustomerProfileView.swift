@@ -20,6 +20,8 @@ struct CustomerProfileView: View {
     @State private var showCoach = false
     @State private var coachTipLesson: Lesson? = nil
     @State private var openReportId: String? = nil
+    @State private var showCamera = false
+    @State private var analysis = PhotoAnalysisService.shared
 
     private var customer: Customer {
         store.customers.first { $0.id == customerID }
@@ -130,6 +132,9 @@ struct CustomerProfileView: View {
             )
             .presentationDetents([.large])
             .presentationDragIndicator(.visible)
+        }
+        .fullScreenCover(isPresented: $showCamera) {
+            QuickInspectionView()
         }
         .fullScreenCover(item: $previewPhoto) { photo in
             PhotoDamageOverlayView(
@@ -373,6 +378,20 @@ struct CustomerProfileView: View {
 
     // MARK: Roof Measurement & Estimate
 
+    private var roofMeasureSubtitle: String {
+        if customer.isEstimating { return "Measuring roof & pricing repair…" }
+        if let sq = customer.roofSquares {
+            let faces = customer.roofSegments ?? 0
+            let facePart = faces > 0 ? " · \(faces) face\(faces == 1 ? "" : "s")" : ""
+            if let lo = customer.estimateLow, let hi = customer.estimateHigh {
+                return String(format: "~%.0f sq%@ · Est ", sq, facePart)
+                    + RoofEstimateService.compactRange(low: lo, high: hi)
+            }
+            return String(format: "~%.0f sq%@ measured", sq, facePart)
+        }
+        return "Satellite squares & slope · auto cost"
+    }
+
     private var roofMeasureButton: some View {
         Button {
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
@@ -391,15 +410,21 @@ struct CustomerProfileView: View {
                     Text("Measure Roof & Estimate")
                         .font(.system(size: 14, weight: .heavy))
                         .foregroundStyle(.white)
-                    Text("Satellite squares & slope · auto cost")
+                    Text(roofMeasureSubtitle)
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.85))
                         .lineLimit(1)
                 }
                 Spacer()
-                Image(systemName: "arrow.right")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(.white)
+                if customer.isEstimating {
+                    ProgressView()
+                        .progressViewStyle(.circular)
+                        .tint(.white)
+                } else {
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(.white)
+                }
             }
             .padding(14)
             .background(
@@ -718,24 +743,158 @@ struct CustomerProfileView: View {
                         .padding(.horizontal, 7).padding(.vertical, 3)
                         .background(Theme.crimson.opacity(0.10), in: .capsule)
                     )) {
-            if customer.photos.isEmpty {
-                emptyState(icon: "camera.viewfinder",
-                           title: "No photos yet",
-                           subtitle: "Photos taken during Quick Inspection auto-attach here.")
-            } else {
-                VStack(spacing: 10) {
-                    ForEach(slopeGroups, id: \.slope) { group in
-                        Button {
-                            let g = UIImpactFeedbackGenerator(style: .light); g.impactOccurred()
-                            slopeBeingViewed = group.slope
-                        } label: {
-                            slopeDamageCard(slope: group.slope, photos: group.photos)
+            VStack(spacing: 12) {
+                photoActionsRow
+                if customer.photos.isEmpty {
+                    addPhotosEmptyState
+                } else {
+                    VStack(spacing: 10) {
+                        ForEach(slopeGroups, id: \.slope) { group in
+                            Button {
+                                let g = UIImpactFeedbackGenerator(style: .light); g.impactOccurred()
+                                slopeBeingViewed = group.slope
+                            } label: {
+                                slopeDamageCard(slope: group.slope, photos: group.photos)
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
                     }
                 }
             }
         }
+    }
+
+    // MARK: Photo actions (capture + mass analyze)
+
+    @ViewBuilder
+    private var photoActionsRow: some View {
+        let unanalyzed = analysis.unanalyzedCount(customer)
+        let job = analysis.job(for: customer.id)
+        VStack(spacing: 10) {
+            HStack(spacing: 10) {
+                Button { startCapture() } label: {
+                    HStack(spacing: 7) {
+                        Image(systemName: "camera.fill")
+                            .font(.system(size: 14, weight: .heavy))
+                        Text("Take Photos")
+                            .font(.system(size: 13, weight: .heavy))
+                    }
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity, minHeight: 52)
+                    .background(Theme.ember, in: .rect(cornerRadius: 14))
+                }
+                .buttonStyle(.plain)
+
+                if !customer.photos.isEmpty {
+                    Button {
+                        startMassAnalysis(reanalyzeAll: unanalyzed == 0)
+                    } label: {
+                        HStack(spacing: 7) {
+                            Image(systemName: job != nil ? "hourglass" : "sparkles")
+                                .font(.system(size: 14, weight: .heavy))
+                            Text(analyzeButtonLabel(unanalyzed: unanalyzed, job: job))
+                                .font(.system(size: 13, weight: .heavy))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
+                        }
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity, minHeight: 52)
+                        .background(job != nil ? AnyShapeStyle(Theme.inkFaint) : AnyShapeStyle(Theme.inkGradient),
+                                    in: .rect(cornerRadius: 14))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(job != nil)
+                }
+            }
+            if let job {
+                massAnalysisProgress(job)
+            } else if unanalyzed > 0 {
+                HStack(spacing: 6) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 10, weight: .heavy))
+                        .foregroundStyle(Theme.ember)
+                    Text("\(unanalyzed) photo\(unanalyzed == 1 ? "" : "s") need analysis · \(analysis.estimateLabel(forPhotoCount: unanalyzed)) with RoofWise Vision")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Theme.inkSoft)
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+    }
+
+    private func analyzeButtonLabel(unanalyzed: Int, job: PhotoAnalysisService.AnalysisJob?) -> String {
+        if let job { return "Analyzing \(job.completed)/\(job.total)" }
+        if unanalyzed > 0 { return "Analyze \(unanalyzed)" }
+        return "Re-analyze All"
+    }
+
+    private func massAnalysisProgress(_ job: PhotoAnalysisService.AnalysisJob) -> some View {
+        let frac = job.total > 0 ? Double(job.completed) / Double(job.total) : 0
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Text("Analyzing in background · \(job.completed) of \(job.total)")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(Theme.ink)
+                Spacer(minLength: 0)
+                Text("Keep working — we'll notify you")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.inkFaint)
+                    .lineLimit(1)
+            }
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Theme.hairline)
+                    Capsule().fill(Theme.ember)
+                        .frame(width: max(8, geo.size.width * frac))
+                }
+            }
+            .frame(height: 6)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity)
+        .background(Theme.canvas, in: .rect(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.hairline, lineWidth: 0.6))
+    }
+
+    private var addPhotosEmptyState: some View {
+        Button { startCapture() } label: {
+            VStack(spacing: 10) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 16).fill(Theme.emberSoft)
+                    Image(systemName: "camera.viewfinder")
+                        .font(.system(size: 26, weight: .semibold))
+                        .foregroundStyle(Theme.ember)
+                }
+                .frame(width: 64, height: 64)
+                Text("Tap to add damage photos")
+                    .font(.system(size: 14, weight: .heavy))
+                    .foregroundStyle(Theme.ink)
+                Text("Capture with the camera or import from your library. RoofWise Vision analyzes each one for hail, wind, and wear.")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Theme.inkSoft)
+                    .multilineTextAlignment(.center)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 26)
+            .padding(.horizontal, 14)
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [6, 5]))
+                    .foregroundStyle(Theme.ember.opacity(0.45))
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func startCapture() {
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        store.setActive(customer.id)
+        showCamera = true
+    }
+
+    private func startMassAnalysis(reanalyzeAll: Bool) {
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        analysis.analyzeAll(customerID: customer.id, store: store, reanalyzeAll: reanalyzeAll)
     }
 
     private func slopeDamageCard(slope: SlopeType, photos: [CapturedPhoto]) -> some View {

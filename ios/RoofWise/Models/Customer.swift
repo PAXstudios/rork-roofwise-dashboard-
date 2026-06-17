@@ -99,6 +99,19 @@ struct Customer: Identifiable {
     var stormTagged: Bool = false
     var estimatedValue: String = ""
 
+    // Auto roof measurement + repair estimate (computed in the background when a
+    // job is created from an address). Measurement comes from Google Solar when
+    // a live key is configured, otherwise a deterministic estimate.
+    var roofSquares: Double? = nil
+    var roofSegments: Int? = nil
+    var roofMeasurementSource: String? = nil   // "Google Solar" / "Estimate"
+    var estimateLow: Double? = nil
+    var estimateHigh: Double? = nil
+    var estimatePerSquare: Double? = nil
+    var estimateMaterialName: String? = nil
+    /// True while the background measurement + estimate is still running.
+    var isEstimating: Bool = false
+
     /// Links this customer to its HAAG `Inspection` (`InspectionStore`) by
     /// report id, so the customer profile can open the inspection report and
     /// jobs created in the New Job wizard surface in the Leads list.

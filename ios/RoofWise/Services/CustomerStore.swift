@@ -115,6 +115,31 @@ final class CustomerStore {
         customers[i].stage = stage
     }
 
+    // MARK: - Roof measurement + repair estimate (background)
+
+    func setEstimating(_ id: UUID, _ value: Bool) {
+        guard let i = customers.firstIndex(where: { $0.id == id }) else { return }
+        customers[i].isEstimating = value
+    }
+
+    /// Persist a background Google Solar measurement + cost estimate onto the
+    /// customer. Also stamps a compact `estimatedValue` string used by the lead
+    /// card + profile header capsules.
+    func applyRoofEstimate(customerID: UUID,
+                           measurement: RoofMeasurements,
+                           estimate: CostEstimate) {
+        guard let i = customers.firstIndex(where: { $0.id == customerID }) else { return }
+        customers[i].roofSquares = measurement.totalAreaSquares
+        customers[i].roofSegments = measurement.segments.count
+        customers[i].roofMeasurementSource = measurement.source
+        customers[i].estimateLow = estimate.low
+        customers[i].estimateHigh = estimate.high
+        customers[i].estimatePerSquare = estimate.pricePerSquare
+        customers[i].estimateMaterialName = estimate.input.material.displayName
+        customers[i].estimatedValue = RoofEstimateService.compactRange(low: estimate.low, high: estimate.high)
+        customers[i].isEstimating = false
+    }
+
     func appendPhotos(_ photos: [CapturedPhoto], to id: UUID) {
         guard !photos.isEmpty, let i = customers.firstIndex(where: { $0.id == id }) else { return }
         customers[i].photos.append(contentsOf: photos)
@@ -122,6 +147,15 @@ final class CustomerStore {
             customers[i].stage = .inspectionComplete
         }
         Task { await PhotoSyncService.shared.sync(photos, for: id) }
+    }
+
+    /// Replace a single photo (matched by id) in place — used by the background
+    /// mass-analysis service so the profile reflects each photo as it lands.
+    func replacePhoto(_ photo: CapturedPhoto, for id: UUID) {
+        guard let i = customers.firstIndex(where: { $0.id == id }),
+              let pIdx = customers[i].photos.firstIndex(where: { $0.id == photo.id }) else { return }
+        customers[i].photos[pIdx] = photo
+        Task { await PhotoSyncService.shared.sync([photo], for: id) }
     }
 
     func updateAnalysis(for id: UUID, photos: [CapturedPhoto], findings: [InspectionFinding]) {

@@ -214,7 +214,7 @@ private struct InspectionNewCustomerSheet: View {
                     field("Address *", text: $address)
                     field("Phone", text: $phone, keyboard: .phonePad)
                     field("Email", text: $email, keyboard: .emailAddress)
-                    field("Insurance Company", text: $insurance)
+                    CarrierPickerField(label: "Insurance Company", carrier: $insurance)
                     field("Policy Number", text: $policy)
 
                     VStack(alignment: .leading, spacing: 6) {
