@@ -231,10 +231,20 @@ struct DetectionPipelineService {
         // confirm/reject each one against the pixels.
         var lines: [String] = []
         for (i, d) in candidates.enumerated() {
-            let box = d.box2d.map { "[\($0.map(String.init).joined(separator: ","))]" } ?? "null"
-            lines.append("{\"index\":\(i),\"damage_type\":\"\(d.damageType.rawValue)\",\"box_2d\":\(box),\"severity\":\"\(d.severity.rawValue)\",\"evidence\":\"\(Self.escape(d.evidence))\"}")
+            let box: String
+            if let b = d.box2d {
+                let parts: [String] = b.map { "\($0)" }
+                box = "[" + parts.joined(separator: ",") + "]"
+            } else {
+                box = "null"
+            }
+            let type = d.damageType.rawValue
+            let sev = d.severity.rawValue
+            let ev = Self.escape(d.evidence)
+            let line = "{\"index\":\(i),\"damage_type\":\"\(type)\",\"box_2d\":\(box),\"severity\":\"\(sev)\",\"evidence\":\"\(ev)\"}"
+            lines.append(line)
         }
-        let candidateJSON = "[\(lines.joined(separator: ","))]"
+        let candidateJSON = "[" + lines.joined(separator: ",") + "]"
 
         let prompt = """
         You are a senior QA reviewer auditing another inspector's roof-damage detections on a \(material.displayName) roof.
