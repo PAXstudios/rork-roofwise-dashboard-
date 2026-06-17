@@ -42,6 +42,18 @@ final class MileageAutoTrackService: NSObject {
     private let minSpeedMph: Double = 5
     private let stopGapSeconds: TimeInterval = 5 * 60
 
+    /// True only when the built app actually declares the `location` background mode.
+    /// Setting `allowsBackgroundLocationUpdates = true` without it throws an
+    /// uncatchable `NSInternalInconsistencyException` and crashes on a real device
+    /// (the simulator is more lenient). Gating on the runtime value makes the
+    /// activation path crash-proof regardless of how the Info.plist is built.
+    private var backgroundLocationModeDeclared: Bool {
+        guard let modes = Bundle.main.object(forInfoDictionaryKey: "UIBackgroundModes") as? [String] else {
+            return false
+        }
+        return modes.contains("location")
+    }
+
     // MARK: Init
 
     override init() {
@@ -105,13 +117,28 @@ final class MileageAutoTrackService: NSObject {
     private func startMonitoring() {
         refreshAuth()
         registerCategory()
+
+        print("[AutoTracking] activating, auth=\(manager.authorizationStatus.rawValue), slcAvailable=\(CLLocationManager.significantLocationChangeMonitoringAvailable()), bgLocationMode=\(backgroundLocationModeDeclared)")
+
         // Only opt-in to background delivery when the user has enabled auto-tracking AND
         // granted Always authorization. SLC alone wakes the app from suspended state, but
         // `allowsBackgroundLocationUpdates` is required to keep receiving updates while
         // backgrounded if we ever escalate to standard updates.
-        if manager.authorizationStatus == .authorizedAlways {
+        //
+        // CRITICAL: this property MUST only be set true when the `location` background
+        // mode is actually declared, otherwise iOS throws and crashes on a real device.
+        if manager.authorizationStatus == .authorizedAlways, backgroundLocationModeDeclared {
             manager.allowsBackgroundLocationUpdates = true
             manager.showsBackgroundLocationIndicator = true
+        }
+
+        // Significant-location-change monitoring isn't available on every device.
+        // Calling it where unsupported is a no-op for delivery, but we guard anyway
+        // and surface a clear message rather than silently doing nothing.
+        guard CLLocationManager.significantLocationChangeMonitoringAvailable() else {
+            lastError = "Background drive detection isn't available on this device."
+            print("[AutoTracking] SLC monitoring unavailable on this device")
+            return
         }
         manager.startMonitoringSignificantLocationChanges()
     }
@@ -286,7 +313,9 @@ extension MileageAutoTrackService: CLLocationManagerDelegate {
         Task { @MainActor in
             self.refreshAuth()
             // Re-apply background flag now that auth may have escalated to Always.
-            if self.isEnabled, manager.authorizationStatus == .authorizedAlways {
+            // Guard on the declared background mode — setting this without the
+            // `location` UIBackgroundMode crashes on a real device.
+            if self.isEnabled, manager.authorizationStatus == .authorizedAlways, self.backgroundLocationModeDeclared {
                 manager.allowsBackgroundLocationUpdates = true
                 manager.showsBackgroundLocationIndicator = true
             } else if !self.isEnabled {
