@@ -2,15 +2,28 @@ import SwiftUI
 import CoreLocation
 
 struct WeatherTile: View {
-    var coord: CLLocationCoordinate2D = .planoTX
-    var locationLabel: String = "Plano, TX"
+    /// Optional explicit coordinate. When nil, the tile follows the user's live
+    /// location (falling back to Plano, TX until the first fix arrives).
+    var coord: CLLocationCoordinate2D? = nil
+    var locationLabel: String? = nil
 
     @State private var snapshot: WeatherSnapshot? = nil
     @State private var loading: Bool = true
     @State private var loadError: Bool = false
     @State private var showSheet: Bool = false
+    @State private var location = LocationService.shared
 
     private let service: WeatherServicing = WeatherServiceFactory.shared
+
+    /// Coordinate actually used for the request: explicit prop > live location > Plano default.
+    private var activeCoord: CLLocationCoordinate2D {
+        coord ?? location.coordinate ?? .planoTX
+    }
+
+    /// Label shown under the temperature.
+    private var activeLabel: String {
+        locationLabel ?? location.placeLabel ?? "Locating…"
+    }
 
     var body: some View {
         Button {
@@ -23,9 +36,15 @@ struct WeatherTile: View {
         }
         .buttonStyle(.plain)
         .padding(.horizontal, 20)
-        .task { await load() }
+        .task {
+            location.start()
+            await load()
+        }
+        .onChange(of: location.coordinate?.latitude) { _, _ in
+            Task { await load() }
+        }
         .sheet(isPresented: $showSheet) {
-            WeatherDetailSheet(coord: coord, locationLabel: locationLabel)
+            WeatherDetailSheet(coord: activeCoord, locationLabel: activeLabel)
         }
     }
 
@@ -44,7 +63,7 @@ struct WeatherTile: View {
                             .foregroundStyle(Theme.ink)
                             .baselineOffset(8)
                     }
-                    Text("\(locationLabel) · \(APIKeys.modeLabel)")
+                    Text("\(activeLabel) · \(APIKeys.modeLabel)")
                         .font(.system(size: Theme.TypeRamp.caption, weight: .heavy))
                         .tracking(0.6)
                         .foregroundStyle(Theme.inkSoft)
@@ -112,7 +131,7 @@ struct WeatherTile: View {
         loading = true
         loadError = false
         do {
-            let snap = try await service.currentConditions(at: coord)
+            let snap = try await service.currentConditions(at: activeCoord)
             await MainActor.run {
                 self.snapshot = snap
                 self.loading = false

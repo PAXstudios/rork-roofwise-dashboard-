@@ -28,8 +28,10 @@ struct DashboardView: View {
                         StormPushPermissionBanner()
                             .padding(.horizontal, 18)
                     }
-                    KPIStrip(onQuickInspection: onQuickInspection)
+                    WeatherTile()
                         .staggeredAppear(0, animated: didStagger == false)
+                    KPIStrip(onQuickInspection: onQuickInspection)
+                        .staggeredAppear(1, animated: didStagger == false)
                     if APIKeys.useLiveARAnalysis {
                         LiveARInspectCTA(onTap: { showLiveAR = true })
                             .padding(.horizontal, 18)
@@ -48,8 +50,6 @@ struct DashboardView: View {
                         }
                     )
                     .staggeredAppear(3, animated: didStagger == false)
-                    WeatherTile()
-                        .staggeredAppear(4, animated: didStagger == false)
                     RecentJobsHomeSection(
                         onSeeAll: onOpenLeads,
                         onOpenJob: { _ in onOpenLeads() }
