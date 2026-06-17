@@ -26,6 +26,11 @@ struct JobDetailView: View {
     @State private var showHomeownerProposal = false
     @State private var pendingProposal: Proposal? = nil
 
+    // Slope photos + on-demand AI analysis
+    @State private var slopePhotosTarget: SlopeType? = nil
+    @State private var previewPhoto: CapturedPhoto? = nil
+    @State private var showSlopePicker = false
+
     let reportId: String
 
     private var inspection: Inspection? {
@@ -76,6 +81,7 @@ struct JobDetailView: View {
                             slopesList(insp)
                         }
                         addSlopeButton(label: insp.slopes.isEmpty ? "Add slope" : "Add another slope")
+                        photosCard(insp)
                         reviewAIButton
                         if !insp.slopes.isEmpty {
                             signReportCard(insp)
@@ -139,6 +145,72 @@ struct JobDetailView: View {
         }
         .sheet(isPresented: $showActivity) {
             ActivityFeedSheet(reportId: reportId)
+        }
+        .sheet(item: $slopePhotosTarget) { slope in
+            SlopePhotosSheet(
+                slope: slope,
+                photos: (linkedCustomer?.photos ?? []).filter { $0.slope == slope },
+                onSelect: { picked in
+                    slopePhotosTarget = nil
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                        previewPhoto = picked
+                    }
+                },
+                onClose: { slopePhotosTarget = nil },
+                onAddPhotos: { newPhotos in persistAddedPhotos(newPhotos) }
+            )
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showSlopePicker) {
+            SlopeTypePickerSheet { picked in
+                showSlopePicker = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                    slopePhotosTarget = picked
+                }
+            }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        }
+        .fullScreenCover(item: $previewPhoto) { photo in
+            PhotoDamageOverlayView(
+                photo: photo,
+                onClose: { previewPhoto = nil },
+                onDelete: {
+                    if let cid = linkedCustomer?.id,
+                       var c = customerStore.customers.first(where: { $0.id == cid }) {
+                        c.photos.removeAll { $0.id == photo.id }
+                        customerStore.update(c)
+                    }
+                    previewPhoto = nil
+                },
+                onRetry: {
+                    let result = await GeminiAnalysisService.analyzeFull(
+                        image: photo.image,
+                        slope: photo.slope,
+                        mode: photo.captureMode,
+                        squaresCovered: photo.squaresCovered
+                    )
+                    guard let cid = linkedCustomer?.id,
+                          var c = customerStore.customers.first(where: { $0.id == cid }),
+                          let idx = c.photos.firstIndex(where: { $0.id == photo.id }) else { return }
+                    c.photos[idx].findings = result.findings
+                    c.photos[idx].damageMarkers = result.markers
+                    c.photos[idx].analyzed = !result.failed
+                    customerStore.update(c)
+                    previewPhoto = c.photos[idx]
+                    UINotificationFeedbackGenerator().notificationOccurred(result.failed ? .error : .success)
+                },
+                inspectionId: reportId,
+                onApplyMarkers: { newMarkers in
+                    guard let cid = linkedCustomer?.id,
+                          var c = customerStore.customers.first(where: { $0.id == cid }),
+                          let idx = c.photos.firstIndex(where: { $0.id == photo.id }) else { return }
+                    c.photos[idx].damageMarkers = newMarkers
+                    customerStore.update(c)
+                    if previewPhoto?.id == photo.id { previewPhoto = c.photos[idx] }
+                }
+            )
         }
         .sheet(isPresented: $showProposalEditor) {
             if let p = pendingProposal, let insp = inspection {
@@ -496,6 +568,145 @@ struct JobDetailView: View {
             .shadow(color: Theme.ink.opacity(0.28), radius: 14, x: 0, y: 6)
         }
         .buttonStyle(.plain)
+    }
+
+    // MARK: Photos & on-demand AI analysis
+
+    private var linkedCustomer: Customer? {
+        customerStore.customers.first { $0.linkedReportId == reportId }
+    }
+
+    private var photoSlopeGroups: [(slope: SlopeType, photos: [CapturedPhoto])] {
+        let photos = linkedCustomer?.photos ?? []
+        let dict = Dictionary(grouping: photos, by: \.slope)
+        return SlopeType.allCases.compactMap { s in
+            guard let items = dict[s], !items.isEmpty else { return nil }
+            return (s, items.sorted { $0.timestamp > $1.timestamp })
+        }
+    }
+
+    private func persistAddedPhotos(_ photos: [CapturedPhoto]) {
+        guard !photos.isEmpty, let insp = inspection else { return }
+        let cid: UUID
+        if let c = linkedCustomer {
+            cid = c.id
+        } else {
+            cid = customerStore.upsertFromInspection(insp, makeActive: false)
+        }
+        customerStore.appendPhotos(photos, to: cid)
+    }
+
+    private func photosCard(_ insp: Inspection) -> some View {
+        let groups = photoSlopeGroups
+        let totalPhotos = groups.reduce(0) { $0 + $1.photos.count }
+        let totalMarkers = (linkedCustomer?.photos ?? []).reduce(0) { $0 + $1.damageMarkers.count }
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                FieldLabelInline(text: "Photos & AI Analysis")
+                Spacer()
+                if totalPhotos > 0 {
+                    HStack(spacing: 4) {
+                        Image(systemName: "scope")
+                            .font(.system(size: 9, weight: .heavy))
+                            .foregroundStyle(Theme.crimson)
+                        Text("\(totalMarkers)")
+                            .font(.system(size: 11, weight: .heavy))
+                            .foregroundStyle(Theme.ink)
+                            .monospacedDigit()
+                    }
+                    .padding(.horizontal, 7).padding(.vertical, 3)
+                    .background(Theme.crimson.opacity(0.10), in: .capsule)
+                }
+            }
+            if groups.isEmpty {
+                Text("No photos attached yet. Add slope photos and run AI damage analysis — they flow straight into the Haag report.")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(Theme.inkSoft)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                VStack(spacing: 10) {
+                    ForEach(groups, id: \.slope) { group in
+                        Button {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            slopePhotosTarget = group.slope
+                        } label: {
+                            photoSlopeRow(group.slope, group.photos)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            Button {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                showSlopePicker = true
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "plus.viewfinder")
+                        .font(.system(size: 17, weight: .heavy))
+                    Text("Add Photos & Analyze")
+                        .font(.system(size: 16, weight: .heavy))
+                }
+                .foregroundStyle(Theme.ember)
+                .frame(maxWidth: .infinity, minHeight: 56)
+                .background(Theme.emberSoft, in: .rect(cornerRadius: 14))
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cardStyle(padding: 20, radius: 18)
+    }
+
+    private func photoSlopeRow(_ slope: SlopeType, _ photos: [CapturedPhoto]) -> some View {
+        let markers = photos.reduce(0) { $0 + $1.damageMarkers.count }
+        let worst: FindingSeverity = photos.map(\.worstSeverity)
+            .max(by: { $0.rank < $1.rank }) ?? .none
+        return HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 12).fill(Theme.emberSoft)
+                Image(systemName: slope.icon)
+                    .font(.system(size: 15, weight: .heavy))
+                    .foregroundStyle(Theme.ember)
+            }
+            .frame(width: 48, height: 48)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(slope.shortName)
+                    .font(.system(size: 15, weight: .heavy))
+                    .foregroundStyle(Theme.ink)
+                HStack(spacing: 6) {
+                    Text("\(photos.count) photo\(photos.count == 1 ? "" : "s")")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Theme.inkSoft)
+                    if markers > 0 {
+                        Text("\u{00B7}")
+                            .font(.system(size: 12, weight: .heavy))
+                            .foregroundStyle(Theme.inkFaint)
+                        HStack(spacing: 3) {
+                            Image(systemName: "scope")
+                                .font(.system(size: 9, weight: .heavy))
+                            Text("\(markers) marker\(markers == 1 ? "" : "s")")
+                                .font(.system(size: 12, weight: .heavy))
+                        }
+                        .foregroundStyle(Theme.crimson)
+                    }
+                }
+            }
+            Spacer(minLength: 0)
+            if worst != .none {
+                Text(worst.rawValue.uppercased())
+                    .font(.system(size: 9, weight: .heavy))
+                    .tracking(0.6)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 7).padding(.vertical, 3)
+                    .background(worst.color, in: .capsule)
+            }
+            Image(systemName: "chevron.right")
+                .font(.system(size: 12, weight: .heavy))
+                .foregroundStyle(Theme.inkFaint)
+        }
+        .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
+        .padding(12)
+        .background(Theme.canvas, in: .rect(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.hairline, lineWidth: 0.6))
     }
 
     private var generateReportBar: some View {
@@ -1088,6 +1299,65 @@ extension String: @retroactive Identifiable {
 private struct IdentifiableURL: Identifiable {
     let url: URL
     var id: String { url.absoluteString }
+}
+
+// MARK: - Slope Type Picker
+
+/// Compact picker that lets the user choose which slope/face new photos belong
+/// to before importing + analyzing them from the inspection report.
+private struct SlopeTypePickerSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    var onPick: (SlopeType) -> Void
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 10) {
+                    ForEach(SlopeType.allCases) { slope in
+                        Button {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            onPick(slope)
+                        } label: {
+                            HStack(spacing: 12) {
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 12).fill(Theme.emberSoft)
+                                    Image(systemName: slope.icon)
+                                        .font(.system(size: 15, weight: .heavy))
+                                        .foregroundStyle(Theme.ember)
+                                }
+                                .frame(width: 48, height: 48)
+                                Text(slope.shortName)
+                                    .font(.system(size: 15, weight: .heavy))
+                                    .foregroundStyle(Theme.ink)
+                                Spacer(minLength: 0)
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 12, weight: .heavy))
+                                    .foregroundStyle(Theme.inkFaint)
+                            }
+                            .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
+                            .padding(12)
+                            .background(Theme.card, in: .rect(cornerRadius: 14))
+                            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.hairline, lineWidth: 0.6))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .padding(.bottom, 24)
+            }
+            .background(Theme.canvas)
+            .navigationTitle("Choose Slope")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Cancel") { dismiss() }
+                        .font(.system(size: 15, weight: .heavy))
+                        .foregroundStyle(Theme.ember)
+                }
+            }
+        }
+    }
 }
 
 // MARK: - PDF Preview Sheet

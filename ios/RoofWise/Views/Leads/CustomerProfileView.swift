@@ -109,7 +109,10 @@ struct CustomerProfileView: View {
                         previewPhoto = picked
                     }
                 },
-                onClose: { slopeBeingViewed = nil }
+                onClose: { slopeBeingViewed = nil },
+                onAddPhotos: { newPhotos in
+                    store.appendPhotos(newPhotos, to: customer.id)
+                }
             )
             .presentationDetents([.large])
             .presentationDragIndicator(.visible)

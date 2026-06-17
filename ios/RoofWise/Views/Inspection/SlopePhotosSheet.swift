@@ -1,4 +1,5 @@
 import SwiftUI
+import PhotosUI
 
 /// Bottom sheet that lists every photo taken on a single slope, each tappable
 /// to open the full damage-overlay viewer. Used from the inspection report and
@@ -9,6 +10,13 @@ struct SlopePhotosSheet: View {
     let photos: [CapturedPhoto]
     var onSelect: (CapturedPhoto) -> Void
     var onClose: () -> Void
+    /// When provided, an "Add Photos & Analyze" CTA appears at the bottom.
+    /// Imported photos are run through Gemini Vision, then handed back so the
+    /// caller can persist the analyzed `CapturedPhoto`s.
+    var onAddPhotos: (([CapturedPhoto]) -> Void)? = nil
+
+    @State private var pickerItems: [PhotosPickerItem] = []
+    @State private var isImporting = false
 
     private var totalMarkers: Int {
         photos.reduce(0) { $0 + $1.damageMarkers.count }
@@ -30,13 +38,22 @@ struct SlopePhotosSheet: View {
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: 16) {
                     headerCard
-                    photoGrid
+                    if photos.isEmpty {
+                        emptyPhotosHint
+                    } else {
+                        photoGrid
+                    }
                     Color.clear.frame(height: 24)
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
             }
             .background(Theme.canvas)
+            .safeAreaInset(edge: .bottom) { addPhotosBar }
+            .onChange(of: pickerItems) { _, newItems in
+                guard !newItems.isEmpty else { return }
+                importPhotos(newItems)
+            }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .principal) {
@@ -55,6 +72,93 @@ struct SlopePhotosSheet: View {
                         .foregroundStyle(Theme.ember)
                 }
             }
+        }
+    }
+
+    private var emptyPhotosHint: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "camera.viewfinder")
+                .font(.system(size: 26, weight: .semibold))
+                .foregroundStyle(Theme.inkFaint)
+            Text("No photos on this slope yet")
+                .font(.system(size: 14, weight: .heavy))
+                .foregroundStyle(Theme.ink)
+            Text("Add photos below and they'll be analyzed for hail, wind, and wear damage automatically.")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Theme.inkSoft)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 28)
+        .padding(.horizontal, 18)
+        .background(Theme.card, in: .rect(cornerRadius: 18))
+        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Theme.hairline, lineWidth: 0.6))
+    }
+
+    @ViewBuilder
+    private var addPhotosBar: some View {
+        if onAddPhotos != nil {
+            VStack(spacing: 0) {
+                Rectangle().fill(Theme.hairline).frame(height: 0.5)
+                PhotosPicker(selection: $pickerItems,
+                             maxSelectionCount: 10,
+                             matching: .images,
+                             photoLibrary: .shared()) {
+                    HStack(spacing: 8) {
+                        if isImporting {
+                            ProgressView()
+                                .progressViewStyle(.circular)
+                                .tint(.white)
+                            Text("Analyzing\u{2026}")
+                                .font(.system(size: 16, weight: .heavy))
+                        } else {
+                            Image(systemName: "plus.viewfinder")
+                                .font(.system(size: 17, weight: .heavy))
+                            Text("Add Photos & Analyze")
+                                .font(.system(size: 16, weight: .heavy))
+                        }
+                    }
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity, minHeight: 64)
+                    .background(Theme.inkGradient, in: .rect(cornerRadius: 16))
+                    .shadow(color: Theme.ink.opacity(0.22), radius: 12, y: 4)
+                }
+                .disabled(isImporting)
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 8)
+            }
+            .background(Theme.canvas)
+        }
+    }
+
+    private func importPhotos(_ items: [PhotosPickerItem]) {
+        guard let onAddPhotos else { pickerItems = []; return }
+        isImporting = true
+        let slope = slope
+        Task { @MainActor in
+            var analyzed: [CapturedPhoto] = []
+            for item in items {
+                guard let data = try? await item.loadTransferable(type: Data.self),
+                      let img = UIImage(data: data) else { continue }
+                var photo = CapturedPhoto(image: img, slope: slope,
+                                          pitchDegrees: 0, elevationFeet: 0,
+                                          captureMode: .square, squaresCovered: 1)
+                let result = await GeminiAnalysisService.analyzeFull(
+                    image: img, slope: slope, mode: .square, squaresCovered: 1)
+                photo.findings = result.findings
+                photo.damageMarkers = result.markers
+                photo.analyzed = !result.failed
+                analyzed.append(photo)
+            }
+            pickerItems = []
+            isImporting = false
+            guard !analyzed.isEmpty else {
+                UINotificationFeedbackGenerator().notificationOccurred(.error)
+                return
+            }
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            onAddPhotos(analyzed)
         }
     }
 
