@@ -138,6 +138,27 @@ struct InspectionMetadata {
     var deductible: Double? = nil
     var dayOfLoss: Date? = nil
     var customerNotes: String? = nil
+
+    /// Builds Decision Engine metadata from an `Inspection`, mapping the
+    /// Step 1.5c wizard fields. Anything the inspector skipped stays `nil` so
+    /// `makeInputJSON` records it in `_data_not_captured` rather than guessing.
+    static func from(_ insp: Inspection, stormHistory: [StormEvent] = []) -> InspectionMetadata {
+        InspectionMetadata(
+            roofAgeYears: insp.roof.estimatedAgeYears > 0 ? insp.roof.estimatedAgeYears : nil,
+            layers: insp.roofLayers ?? (insp.roof.layers > 0 ? insp.roof.layers : nil),
+            pitch: nil,
+            squareFootage: insp.roof.detectedAreaSquares.map { $0 * 100 },
+            brittleness: insp.brittlenessResult ?? .notTested,
+            isDiscontinued: insp.materialDiscontinued ?? false,
+            collateralChecklist: insp.collateral.observations,
+            stormHistory: stormHistory,
+            carrier: insp.job.carrierName.isEmpty ? nil : insp.job.carrierName,
+            policyType: insp.policyType?.rawValue,
+            deductible: insp.deductibleAmount.map { NSDecimalNumber(decimal: $0).doubleValue },
+            dayOfLoss: insp.dayOfLoss,
+            customerNotes: nil
+        )
+    }
 }
 
 /// Bundled output of the full Stage 4-6 pipeline for one inspection.

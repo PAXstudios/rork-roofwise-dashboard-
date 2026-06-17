@@ -9,6 +9,13 @@ nonisolated struct WeatherSnapshot: Hashable, Sendable {
     var windMph: Int
     var hailRiskPct: Int
     var updatedAt: Date
+    /// Peak wind gust in mph, when the provider reports it separately. Optional
+    /// (added for the Safety Engine) so existing call sites stay source-compatible.
+    var windGustMph: Int? = nil
+    /// Precipitation probability 0–100, when available.
+    var precipProbabilityPct: Int? = nil
+    /// Thunderstorm/lightning probability 0–100, when available.
+    var lightningProbabilityPct: Int? = nil
 
     static let placeholder = WeatherSnapshot(
         temperatureF: 72,
@@ -175,10 +182,9 @@ final class GoogleWeatherProvider: WeatherServicing, @unchecked Sendable {
             ?? Self.prettifyConditionType(dto.weatherCondition?.type)
             ?? "—"
         let windMph = Self.toMph(dto.wind?.speed?.value, unit: dto.wind?.speed?.unit)
-        let hailRisk = max(
-            dto.thunderstormProbability ?? 0,
-            dto.precipitation?.probability?.percent ?? 0
-        )
+        let precipPct = dto.precipitation?.probability?.percent ?? 0
+        let lightningPct = dto.thunderstormProbability ?? 0
+        let hailRisk = max(lightningPct, precipPct)
         let updated = Self.parseDate(dto.currentTime) ?? .now
 
         print("[WeatherService] Google Weather response: \(temp)°F, \(condition)")
@@ -188,7 +194,10 @@ final class GoogleWeatherProvider: WeatherServicing, @unchecked Sendable {
             condition: condition,
             windMph: windMph,
             hailRiskPct: min(100, max(0, hailRisk)),
-            updatedAt: updated
+            updatedAt: updated,
+            windGustMph: nil,
+            precipProbabilityPct: min(100, max(0, precipPct)),
+            lightningProbabilityPct: min(100, max(0, lightningPct))
         )
     }
 

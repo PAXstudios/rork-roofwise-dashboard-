@@ -31,6 +31,13 @@ struct JobDetailView: View {
     @State private var previewPhoto: CapturedPhoto? = nil
     @State private var showSlopePicker = false
 
+    // RoofWise Safety Engine (roof-walk go/no-go)
+    @State private var safetyStore = SafetyAssessmentStore.shared
+    @State private var safetyAssessment: SafetyAssessment? = nil
+    @State private var safetyLoading = false
+    @State private var showSafetySheet = false
+    @State private var showUnsafeGate = false
+
     let reportId: String
 
     private var inspection: Inspection? {
@@ -137,6 +144,39 @@ struct JobDetailView: View {
         }
         .task(id: reportId) {
             await loadRoofMeasurements()
+        }
+        .task(id: reportId) {
+            safetyAssessment = safetyStore.latest(for: reportId)
+            if safetyAssessment == nil { await refreshSafety() }
+        }
+        .sheet(isPresented: $showSafetySheet) {
+            SafetyDetailSheet(
+                assessment: safetyAssessment,
+                isRefreshing: safetyLoading,
+                onRefresh: { Task { await refreshSafety() } }
+            )
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        }
+        .confirmationDialog(
+            "Conditions flagged UNSAFE",
+            isPresented: $showUnsafeGate,
+            titleVisibility: .visible
+        ) {
+            Button("Override & Continue", role: .destructive) {
+                if let insp = inspection {
+                    ActivityStore.shared.log(
+                        .weatherSynced,
+                        summary: "Safety override — inspection started in unsafe conditions",
+                        detail: (safetyAssessment?.reasons ?? []).joined(separator: "; "),
+                        on: insp
+                    )
+                }
+                showAddSlope = true
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text((safetyAssessment?.reasons ?? []).joined(separator: "\n"))
         }
         .sheet(isPresented: $showSolarSheet) {
             if let m = roofMeasurements, let insp = inspection {
@@ -317,6 +357,14 @@ struct JobDetailView: View {
                     .background(Theme.mintSoft, in: .capsule)
                 }
                 .buttonStyle(.plain)
+
+                SafetyRatingPill(
+                    assessment: safetyAssessment,
+                    isLoading: safetyLoading
+                ) {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    showSafetySheet = true
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -559,7 +607,11 @@ struct JobDetailView: View {
     private func addSlopeButton(label: String) -> some View {
         Button {
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            showAddSlope = true
+            if safetyAssessment?.rating == .unsafe {
+                showUnsafeGate = true
+            } else {
+                showAddSlope = true
+            }
         } label: {
             HStack(spacing: 10) {
                 Image(systemName: "plus.circle.fill")
@@ -1064,6 +1116,19 @@ struct JobDetailView: View {
                     on: insp
                 )
             }
+        }
+    }
+
+    /// Recomputes the roof-walk safety assessment from live weather + roof pitch
+    /// and records it. Latest 5 are kept per inspection by SafetyAssessmentStore.
+    private func refreshSafety() async {
+        guard let insp = inspection else { return }
+        await MainActor.run { safetyLoading = true }
+        let assessment = await SafetyEngineCoordinator.shared.assessForInspection(insp)
+        await MainActor.run {
+            safetyAssessment = assessment
+            safetyStore.record(assessment, for: reportId)
+            safetyLoading = false
         }
     }
 

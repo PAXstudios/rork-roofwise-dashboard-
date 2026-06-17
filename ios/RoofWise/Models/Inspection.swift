@@ -360,6 +360,18 @@ struct InspectionCollateral: Codable, Hashable {
             vehicleDamageReported: false
         )
     }
+
+    /// Human-readable list of present collateral observations, used as the
+    /// Decision Engine's `collateral_checklist` corroborating-evidence input.
+    var observations: [String] {
+        var out: [String] = []
+        if gutterDents { out.append("Gutter dents present") }
+        if downspoutDents { out.append("Downspout dents present") }
+        if screenDamage { out.append("Window/screen damage present") }
+        if sidingImpacts { out.append("Siding impact marks present") }
+        if vehicleDamageReported { out.append("Vehicle hail damage reported") }
+        return out
+    }
 }
 
 // MARK: Summary
@@ -410,11 +422,37 @@ struct Inspection: Codable, Hashable, Identifiable {
     /// surface a "From estimate" chip and re-open it at Step 4.
     var originEstimateId: UUID?
 
+    // MARK: Decision Engine inputs (added Step 1.5c)
+    // All optional so inspections saved before this step decode unchanged
+    // (decodeIfPresent → nil). Each maps to a RoofWise Decision Engine input.
+    /// Result of the field brittleness test (bend a tab 90°).
+    var brittlenessResult: BrittlenessResult?
+    /// Whether the roof's material is discontinued (forces full replacement).
+    var materialDiscontinued: Bool?
+    /// Free-text reason / manufacturer notes when `materialDiscontinued == true`.
+    var materialDiscontinuedReason: String?
+    /// Number of roofing layers (1, 2, 3, or 4 meaning 4+). Distinct from the
+    /// pre-storm baseline `roof.layers`; this is the inspector-confirmed count.
+    var roofLayers: Int?
+    /// Insurance valuation basis (ACV vs RCV).
+    var policyType: PolicyType?
+    /// Policy deductible amount in dollars.
+    var deductibleAmount: Decimal?
+    /// Homeowner-reported storm date ("Day of Loss").
+    var dayOfLoss: Date?
+
     enum CodingKeys: String, CodingKey {
         case job, event, roof, slopes, collateral, summary
         case inspectorSignaturePng = "inspector_signature_png"
         case homeownerSignaturePng = "homeowner_signature_png"
         case originEstimateId = "origin_estimate_id"
+        case brittlenessResult = "brittleness_result"
+        case materialDiscontinued = "material_discontinued"
+        case materialDiscontinuedReason = "material_discontinued_reason"
+        case roofLayers = "roof_layers"
+        case policyType = "policy_type"
+        case deductibleAmount = "deductible_amount"
+        case dayOfLoss = "day_of_loss"
     }
 
     /// Stable identity backed by `report_id`.
@@ -428,7 +466,14 @@ struct Inspection: Codable, Hashable, Identifiable {
          summary: InspectionSummary,
          inspectorSignaturePng: Data? = nil,
          homeownerSignaturePng: Data? = nil,
-         originEstimateId: UUID? = nil) {
+         originEstimateId: UUID? = nil,
+         brittlenessResult: BrittlenessResult? = nil,
+         materialDiscontinued: Bool? = nil,
+         materialDiscontinuedReason: String? = nil,
+         roofLayers: Int? = nil,
+         policyType: PolicyType? = nil,
+         deductibleAmount: Decimal? = nil,
+         dayOfLoss: Date? = nil) {
         self.job = job
         self.event = event
         self.roof = roof
@@ -438,6 +483,13 @@ struct Inspection: Codable, Hashable, Identifiable {
         self.inspectorSignaturePng = inspectorSignaturePng
         self.homeownerSignaturePng = homeownerSignaturePng
         self.originEstimateId = originEstimateId
+        self.brittlenessResult = brittlenessResult
+        self.materialDiscontinued = materialDiscontinued
+        self.materialDiscontinuedReason = materialDiscontinuedReason
+        self.roofLayers = roofLayers
+        self.policyType = policyType
+        self.deductibleAmount = deductibleAmount
+        self.dayOfLoss = dayOfLoss
     }
 
     init(from decoder: Decoder) throws {
@@ -451,7 +503,25 @@ struct Inspection: Codable, Hashable, Identifiable {
         inspectorSignaturePng = try c.decodeIfPresent(Data.self, forKey: .inspectorSignaturePng)
         homeownerSignaturePng = try c.decodeIfPresent(Data.self, forKey: .homeownerSignaturePng)
         originEstimateId = try c.decodeIfPresent(UUID.self, forKey: .originEstimateId)
+        brittlenessResult = try c.decodeIfPresent(BrittlenessResult.self, forKey: .brittlenessResult)
+        materialDiscontinued = try c.decodeIfPresent(Bool.self, forKey: .materialDiscontinued)
+        materialDiscontinuedReason = try c.decodeIfPresent(String.self, forKey: .materialDiscontinuedReason)
+        roofLayers = try c.decodeIfPresent(Int.self, forKey: .roofLayers)
+        policyType = try c.decodeIfPresent(PolicyType.self, forKey: .policyType)
+        deductibleAmount = try c.decodeIfPresent(Decimal.self, forKey: .deductibleAmount)
+        dayOfLoss = try c.decodeIfPresent(Date.self, forKey: .dayOfLoss)
     }
+}
+
+// MARK: - Decision Engine inputs (Step 1.5c)
+
+/// Insurance policy valuation basis. `nil` on `Inspection` means "not
+/// captured" — the Decision Engine treats it as missing rather than a default.
+nonisolated enum PolicyType: String, Codable, Sendable, CaseIterable {
+    case acv = "ACV"
+    case rcv = "RCV"
+
+    var displayName: String { rawValue }
 }
 
 // MARK: Stub user

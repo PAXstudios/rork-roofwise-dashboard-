@@ -3,14 +3,17 @@ import SwiftUI
 // MARK: - Steps
 
 enum InspectionWizardStep: Int, CaseIterable, Identifiable {
-    case customer, insurance, roof, review
+    case customer, insurance, roof, stormPolicy, roofCondition, brittleness, review
     var id: Int { rawValue }
     var title: String {
         switch self {
-        case .customer:  return "Customer & Property"
-        case .insurance: return "Insurance"
-        case .roof:      return "Roof System"
-        case .review:    return "Review"
+        case .customer:      return "Customer & Property"
+        case .insurance:     return "Insurance"
+        case .roof:          return "Roof System"
+        case .stormPolicy:   return "Storm & Policy"
+        case .roofCondition: return "Roof Condition"
+        case .brittleness:   return "Brittleness Test"
+        case .review:        return "Review"
         }
     }
 }
@@ -77,6 +80,12 @@ struct NewJobWizard: View {
                             InsuranceStep(draft: $draft)
                         case .roof:
                             RoofStep(draft: $draft)
+                        case .stormPolicy:
+                            StormPolicyStep(draft: $draft)
+                        case .roofCondition:
+                            RoofConditionStep(draft: $draft)
+                        case .brittleness:
+                            BrittlenessStep(draft: $draft)
                         case .review:
                             ReviewStep(draft: $draft, phone: phone, email: email,
                                        onJump: { jump(to: $0) })
@@ -848,7 +857,216 @@ private struct RoofStep: View {
     }
 }
 
-// MARK: - Step 4: Review
+// MARK: - Tri-state chip grid (maps to an optional value)
+
+/// Chip grid where one option (typically "Not sure"/"Skipped") maps to `nil`.
+/// Selection is derived purely from the binding so it survives step re-entry.
+private struct TriChipGrid<Value: Hashable>: View {
+    let label: String
+    let options: [(title: String, value: Value?)]
+    @Binding var selection: Value?
+    var minimum: CGFloat = 110
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            FieldLabel(text: label)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: minimum), spacing: 10)], spacing: 10) {
+                ForEach(Array(options.enumerated()), id: \.offset) { _, opt in
+                    let selected = opt.value == selection
+                    Button {
+                        selection = opt.value
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    } label: {
+                        Text(opt.title)
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(selected ? .white : Theme.ink)
+                            .multilineTextAlignment(.center)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.82)
+                            .frame(maxWidth: .infinity, minHeight: 64)
+                            .padding(.horizontal, 12)
+                            .background(selected ? Theme.ember : Theme.card,
+                                        in: .rect(cornerRadius: 14))
+                            .overlay(RoundedRectangle(cornerRadius: 14)
+                                .stroke(selected ? .clear : Theme.hairline, lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Step 4: Storm & Policy
+
+private struct StormPolicyStep: View {
+    @Binding var draft: Inspection
+
+    var body: some View {
+        WizardSection(
+            title: "Storm & Policy",
+            subtitle: "Loss date and policy basis for the claim.",
+            icon: "calendar.badge.exclamationmark"
+        ) {
+            VStack(alignment: .leading, spacing: 8) {
+                FieldLabel(text: "Day of loss")
+                DatePicker(
+                    "Day of loss",
+                    selection: Binding(
+                        get: { draft.dayOfLoss ?? Date() },
+                        set: { draft.dayOfLoss = $0 }
+                    ),
+                    in: ...Date(),
+                    displayedComponents: .date
+                )
+                .datePickerStyle(.compact)
+                .labelsHidden()
+                .tint(Theme.ember)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16)
+                .frame(minHeight: 56)
+                .background(Theme.card, in: .rect(cornerRadius: 14))
+                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.hairline, lineWidth: 1))
+                if draft.dayOfLoss != nil {
+                    Button {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        draft.dayOfLoss = nil
+                    } label: {
+                        Text("Clear date")
+                            .font(.system(size: Theme.TypeRamp.metaSm, weight: .heavy))
+                            .foregroundStyle(Theme.ember)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            TriChipGrid(
+                label: "Policy type",
+                options: [("ACV", .acv), ("RCV", .rcv), ("Not sure", nil)],
+                selection: $draft.policyType,
+                minimum: 100
+            )
+
+            DeductibleField(amount: $draft.deductibleAmount)
+        }
+    }
+}
+
+private struct DeductibleField: View {
+    @Binding var amount: Decimal?
+    @State private var text: String = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            FieldLabel(text: "Deductible (optional)")
+            HStack(spacing: 8) {
+                Text("$")
+                    .font(.system(size: 18, weight: .heavy))
+                    .foregroundStyle(Theme.inkSoft)
+                    .padding(.leading, 16)
+                TextField("2,500", text: $text)
+                    .keyboardType(.decimalPad)
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(Theme.ink)
+                    .padding(.trailing, 16)
+                    .frame(maxWidth: .infinity, minHeight: 56)
+                    .onChange(of: text) { _, newValue in
+                        let cleaned = newValue.filter { $0.isNumber || $0 == "." }
+                        amount = cleaned.isEmpty ? nil : Decimal(string: cleaned)
+                    }
+            }
+            .background(Theme.card, in: .rect(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.hairline, lineWidth: 1))
+        }
+        .onAppear {
+            if let a = amount, text.isEmpty {
+                text = NSDecimalNumber(decimal: a).stringValue
+            }
+        }
+    }
+}
+
+// MARK: - Step 5: Roof Condition
+
+private struct RoofConditionStep: View {
+    @Binding var draft: Inspection
+
+    var body: some View {
+        WizardSection(
+            title: "Roof Condition",
+            subtitle: "Layers and material availability drive repairability.",
+            icon: "square.3.layers.3d"
+        ) {
+            TriChipGrid(
+                label: "Number of layers",
+                options: [("1", 1), ("2", 2), ("3", 3), ("4+", 4), ("Not sure", nil)],
+                selection: $draft.roofLayers,
+                minimum: 90
+            )
+
+            TriChipGrid(
+                label: "Material discontinued?",
+                options: [("No", false), ("Yes", true), ("Not sure", nil)],
+                selection: $draft.materialDiscontinued,
+                minimum: 100
+            )
+
+            if draft.materialDiscontinued == true {
+                MicField(
+                    label: "Reason / manufacturer notes",
+                    text: Binding(
+                        get: { draft.materialDiscontinuedReason ?? "" },
+                        set: { draft.materialDiscontinuedReason = $0.isEmpty ? nil : $0 }
+                    ),
+                    placeholder: "e.g. CertainTeed Independence line retired 2019"
+                )
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: draft.materialDiscontinued)
+    }
+}
+
+// MARK: - Step 6: Brittleness Test
+
+private struct BrittlenessStep: View {
+    @Binding var draft: Inspection
+
+    var body: some View {
+        WizardSection(
+            title: "Brittleness Test",
+            subtitle: "Field test that proves shingles can't be repaired.",
+            icon: "hand.raised.fingers.spread.fill"
+        ) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 12) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 14).fill(Theme.amberSoft)
+                        Image(systemName: "arrow.uturn.up")
+                            .font(.system(size: 24, weight: .heavy))
+                            .foregroundStyle(Theme.amber)
+                    }
+                    .frame(width: 56, height: 56)
+                    Text("Bend a shingle tab 90°. Cracks on the first bend = FAIL. Holds up without cracking = PASS.")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Theme.inkSoft)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .cardStyle(padding: 16, radius: 16)
+
+            TriChipGrid(
+                label: "Result",
+                options: [("Pass", .pass), ("Fail", .fail), ("Borderline", .borderline), ("Skipped", nil)],
+                selection: $draft.brittlenessResult,
+                minimum: 110
+            )
+        }
+    }
+}
+
+// MARK: - Step 7: Review
 
 private struct ReviewStep: View {
     @Binding var draft: Inspection
