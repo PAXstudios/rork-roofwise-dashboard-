@@ -15,6 +15,7 @@ struct CustomerProfileView: View {
     @State private var isEditing = false
     @State private var draft: Customer?
     @State private var showHomeownerShare = false
+    @State private var showMessageCustomer = false
     @State private var showCoach = false
     @State private var coachTipLesson: Lesson? = nil
     @State private var openReportId: String? = nil
@@ -34,6 +35,7 @@ struct CustomerProfileView: View {
                 if customer.linkedReportId != nil {
                     openReportButton
                 }
+                messageCustomerButton
                 shareHomeownerButton
                 practiceCoachButton
                 coachTipCard
@@ -89,6 +91,11 @@ struct CustomerProfileView: View {
             HomeownerShareSheet(customer: customer)
                 .presentationDetents([.large])
                 .presentationDragIndicator(.hidden)
+        }
+        .sheet(isPresented: $showMessageCustomer) {
+            CustomerMessageSheet(customer: customer)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showCoach) {
             @Bindable var bindable = trainingProgress
@@ -312,6 +319,46 @@ struct CustomerProfileView: View {
         .buttonStyle(.plain)
     }
 
+    // MARK: Message Customer
+
+    private var messageCustomerButton: some View {
+        Button { showMessageCustomer = true } label: {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(.white.opacity(0.22))
+                    Image(systemName: "bubble.left.and.text.bubble.right.fill")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(.white)
+                }
+                .frame(width: 38, height: 38)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Text or Email Customer")
+                        .font(.system(size: 14, weight: .heavy))
+                        .foregroundStyle(.white)
+                    Text(customer.linkedReportId != nil
+                         ? "Send a message · attach the HAAG report"
+                         : "Send a text or email from the app")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.85))
+                        .lineLimit(1)
+                }
+                Spacer()
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(.white)
+            }
+            .padding(14)
+            .background(
+                LinearGradient(colors: [Theme.mint, Color(red: 0.10, green: 0.55, blue: 0.40)],
+                               startPoint: .topLeading, endPoint: .bottomTrailing),
+                in: .rect(cornerRadius: 18)
+            )
+            .shadow(color: Theme.mint.opacity(0.35), radius: 14, y: 8)
+        }
+        .buttonStyle(.plain)
+    }
+
     // MARK: Practice Coach Button
 
     private var practiceCoachButton: some View {
@@ -515,8 +562,20 @@ struct CustomerProfileView: View {
                             text: Binding(get: { draft?.email ?? "" },
                                           set: { draft?.email = $0 }), keyboard: .emailAddress)
             } else {
-                infoRow(label: "Phone", value: customer.phone, action: customer.phone.isEmpty ? nil : "phone.fill")
-                infoRow(label: "Email", value: customer.email, action: customer.email.isEmpty ? nil : "envelope.fill")
+                Button {
+                    if !customer.phone.isEmpty { showMessageCustomer = true }
+                } label: {
+                    infoRow(label: "Phone", value: customer.phone, action: customer.phone.isEmpty ? nil : "message.fill")
+                }
+                .buttonStyle(.plain)
+                .disabled(customer.phone.isEmpty)
+                Button {
+                    if !customer.email.isEmpty { showMessageCustomer = true }
+                } label: {
+                    infoRow(label: "Email", value: customer.email, action: customer.email.isEmpty ? nil : "envelope.fill")
+                }
+                .buttonStyle(.plain)
+                .disabled(customer.email.isEmpty)
                 infoRow(label: "Address", value: customer.address, action: "map.fill")
             }
         }
