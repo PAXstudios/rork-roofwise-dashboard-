@@ -36,7 +36,7 @@ struct RoofMeasureSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    satelliteHero
+                    aerialHero
                     switch phase {
                     case .loading:  loadingCard
                     case .failed:   failureCard
@@ -74,56 +74,30 @@ struct RoofMeasureSheet: View {
         .onDisappear { loadTask?.cancel() }
     }
 
-    // MARK: Satellite hero
+    // MARK: Aerial hero
 
-    private var satelliteHero: some View {
-        Color(.secondarySystemBackground)
-            .frame(height: 200)
-            .overlay {
-                if let coord, let url = StaticMapService.satelliteURL(for: coord) {
-                    AsyncImage(url: url) { img in
-                        img.resizable().aspectRatio(contentMode: .fill)
-                    } placeholder: {
-                        ZStack {
-                            Theme.canvas
-                            ProgressView().tint(Theme.amber)
-                        }
-                    }
-                    .allowsHitTesting(false)
-                } else {
+    @ViewBuilder private var aerialHero: some View {
+        if let coord {
+            RoofAerialMap(coord: coord,
+                          areaSqFt: measurements?.totalAreaSqFt ?? 2400,
+                          address: address)
+        } else {
+            Color(.secondarySystemBackground)
+                .frame(height: 240)
+                .overlay {
                     ZStack {
                         Theme.canvas
                         VStack(spacing: 6) {
-                            Image(systemName: "map")
-                                .font(.system(size: 26, weight: .heavy))
-                                .foregroundStyle(Theme.inkFaint)
+                            ProgressView().tint(Theme.amber)
                             Text("Locating roof…")
                                 .font(.system(size: 12, weight: .semibold))
                                 .foregroundStyle(Theme.inkSoft)
                         }
                     }
                 }
-            }
-            .clipShape(.rect(cornerRadius: 18))
-            .overlay(alignment: .topLeading) {
-                Label("SATELLITE", systemImage: "globe.americas.fill")
-                    .font(.system(size: 9, weight: .heavy))
-                    .tracking(0.8)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 9).padding(.vertical, 5)
-                    .background(.black.opacity(0.55), in: .capsule)
-                    .padding(10)
-            }
-            .overlay(alignment: .bottomLeading) {
-                Text(address)
-                    .font(.system(size: 11, weight: .heavy))
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-                    .padding(.horizontal, 10).padding(.vertical, 6)
-                    .background(.black.opacity(0.55), in: .capsule)
-                    .padding(10)
-            }
-            .overlay(RoundedRectangle(cornerRadius: 18).stroke(Theme.hairline, lineWidth: 0.6))
+                .clipShape(.rect(cornerRadius: 18))
+                .overlay(RoundedRectangle(cornerRadius: 18).stroke(Theme.hairline, lineWidth: 0.6))
+        }
     }
 
     // MARK: States
