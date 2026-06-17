@@ -3,6 +3,7 @@ import CoreLocation
 
 struct JobDetailView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(CustomerStore.self) private var customerStore
     @State private var store = InspectionStore.shared
     @State private var showAddSlope = false
     @State private var editingOrientation: String? = nil
@@ -563,7 +564,9 @@ struct JobDetailView: View {
             // PDF generation is fast but synchronous; hop off the main
             // run-loop tick so the spinner has a chance to render.
             try? await Task.sleep(for: .milliseconds(50))
-            let url = HaagReportGenerator.write(inspection: insp)
+            let photos = customerStore.customers
+                .first { $0.linkedReportId == insp.job.reportId }?.photos ?? []
+            let url = HaagReportGenerator.write(inspection: insp, photos: photos)
             isGenerating = false
             if let url {
                 pdfShareURL = url

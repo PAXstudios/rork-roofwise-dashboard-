@@ -32,8 +32,9 @@ nonisolated enum HaagReportGenerator {
 
     // MARK: Public API
 
-    /// Generates the report and returns the raw PDF data.
-    static func generate(inspection: Inspection) -> Data {
+    /// Generates the report and returns the raw PDF data. Pass the captured
+    /// slope photos to embed a photo-documentation section.
+    static func generate(inspection: Inspection, photos: [CapturedPhoto] = []) -> Data {
         let format = UIGraphicsPDFRendererFormat()
         format.documentInfo = [
             kCGPDFContextTitle as String:  "HAAG Roof Inspection Report — \(inspection.job.reportId)",
@@ -46,15 +47,21 @@ nonisolated enum HaagReportGenerator {
             format: format
         )
 
+        // Single source of truth for every verdict in the report: the rigorous,
+        // published-threshold HAAG engine. The cover/weather/roof pages are
+        // descriptive; everything downstream reads from this decision.
+        let decision = HaagDecisionEngine.evaluate(.from(inspection))
+
         return renderer.pdfData { ctx in
             drawCover(ctx, inspection)
             drawWeather(ctx, inspection)
             drawRoof(ctx, inspection)
-            drawSlopes(ctx, inspection)
+            drawSlopes(ctx, inspection, decision)
+            drawPhotoDocumentation(ctx, inspection, photos)
             drawCollateral(ctx, inspection)
-            drawSummary(ctx, inspection)
-            drawNarrative(ctx, inspection)
-            drawHomeownerSummary(ctx, inspection)
+            drawSummary(ctx, inspection, decision)
+            drawNarrative(ctx, inspection, decision)
+            drawHomeownerSummary(ctx, inspection, decision)
             drawSignatures(ctx, inspection)
         }
     }
@@ -62,13 +69,13 @@ nonisolated enum HaagReportGenerator {
     /// Generates and writes the PDF to the documents directory as
     /// `<report_id>.pdf`. Returns the file URL on success.
     @discardableResult
-    static func write(inspection: Inspection) -> URL? {
+    static func write(inspection: Inspection, photos: [CapturedPhoto] = []) -> URL? {
         guard let docs = FileManager.default.urls(
             for: .documentDirectory, in: .userDomainMask
         ).first else { return nil }
         let url = docs.appendingPathComponent("\(inspection.job.reportId).pdf")
         do {
-            try generate(inspection: inspection).write(to: url, options: [.atomic])
+            try generate(inspection: inspection, photos: photos).write(to: url, options: [.atomic])
             return url
         } catch {
             return nil
@@ -248,7 +255,11 @@ nonisolated enum HaagReportGenerator {
 
     // MARK: - Pages: SLOPE-BY-SLOPE FINDINGS
 
-    private static func drawSlopes(_ ctx: UIGraphicsPDFRendererContext, _ insp: Inspection) {
+    private static func drawSlopes(_ ctx: UIGraphicsPDFRendererContext, _ insp: Inspection, _ decision: HaagDecision) {
+        let decisionsById: [String: HaagSlopeDecision] = Dictionary(
+            decision.slopeDecisions.map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
         if insp.slopes.isEmpty {
             ctx.beginPage()
             drawHeader(ctx.cgContext,
@@ -271,7 +282,7 @@ nonisolated enum HaagReportGenerator {
                    subtitle: "\(insp.slopes.count) slopes")
         var y: CGFloat = 130
         var page = 4
-        let blockHeight: CGFloat = 220
+        let blockHeight: CGFloat = 234
 
         for slope in insp.slopes {
             if y + blockHeight > pageSize.height - 60 {
@@ -285,14 +296,15 @@ nonisolated enum HaagReportGenerator {
             }
             drawSlopeBlock(ctx.cgContext,
                            rect: CGRect(x: margin, y: y, width: contentWidth, height: blockHeight),
-                           slope: slope)
+                           slope: slope,
+                           decision: decisionsById[slope.orientation])
             y += blockHeight + 12
         }
 
         drawFooter(ctx.cgContext, page: page, reportId: insp.job.reportId)
     }
 
-    private static func drawSlopeBlock(_ cg: CGContext, rect: CGRect, slope: Slope) {
+    private static func drawSlopeBlock(_ cg: CGContext, rect: CGRect, slope: Slope, decision: HaagSlopeDecision?) {
         drawCard(cg, rect: rect, fill: .white)
 
         // Header line
@@ -368,8 +380,16 @@ nonisolated enum HaagReportGenerator {
              font: .systemFont(ofSize: 11, weight: .semibold),
              color: inkSoft)
 
+        // HAAG threshold line — the exact rule that produced this verdict.
+        if let d = decision {
+            draw("HAAG: \(d.triggeredRule)",
+                 at: CGPoint(x: rect.minX + 18, y: costY + 32),
+                 font: .systemFont(ofSize: 10, weight: .heavy),
+                 color: ink)
+        }
+
         // Verdict pill at bottom
-        let verdict = slopeVerdict(slope)
+        let verdict = slopeVerdict(decision)
         let pillFont = UIFont.systemFont(ofSize: 11, weight: .heavy)
         let pillSize = textSize(verdict.title, font: pillFont, kern: 0.6)
         let pillRect = CGRect(x: rect.minX + 18,
@@ -385,11 +405,155 @@ nonisolated enum HaagReportGenerator {
                      font: pillFont, color: verdict.color, kern: 0.6)
     }
 
-    private static func slopeVerdict(_ s: Slope) -> (title: String, color: UIColor) {
-        if s.slopeReplacementRecommended { return ("Slope Replacement Recommended", crimson) }
-        if s.slopeRepairsRecommended    { return ("Repairs Recommended", amber) }
-        if s.cosmeticOnly               { return ("Cosmetic Only", ember) }
-        return ("No Storm-Related Work", mint)
+    private static func slopeVerdict(_ d: HaagSlopeDecision?) -> (title: String, color: UIColor) {
+        switch d?.recommendation {
+        case .replace:          return ("Slope Replacement Qualifies", crimson)
+        case .repair:           return ("Repairs Recommended", amber)
+        case .insufficientData: return ("Insufficient Sampling", inkFaint)
+        case .noFunctionalDamage, .none: return ("No Functional Damage", mint)
+        }
+    }
+
+    // MARK: - Pages: PHOTO DOCUMENTATION
+
+    /// Embeds captured slope photos with their AI/inspector damage markers
+    /// overlaid, grouped by slope. Skipped entirely when no photos exist so
+    /// the report never shows a blank page.
+    private static func drawPhotoDocumentation(_ ctx: UIGraphicsPDFRendererContext,
+                                               _ insp: Inspection,
+                                               _ photos: [CapturedPhoto]) {
+        guard !photos.isEmpty else { return }
+
+        // Group by slope, in the SlopeType declaration order.
+        let grouped = Dictionary(grouping: photos, by: { $0.slope })
+        let orderedSlopes = SlopeType.allCases.filter { grouped[$0] != nil }
+
+        ctx.beginPage()
+        drawHeader(ctx.cgContext,
+                   title: "Photo Documentation",
+                   subtitle: "\(photos.count) photo\(photos.count == 1 ? "" : "s") · markers overlaid")
+        var y: CGFloat = 130
+        let cardHeight: CGFloat = 286
+
+        for slope in orderedSlopes {
+            let items = grouped[slope] ?? []
+
+            // Slope subheading.
+            if y + 30 > pageSize.height - 60 {
+                drawFooter(ctx.cgContext, page: 0, reportId: insp.job.reportId)
+                ctx.beginPage()
+                drawHeader(ctx.cgContext, title: "Photo Documentation (cont.)", subtitle: "")
+                y = 130
+            }
+            draw(slope.shortName.uppercased(),
+                 at: CGPoint(x: margin, y: y),
+                 font: .systemFont(ofSize: 11, weight: .heavy),
+                 color: ember, kern: 1.6)
+            y += 22
+
+            for photo in items {
+                if y + cardHeight > pageSize.height - 60 {
+                    drawFooter(ctx.cgContext, page: 0, reportId: insp.job.reportId)
+                    ctx.beginPage()
+                    drawHeader(ctx.cgContext, title: "Photo Documentation (cont.)", subtitle: "")
+                    y = 130
+                    draw(slope.shortName.uppercased(),
+                         at: CGPoint(x: margin, y: y),
+                         font: .systemFont(ofSize: 11, weight: .heavy),
+                         color: ember, kern: 1.6)
+                    y += 22
+                }
+                drawPhotoCard(ctx.cgContext,
+                              rect: CGRect(x: margin, y: y, width: contentWidth, height: cardHeight),
+                              photo: photo)
+                y += cardHeight + 14
+            }
+        }
+
+        drawFooter(ctx.cgContext, page: 0, reportId: insp.job.reportId)
+    }
+
+    private static func drawPhotoCard(_ cg: CGContext, rect: CGRect, photo: CapturedPhoto) {
+        drawCard(cg, rect: rect, fill: .white)
+
+        // Image surface (aspect-fit inside a fixed frame).
+        let imgFrame = CGRect(x: rect.minX + 14, y: rect.minY + 14,
+                              width: rect.width - 28, height: 200)
+        cg.saveGState()
+        cg.setFillColor(canvas.cgColor)
+        let clip = UIBezierPath(roundedRect: imgFrame, cornerRadius: 10)
+        cg.addPath(clip.cgPath)
+        cg.fillPath()
+        cg.addPath(clip.cgPath)
+        cg.clip()
+
+        let drawn = aspectFitRect(imageSize: photo.image.size, in: imgFrame)
+        photo.image.draw(in: drawn)
+
+        // Damage markers (normalized to the image; radius vs min image dim).
+        for marker in photo.damageMarkers {
+            let cx = drawn.minX + marker.x * drawn.width
+            let cy = drawn.minY + marker.y * drawn.height
+            let r = max(4, marker.radius * min(drawn.width, drawn.height))
+            let color = markerColor(marker.type)
+            let dot = CGRect(x: cx - r, y: cy - r, width: r * 2, height: r * 2)
+            cg.setStrokeColor(color.cgColor)
+            cg.setLineWidth(2)
+            cg.strokeEllipse(in: dot)
+            cg.setFillColor(color.withAlphaComponent(0.22).cgColor)
+            cg.fillEllipse(in: dot)
+        }
+        cg.restoreGState()
+
+        // Caption row.
+        let capY = imgFrame.maxY + 12
+        let modeLabel = photo.captureMode == .square ? "100 sq ft test square" : "Single-shingle close-up"
+        draw(modeLabel,
+             at: CGPoint(x: rect.minX + 16, y: capY),
+             font: .systemFont(ofSize: 11, weight: .heavy),
+             color: ink)
+        drawRight("Pitch \(Int(photo.pitchDegrees.rounded()))° · \(Int(photo.elevationFeet.rounded())) ft",
+                  origin: CGPoint(x: rect.maxX - 16, y: capY),
+                  font: .systemFont(ofSize: 10, weight: .semibold),
+                  color: inkSoft)
+
+        // Findings / marker summary line.
+        let summary: String = {
+            let byType = photo.markersByType
+            if !byType.isEmpty {
+                return byType.map { "\($0.items.count) \($0.type.pluralDisplay)" }.joined(separator: " · ")
+            }
+            let top = photo.topDetectedFindings.prefix(3).map(\.display)
+            return top.isEmpty ? "No damage markers recorded" : top.joined(separator: " · ")
+        }()
+        drawWrapped(summary,
+                    rect: CGRect(x: rect.minX + 16, y: capY + 18,
+                                 width: rect.width - 32, height: 34),
+                    font: .systemFont(ofSize: 10, weight: .semibold),
+                    color: inkSoft, lineSpacing: 2)
+    }
+
+    private static func aspectFitRect(imageSize: CGSize, in frame: CGRect) -> CGRect {
+        guard imageSize.width > 0, imageSize.height > 0 else { return frame }
+        let scale = min(frame.width / imageSize.width, frame.height / imageSize.height)
+        let w = imageSize.width * scale
+        let h = imageSize.height * scale
+        return CGRect(x: frame.midX - w / 2, y: frame.midY - h / 2, width: w, height: h)
+    }
+
+    /// PDF-local marker palette (mirrors the report theme, no Theme dependency
+    /// so this stays a pure nonisolated drawing routine).
+    private static func markerColor(_ type: DamageMarkerType) -> UIColor {
+        switch type {
+        case .hailHits, .bruising:                 return crimson
+        case .windDamage, .windCreasing, .lifted:  return amber
+        case .granuleLoss, .blistering:            return emberDeep
+        case .cracking, .splitting:                return ember
+        case .missingShingles, .structuralSagging: return UIColor(red: 0.55, green: 0.20, blue: 0.60, alpha: 1)
+        case .flashing:                            return inkSoft
+        case .algaeMoss:                           return mint
+        case .other:                               return ember
+        }
     }
 
     // MARK: - Page: COLLATERAL
@@ -444,14 +608,15 @@ nonisolated enum HaagReportGenerator {
 
     // MARK: - Page: SUMMARY & RECOMMENDATION
 
-    private static func drawSummary(_ ctx: UIGraphicsPDFRendererContext, _ insp: Inspection) {
+    private static func drawSummary(_ ctx: UIGraphicsPDFRendererContext, _ insp: Inspection, _ decision: HaagDecision) {
         ctx.beginPage()
         drawHeader(ctx.cgContext,
                    title: "Summary & Recommendation",
-                   subtitle: "Roof-level decision")
+                   subtitle: "Roof-level HAAG decision")
 
         let cg = ctx.cgContext
-        let verdict = roofVerdict(insp)
+        let verdict = roofVerdict(decision.overallRecommendation)
+        let totals = decision.totals
         var y: CGFloat = 130
 
         // Big colored callout
@@ -470,36 +635,81 @@ nonisolated enum HaagReportGenerator {
              at: CGPoint(x: callout.minX + 18, y: callout.minY + 32),
              font: .systemFont(ofSize: 22, weight: .heavy),
              color: .white)
-        if !insp.summary.replacementSlopesList.isEmpty {
-            draw("Replacement slopes: \(insp.summary.replacementSlopesList)",
+        let qualifyingNames = decision.slopeDecisions
+            .filter { $0.recommendation == .replace }
+            .map(\.name)
+            .joined(separator: ", ")
+        if !qualifyingNames.isEmpty {
+            draw("Qualifying slopes: \(qualifyingNames)",
                  at: CGPoint(x: callout.minX + 18, y: callout.minY + 70),
                  font: .systemFont(ofSize: 12, weight: .semibold),
                  color: UIColor.white.withAlphaComponent(0.95))
         }
         y = callout.maxY + 16
 
-        // Booleans card
-        let bools = CGRect(x: margin, y: y, width: contentWidth, height: 130)
-        drawCard(cg, rect: bools, fill: .white)
-        let leftX = bools.minX + 18
-        let rightX = bools.minX + bools.width / 2 + 4
-        drawLabelValue("Functional damage",
-                       insp.summary.roofAnyFunctionalDamage ? "Yes" : "No",
-                       origin: CGPoint(x: leftX, y: bools.minY + 18))
-        drawLabelValue("Full replacement",
-                       insp.summary.roofFullReplacementRecommended ? "Yes" : "No",
-                       origin: CGPoint(x: leftX, y: bools.minY + 60))
-        drawLabelValue("Partial replacement",
-                       insp.summary.roofPartialReplacementRecommended ? "Yes" : "No",
-                       origin: CGPoint(x: rightX, y: bools.minY + 18))
-        drawLabelValue("Repairs only",
-                       insp.summary.roofRepairsRecommended ? "Yes" : "No",
-                       origin: CGPoint(x: rightX, y: bools.minY + 60))
-        y = bools.maxY + 16
+        // HAAG evidence + counts card — the auditable basis for the verdict.
+        let stats = CGRect(x: margin, y: y, width: contentWidth, height: 130)
+        drawCard(cg, rect: stats, fill: .white)
+        let leftX = stats.minX + 18
+        let rightX = stats.minX + stats.width / 2 + 4
+        drawLabelValue("Evidence quality",
+                       decision.evidenceQuality.rawValue.capitalized,
+                       origin: CGPoint(x: leftX, y: stats.minY + 18))
+        drawLabelValue("Slopes qualifying",
+                       "\(totals.slopesReplaceQualifying) of \(totals.slopesEvaluated)",
+                       origin: CGPoint(x: leftX, y: stats.minY + 60))
+        drawLabelValue("Test squares",
+                       formatNumber(totals.testSquaresPhotographed),
+                       origin: CGPoint(x: leftX, y: stats.minY + 102))
+        drawLabelValue("Functional hits",
+                       "\(totals.totalFunctionalHits)",
+                       origin: CGPoint(x: rightX, y: stats.minY + 18))
+        drawLabelValue("Weighted hits / square",
+                       String(format: "%.1f", totals.weightedHitsPerSquare),
+                       origin: CGPoint(x: rightX, y: stats.minY + 60))
+        drawLabelValue("Perils",
+                       perilSummary(decision.perils),
+                       origin: CGPoint(x: rightX, y: stats.minY + 102))
+        y = stats.maxY + 16
+
+        // Threshold rule text.
+        let ruleRect = CGRect(x: margin, y: y, width: contentWidth, height: 64)
+        drawCard(cg, rect: ruleRect, fill: canvas)
+        draw("THRESHOLD APPLIED",
+             at: CGPoint(x: ruleRect.minX + 18, y: ruleRect.minY + 14),
+             font: .systemFont(ofSize: 9, weight: .heavy),
+             color: inkFaint, kern: 1.4)
+        drawWrapped(decision.roofCovering.ruleText,
+                    rect: CGRect(x: ruleRect.minX + 18, y: ruleRect.minY + 28,
+                                 width: ruleRect.width - 36, height: ruleRect.height - 34),
+                    font: .systemFont(ofSize: 11, weight: .semibold),
+                    color: inkSoft, lineSpacing: 2)
+        y = ruleRect.maxY + 16
+
+        // Triggered overrides (if any).
+        if !decision.triggeredOverrides.isEmpty {
+            let oh: CGFloat = 30 + CGFloat(decision.triggeredOverrides.count) * 32
+            let oRect = CGRect(x: margin, y: y, width: contentWidth, height: oh)
+            drawCard(cg, rect: oRect, fill: emberSoft)
+            draw("OVERRIDES TRIGGERED",
+                 at: CGPoint(x: oRect.minX + 18, y: oRect.minY + 12),
+                 font: .systemFont(ofSize: 9, weight: .heavy),
+                 color: emberDeep, kern: 1.4)
+            var oy = oRect.minY + 30
+            for o in decision.triggeredOverrides {
+                drawWrapped("\u{2022} \(o.rationale)",
+                            rect: CGRect(x: oRect.minX + 18, y: oy,
+                                         width: oRect.width - 36, height: 30),
+                            font: .systemFont(ofSize: 10, weight: .semibold),
+                            color: ink, lineSpacing: 1)
+                oy += 32
+            }
+            y = oRect.maxY + 16
+        }
 
         // Notes (if any)
         if !insp.summary.notes.isEmpty {
-            let notes = CGRect(x: margin, y: y, width: contentWidth, height: 120)
+            let notes = CGRect(x: margin, y: y, width: contentWidth, height: 90)
             drawCard(cg, rect: notes, fill: canvas)
             draw("INSPECTOR NOTES",
                  at: CGPoint(x: notes.minX + 18, y: notes.minY + 16),
@@ -515,23 +725,34 @@ nonisolated enum HaagReportGenerator {
         drawFooter(cg, page: 0, reportId: insp.job.reportId)
     }
 
-    private static func roofVerdict(_ insp: Inspection) -> (title: String, color: UIColor) {
-        let s = insp.summary
-        if s.roofFullReplacementRecommended    { return ("Full Replacement Recommended", crimson) }
-        if s.roofPartialReplacementRecommended { return ("Partial Replacement Recommended", ember) }
-        if s.roofRepairsRecommended            { return ("Repairs Recommended", amber) }
-        return ("No Storm-Related Work Recommended", mint)
+    private static func roofVerdict(_ rec: HaagRecommendation) -> (title: String, color: UIColor) {
+        switch rec {
+        case .fullReplacement:    return ("Full Replacement Supported", crimson)
+        case .partialReplacement: return ("Partial Replacement Supported", ember)
+        case .repair:             return ("Repairs Recommended", amber)
+        case .insufficientData:   return ("Insufficient Evidence", inkFaint)
+        case .noFunctionalDamage: return ("No Functional Damage", mint)
+        }
+    }
+
+    private static func perilSummary(_ perils: [HaagPeril]) -> String {
+        if perils.contains(.combinedHailWind) { return "Hail + Wind" }
+        if perils.contains(.hail) && perils.contains(.wind) { return "Hail + Wind" }
+        if perils.contains(.hail) { return "Hail" }
+        if perils.contains(.wind) { return "Wind" }
+        if perils.contains(.wear) { return "Wear" }
+        return "\u{2014}"
     }
 
     // MARK: - Page: INSURANCE-GRADE NARRATIVE
 
-    private static func drawNarrative(_ ctx: UIGraphicsPDFRendererContext, _ insp: Inspection) {
+    private static func drawNarrative(_ ctx: UIGraphicsPDFRendererContext, _ insp: Inspection, _ decision: HaagDecision) {
         ctx.beginPage()
         drawHeader(ctx.cgContext,
                    title: "Insurance-Grade Narrative",
                    subtitle: "HAAG threshold reasoning")
 
-        let body = buildNarrative(insp)
+        let body = buildNarrative(insp, decision)
         let card = CGRect(x: margin, y: 130, width: contentWidth, height: pageSize.height - 130 - 80)
         drawCard(ctx.cgContext, rect: card, fill: .white)
         drawWrapped(body,
@@ -543,7 +764,7 @@ nonisolated enum HaagReportGenerator {
         drawFooter(ctx.cgContext, page: 0, reportId: insp.job.reportId)
     }
 
-    private static func buildNarrative(_ insp: Inspection) -> String {
+    private static func buildNarrative(_ insp: Inspection, _ decision: HaagDecision) -> String {
         var parts: [String] = []
         let mat = insp.roof.primaryMaterial.displayName
         let layers = insp.roof.layers
@@ -565,41 +786,43 @@ nonisolated enum HaagReportGenerator {
             parts.append("No specific loss-event date was provided; weather corroboration data is therefore not enumerated in this section.")
         }
 
-        let reps = insp.slopes.filter { $0.slopeReplacementRecommended }
-        let repairs = insp.slopes.filter { $0.slopeRepairsRecommended }
+        // Methodology + governing threshold straight from the engine.
+        parts.append("Each accessible slope was evaluated against a 100 sq ft (10 ft \u{00D7} 10 ft) HAAG test square. \(decision.roofCovering.ruleText) Evidence quality for this inspection is rated \(decision.evidenceQuality.rawValue) across \(formatNumber(decision.totals.testSquaresPhotographed)) test square(s), with \(decision.totals.totalFunctionalHits) functional hit(s) counted (\(String(format: "%.1f", decision.totals.weightedHitsPerSquare)) per square, weighted).")
+
+        // Per-slope outcomes, citing the exact triggered rule.
+        let reps = decision.slopeDecisions.filter { $0.recommendation == .replace }
+        let repairs = decision.slopeDecisions.filter { $0.recommendation == .repair }
         if !reps.isEmpty {
-            let names = reps.map(\.orientation).joined(separator: ", ")
-            parts.append("HAAG thresholds for \(mat.lowercased()) were exceeded on the following slope\(reps.count == 1 ? "" : "s"): \(names). On these slopes, repair-in-kind is not feasible because individual shingles cannot be matched without breaking adjacent factory seals, and partial replacement of contiguous shingle courses would compromise the wind-resistance of surrounding material. Slope-level replacement is the only feasible corrective action.")
+            let lines = reps.map { "\($0.name): \($0.triggeredRule)" }.joined(separator: "; ")
+            parts.append("HAAG replacement thresholds were met on the following slope\(reps.count == 1 ? "" : "s") \u{2014} \(lines). On these slopes, repair-in-kind is not feasible because individual units cannot be matched without breaking adjacent factory seals, and partial replacement of contiguous courses would compromise the wind-resistance of surrounding material. Slope-level replacement is the supportable corrective action.")
         }
         if !repairs.isEmpty {
-            let names = repairs.map(\.orientation).joined(separator: ", ")
-            parts.append("On \(names), functional damage was observed below the slope-replacement threshold. Spot repairs are technically feasible, subject to shingle availability and matching, and represent the least-invasive corrective action.")
+            let lines = repairs.map { "\($0.name): \($0.triggeredRule)" }.joined(separator: "; ")
+            parts.append("Functional damage below the slope-replacement threshold was documented on \(lines). Spot repairs are technically feasible, subject to unit availability and matching, and represent the least-invasive corrective action.")
         }
         if reps.isEmpty && repairs.isEmpty {
             parts.append("No slope met HAAG thresholds for functional damage. Observed conditions are consistent with cosmetic wear or ordinary aging and do not warrant storm-related repair or replacement at this time.")
         }
 
-        if layers >= 2 && (insp.summary.roofAnyFunctionalDamage) {
-            parts.append("Because this roof carries \(layers) layers, current code in most jurisdictions prohibits a third overlay. Any functional damage on a multi-layer assembly therefore triggers a full tear-off and replacement, and is reflected in the recommendation above.")
+        // Overrides, verbatim from the engine's rationale.
+        for o in decision.triggeredOverrides {
+            parts.append(o.rationale)
         }
 
-        if cond == "poor" {
-            parts.append("The pre-storm condition was characterized as poor; brittleness and reduced sealant integrity diminish the repairability of any individual shingle on this assembly and support replacement over patch repair.")
-        }
-
-        parts.append("This report was prepared in conformance with HAAG Engineering inspection methodology and is intended to support a good-faith insurance claim determination.")
+        parts.append("Roof-level conclusion: \(decision.summary)")
+        parts.append("This report was prepared in conformance with HAAG Engineering inspection methodology (engine v\(decision.engineVersion)) and is intended to support a good-faith insurance claim determination.")
         return parts.joined(separator: "\n\n")
     }
 
     // MARK: - Page: HOMEOWNER-FRIENDLY SUMMARY
 
-    private static func drawHomeownerSummary(_ ctx: UIGraphicsPDFRendererContext, _ insp: Inspection) {
+    private static func drawHomeownerSummary(_ ctx: UIGraphicsPDFRendererContext, _ insp: Inspection, _ decision: HaagDecision) {
         ctx.beginPage()
         drawHeader(ctx.cgContext,
                    title: "Homeowner Summary",
                    subtitle: "Plain-English overview")
 
-        let body = buildHomeownerText(insp)
+        let body = buildHomeownerText(insp, decision)
         let card = CGRect(x: margin, y: 130, width: contentWidth, height: pageSize.height - 130 - 80)
         drawCard(ctx.cgContext, rect: card, fill: .white)
         drawWrapped(body,
@@ -611,20 +834,26 @@ nonisolated enum HaagReportGenerator {
         drawFooter(ctx.cgContext, page: 0, reportId: insp.job.reportId)
     }
 
-    private static func buildHomeownerText(_ insp: Inspection) -> String {
+    private static func buildHomeownerText(_ insp: Inspection, _ decision: HaagDecision) -> String {
         var parts: [String] = []
         let name = insp.job.clientName.isEmpty ? "you" : insp.job.clientName
         parts.append("Hi \(name) — here's what we found on your roof in plain English.")
 
-        let s = insp.summary
-        if s.roofFullReplacementRecommended {
+        let qualifyingNames = decision.slopeDecisions
+            .filter { $0.recommendation == .replace }
+            .map(\.name)
+            .joined(separator: ", ")
+        switch decision.overallRecommendation {
+        case .fullReplacement:
             parts.append("Your roof needs a full replacement. We found enough storm damage on enough faces of your roof that fixing individual spots wouldn't last and wouldn't be safe. Replacing the whole roof is the right call.")
-        } else if s.roofPartialReplacementRecommended {
-            let list = s.replacementSlopesList.isEmpty ? "the affected sides" : s.replacementSlopesList
-            parts.append("Some sides of your roof need to be replaced — specifically the \(list) side(s). Other sides are still in good shape and can stay.")
-        } else if s.roofRepairsRecommended {
+        case .partialReplacement:
+            let list = qualifyingNames.isEmpty ? "the affected sides" : qualifyingNames
+            parts.append("Some sides of your roof need to be replaced — specifically \(list). Other sides are still in good shape and can stay.")
+        case .repair:
             parts.append("We found some storm damage but it can be repaired in place. We don't recommend a full replacement at this time.")
-        } else {
+        case .insufficientData:
+            parts.append("We need a few more close-up photos of each side of your roof before we can give you a final answer. We'll schedule a quick follow-up to finish documenting it.")
+        case .noFunctionalDamage:
             parts.append("Good news — we didn't find storm damage that requires repair or replacement. Your roof looks healthy.")
         }
 
@@ -637,7 +866,10 @@ nonisolated enum HaagReportGenerator {
             parts.append(w)
         }
 
-        if insp.roof.layers >= 2 && s.roofAnyFunctionalDamage {
+        let hasFunctional = decision.overallRecommendation == .fullReplacement
+            || decision.overallRecommendation == .partialReplacement
+            || decision.overallRecommendation == .repair
+        if insp.roof.layers >= 2 && hasFunctional {
             parts.append("Because your roof already has \(insp.roof.layers) layers, building code won't let us add another. That's why we're recommending a tear-off rather than another patch.")
         }
 
