@@ -16,6 +16,7 @@ struct CustomerProfileView: View {
     @State private var draft: Customer?
     @State private var showHomeownerShare = false
     @State private var showMessageCustomer = false
+    @State private var showRoofMeasure = false
     @State private var showCoach = false
     @State private var coachTipLesson: Lesson? = nil
     @State private var openReportId: String? = nil
@@ -41,6 +42,7 @@ struct CustomerProfileView: View {
                 coachTipCard
                 stagePipeline
                 PropertyStormHistoryCard(customer: customer)
+                roofMeasureButton
                 contactCard
                 insuranceCard
                 photosSection
@@ -94,6 +96,11 @@ struct CustomerProfileView: View {
         }
         .sheet(isPresented: $showMessageCustomer) {
             CustomerMessageSheet(customer: customer)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showRoofMeasure) {
+            RoofMeasureSheet(ownerName: customer.ownerName, address: customer.address)
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
@@ -357,6 +364,48 @@ struct CustomerProfileView: View {
             .shadow(color: Theme.mint.opacity(0.35), radius: 14, y: 8)
         }
         .buttonStyle(.plain)
+    }
+
+    // MARK: Roof Measurement & Estimate
+
+    private var roofMeasureButton: some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            showRoofMeasure = true
+        } label: {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(.white.opacity(0.22))
+                    Image(systemName: "square.3.layers.3d.top.filled")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(.white)
+                }
+                .frame(width: 38, height: 38)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Measure Roof & Estimate")
+                        .font(.system(size: 14, weight: .heavy))
+                        .foregroundStyle(.white)
+                    Text("Satellite squares & slope · auto cost")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.85))
+                        .lineLimit(1)
+                }
+                Spacer()
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(.white)
+            }
+            .padding(14)
+            .background(
+                LinearGradient(colors: [Theme.amber, Color(red: 0.78, green: 0.42, blue: 0.08)],
+                               startPoint: .topLeading, endPoint: .bottomTrailing),
+                in: .rect(cornerRadius: 18)
+            )
+            .shadow(color: Theme.amber.opacity(0.35), radius: 14, y: 8)
+        }
+        .buttonStyle(.plain)
+        .disabled(customer.address.trimmingCharacters(in: .whitespaces).isEmpty)
     }
 
     // MARK: Practice Coach Button
