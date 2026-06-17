@@ -58,7 +58,7 @@ struct AIInsightsCard: View {
                 AIReviewRow(item: item)
             }
         }
-        .cardStyle(padding: 18, radius: 24)
+        .cardStyle(padding: 18, radius: 22)
         .padding(.horizontal, 20)
     }
 }

@@ -93,7 +93,7 @@ struct DailySummaryCard: View {
             .padding(12)
             .background(Theme.emberSoft.opacity(0.7), in: .rect(cornerRadius: 14))
         }
-        .cardStyle(padding: 18, radius: 24)
+        .cardStyle(padding: 18, radius: 22)
         .padding(.horizontal, embedded ? 0 : 20)
     }
 

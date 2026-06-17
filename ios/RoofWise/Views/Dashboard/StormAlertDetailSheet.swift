@@ -77,7 +77,7 @@ struct StormAlertDetailSheet: View {
                    "\(alert.propertyCount)")
         }
         .frame(maxWidth: .infinity)
-        .cardStyle(padding: 18, radius: 20)
+        .cardStyle(padding: 18, radius: 18)
     }
 
     private var divider: some View {

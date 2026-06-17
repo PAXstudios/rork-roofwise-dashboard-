@@ -40,7 +40,7 @@ struct TasksAndActivityCard: View {
                 }
             }
         }
-        .cardStyle(padding: 18, radius: 24)
+        .cardStyle(padding: 18, radius: 22)
         .padding(.horizontal, embedded ? 0 : 20)
     }
 }

@@ -94,7 +94,7 @@ struct HomeownerProposalView: View {
             statusPill(p)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .cardStyle(padding: 18, radius: 20)
+        .cardStyle(padding: 18, radius: 18)
     }
 
     private func scopeCard(_ p: Proposal) -> some View {

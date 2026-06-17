@@ -50,7 +50,10 @@ enum Theme {
 }
 
 extension View {
-    func cardStyle(padding: CGFloat = 18, radius: CGFloat = 22) -> some View {
+    /// Flat card surface matching the customer-profile aesthetic: white fill,
+    /// thin hairline border, no drop shadow. Standard content radius is 18
+    /// (heroes use 22). Colored CTA cards keep their own tinted shadows.
+    func cardStyle(padding: CGFloat = 16, radius: CGFloat = 18) -> some View {
         self
             .padding(padding)
             .background(Theme.card, in: .rect(cornerRadius: radius))
@@ -58,7 +61,6 @@ extension View {
                 RoundedRectangle(cornerRadius: radius)
                     .stroke(Theme.hairline, lineWidth: 0.6)
             )
-            .shadow(color: Theme.ink.opacity(0.04), radius: 14, x: 0, y: 6)
     }
 }
 

@@ -371,7 +371,7 @@ struct JobDetailView: View {
             activityButton
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .cardStyle(padding: 20, radius: 20)
+        .cardStyle(padding: 18, radius: 18)
         .sheet(isPresented: $showWeather) {
             WeatherDetailSheet(
                 coord: WeatherServiceFactory.mockCoord(forAddress: insp.job.propertyAddress),
@@ -1567,7 +1567,7 @@ struct SolarMeasurementsSheet: View {
                 .foregroundStyle(Theme.inkSoft)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .cardStyle(padding: 20, radius: 20)
+        .cardStyle(padding: 18, radius: 18)
     }
 
     private var segmentsCard: some View {

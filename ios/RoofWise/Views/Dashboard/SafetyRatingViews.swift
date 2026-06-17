@@ -170,6 +170,6 @@ struct SafetyDetailSheet: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .cardStyle(padding: 18, radius: 20)
+        .cardStyle(padding: 18, radius: 18)
     }
 }

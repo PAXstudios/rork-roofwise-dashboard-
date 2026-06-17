@@ -16,7 +16,7 @@ struct CoachingActivityCard: View {
             customerActivityRow
             footerCTA
         }
-        .cardStyle(padding: 18, radius: 24)
+        .cardStyle(padding: 18, radius: 22)
         .padding(.horizontal, 20)
     }
 
