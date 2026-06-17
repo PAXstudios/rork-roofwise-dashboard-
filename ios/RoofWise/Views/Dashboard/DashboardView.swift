@@ -28,17 +28,8 @@ struct DashboardView: View {
                         StormPushPermissionBanner()
                             .padding(.horizontal, 18)
                     }
-                    WeatherTile()
+                    WeatherHubCard()
                         .staggeredAppear(0, animated: didStagger == false)
-                    KPIStrip(onQuickInspection: onQuickInspection)
-                        .staggeredAppear(1, animated: didStagger == false)
-                    if APIKeys.useLiveARAnalysis {
-                        LiveARInspectCTA(onTap: { showLiveAR = true })
-                            .padding(.horizontal, 18)
-                            .staggeredAppear(1, animated: didStagger == false)
-                    }
-                    MileageSummaryCard(onOpen: { showMileage = true })
-                        .staggeredAppear(2, animated: didStagger == false)
                     StormAlertHero(
                         alert: alertStore.latestActiveAlert,
                         onView: {
@@ -49,7 +40,16 @@ struct DashboardView: View {
                             }
                         }
                     )
-                    .staggeredAppear(3, animated: didStagger == false)
+                    .staggeredAppear(1, animated: didStagger == false)
+                    KPIStrip(onQuickInspection: onQuickInspection)
+                        .staggeredAppear(1, animated: didStagger == false)
+                    if APIKeys.useLiveARAnalysis {
+                        LiveARInspectCTA(onTap: { showLiveAR = true })
+                            .padding(.horizontal, 18)
+                            .staggeredAppear(1, animated: didStagger == false)
+                    }
+                    MileageSummaryCard(onOpen: { showMileage = true })
+                        .staggeredAppear(2, animated: didStagger == false)
                     RecentJobsHomeSection(
                         onSeeAll: onOpenLeads,
                         onOpenJob: { _ in onOpenLeads() }
