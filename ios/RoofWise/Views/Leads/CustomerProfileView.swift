@@ -17,6 +17,7 @@ struct CustomerProfileView: View {
     @State private var showHomeownerShare = false
     @State private var showCoach = false
     @State private var coachTipLesson: Lesson? = nil
+    @State private var openReportId: String? = nil
 
     private var customer: Customer {
         store.customers.first { $0.id == customerID }
@@ -29,6 +30,9 @@ struct CustomerProfileView: View {
                 header
                 if customer.isUnassignedDraft {
                     assignPropertyPrompt
+                }
+                if customer.linkedReportId != nil {
+                    openReportButton
                 }
                 shareHomeownerButton
                 practiceCoachButton
@@ -48,6 +52,9 @@ struct CustomerProfileView: View {
         .background(Theme.canvas)
         .navigationTitle(customer.ownerName)
         .navigationBarTitleDisplayMode(.inline)
+        .navigationDestination(item: $openReportId) { rid in
+            JobDetailView(reportId: rid)
+        }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
@@ -224,6 +231,43 @@ struct CustomerProfileView: View {
             .padding(14)
             .background(Theme.amber.opacity(0.12), in: .rect(cornerRadius: 18))
             .overlay(RoundedRectangle(cornerRadius: 18).stroke(Theme.amber.opacity(0.35), lineWidth: 0.8))
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: Open Inspection Report
+
+    private var openReportButton: some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            openReportId = customer.linkedReportId
+        } label: {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(.white.opacity(0.22))
+                    Image(systemName: "doc.richtext.fill")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(.white)
+                }
+                .frame(width: 38, height: 38)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Open Inspection Report")
+                        .font(.system(size: 14, weight: .heavy))
+                        .foregroundStyle(.white)
+                    Text("Slopes, HAAG scoring & PDF · \(customer.linkedReportId ?? "")")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.85))
+                        .lineLimit(1)
+                }
+                Spacer()
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(.white)
+            }
+            .padding(14)
+            .background(Theme.inkGradient, in: .rect(cornerRadius: 18))
+            .shadow(color: Theme.ink.opacity(0.30), radius: 14, y: 8)
         }
         .buttonStyle(.plain)
     }

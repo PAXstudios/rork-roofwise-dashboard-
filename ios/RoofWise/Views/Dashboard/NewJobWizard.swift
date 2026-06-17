@@ -26,6 +26,7 @@ private let kCarriers: [String] = [
 
 struct NewJobWizard: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(CustomerStore.self) private var customerStore
     @State private var store = InspectionStore.shared
 
     // Optional contact fields not in the JSON schema (kept on the wizard only).
@@ -245,6 +246,9 @@ struct NewJobWizard: View {
         draft.job.inspectionDate = .now
         draft.job.reportDate = .now
         let saved = store.add(draft)
+        // Mirror the inspection into a Customer so the job is visible and
+        // reachable from the Leads list and the customer profile.
+        customerStore.upsertFromInspection(saved, phone: phone, email: email)
         UINotificationFeedbackGenerator().notificationOccurred(.success)
         onCreated(saved.job.reportId)
         createdReportId = saved.job.reportId

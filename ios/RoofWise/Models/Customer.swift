@@ -99,6 +99,11 @@ struct Customer: Identifiable {
     var stormTagged: Bool = false
     var estimatedValue: String = ""
 
+    /// Links this customer to its HAAG `Inspection` (`InspectionStore`) by
+    /// report id, so the customer profile can open the inspection report and
+    /// jobs created in the New Job wizard surface in the Leads list.
+    var linkedReportId: String? = nil
+
     // Inspection data attached
     var photos: [CapturedPhoto] = []
     var damageFindings: [InspectionFinding] = []

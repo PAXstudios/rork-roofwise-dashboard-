@@ -55,6 +55,61 @@ final class CustomerStore {
         customers[i] = customer
     }
 
+    /// Creates (or updates) a Customer record that mirrors a HAAG `Inspection`
+    /// created in the New Job wizard, so the job is visible and reachable from
+    /// the Leads list and can open its inspection report. Matches an existing
+    /// customer by linked report id, then by address, before inserting a new one.
+    @discardableResult
+    func upsertFromInspection(_ insp: Inspection,
+                              phone: String = "",
+                              email: String = "",
+                              makeActive: Bool = true) -> UUID {
+        let job = insp.job
+        let name = job.clientName.trimmingCharacters(in: .whitespaces)
+        let addr = job.propertyAddress.trimmingCharacters(in: .whitespaces)
+
+        func matchIndex() -> Int? {
+            if let i = customers.firstIndex(where: { $0.linkedReportId == job.reportId }) {
+                return i
+            }
+            guard !addr.isEmpty else { return nil }
+            return customers.firstIndex {
+                $0.linkedReportId == nil &&
+                $0.address.localizedCaseInsensitiveContains(addr)
+            }
+        }
+
+        if let i = matchIndex() {
+            if !name.isEmpty { customers[i].ownerName = name }
+            if !addr.isEmpty { customers[i].address = addr }
+            if !phone.isEmpty { customers[i].phone = phone }
+            if !email.isEmpty { customers[i].email = email }
+            if !job.carrierName.isEmpty { customers[i].insuranceCompany = job.carrierName }
+            if !job.policyNumber.isEmpty { customers[i].policyNumber = job.policyNumber }
+            customers[i].linkedReportId = job.reportId
+            if customers[i].stage.stepIndex < JobPipelineStage.inspectionScheduled.stepIndex {
+                customers[i].stage = .inspectionScheduled
+            }
+            if makeActive { activeCustomerID = customers[i].id }
+            return customers[i].id
+        }
+
+        var c = Customer(
+            ownerName: name.isEmpty ? "New Job" : name,
+            address: addr,
+            phone: phone,
+            email: email,
+            insuranceCompany: job.carrierName,
+            policyNumber: job.policyNumber,
+            stage: .inspectionScheduled,
+            stormTagged: insp.event.hasHail || insp.event.hasWind
+        )
+        c.linkedReportId = job.reportId
+        customers.append(c)
+        if makeActive { activeCustomerID = c.id }
+        return c.id
+    }
+
     func updateStage(_ id: UUID, to stage: JobPipelineStage) {
         guard let i = customers.firstIndex(where: { $0.id == id }) else { return }
         customers[i].stage = stage
