@@ -144,7 +144,7 @@ final class AuthStore {
     func handleAppleCompletion(_ result: Result<ASAuthorization, Error>) async {
         switch result {
         case .failure(let error):
-            self.lastErrorMessage = "Apple sign-in cancelled or failed: \(error.localizedDescription)"
+            self.lastErrorMessage = Self.appleFailureMessage(for: error)
         case .success(let auth):
             guard
                 let credential = auth.credential as? ASAuthorizationAppleIDCredential,
@@ -215,6 +215,22 @@ final class AuthStore {
             return "No internet connection — try again when you're back online."
         }
         return error.localizedDescription
+    }
+
+    /// Maps Apple's ASAuthorization errors to a friendly message. User cancellation
+    /// is silent; the simulator "unknown" failure (no iCloud account) is explained.
+    private static func appleFailureMessage(for error: Error) -> String? {
+        if let asError = error as? ASAuthorizationError {
+            switch asError.code {
+            case .canceled:
+                return nil // user backed out — don't show an error
+            case .unknown, .failed, .notInteractive:
+                return "Sign in with Apple needs a device signed into iCloud. It can't run in the preview simulator — install RoofWise on your iPhone to use it, or sign in with email below."
+            default:
+                break
+            }
+        }
+        return "Apple sign-in couldn't be completed. Try again, or sign in with email below."
     }
 
     // MARK: - Apple nonce helpers
