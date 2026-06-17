@@ -144,8 +144,13 @@ struct SlopePhotosSheet: View {
                 var photo = CapturedPhoto(image: img, slope: slope,
                                           pitchDegrees: 0, elevationFeet: 0,
                                           captureMode: .square, squaresCovered: 1)
-                let result = await GeminiAnalysisService.analyzeFull(
-                    image: img, slope: slope, mode: .square, squaresCovered: 1)
+                let result: GeminiAnalysisService.AnalysisResult
+                if APIKeys.useMultiStageDetection {
+                    result = await DetectionPipelineService.shared.analyze(image: img).asAnalysisResult()
+                } else {
+                    result = await GeminiAnalysisService.analyzeFull(
+                        image: img, slope: slope, mode: .square, squaresCovered: 1)
+                }
                 photo.findings = result.findings
                 photo.damageMarkers = result.markers
                 photo.analyzed = !result.failed

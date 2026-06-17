@@ -142,12 +142,17 @@ struct CustomerProfileView: View {
                     previewPhoto = nil
                 },
                 onRetry: {
-                    let result = await GeminiAnalysisService.analyzeFull(
-                        image: photo.image,
-                        slope: photo.slope,
-                        mode: photo.captureMode,
-                        squaresCovered: photo.squaresCovered
-                    )
+                    let result: GeminiAnalysisService.AnalysisResult
+                    if APIKeys.useMultiStageDetection {
+                        result = await DetectionPipelineService.shared.analyze(image: photo.image).asAnalysisResult()
+                    } else {
+                        result = await GeminiAnalysisService.analyzeFull(
+                            image: photo.image,
+                            slope: photo.slope,
+                            mode: photo.captureMode,
+                            squaresCovered: photo.squaresCovered
+                        )
+                    }
                     var c = customer
                     if let idx = c.photos.firstIndex(where: { $0.id == photo.id }) {
                         c.photos[idx].findings = result.findings

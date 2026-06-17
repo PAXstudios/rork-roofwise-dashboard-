@@ -185,12 +185,17 @@ struct JobDetailView: View {
                     previewPhoto = nil
                 },
                 onRetry: {
-                    let result = await GeminiAnalysisService.analyzeFull(
-                        image: photo.image,
-                        slope: photo.slope,
-                        mode: photo.captureMode,
-                        squaresCovered: photo.squaresCovered
-                    )
+                    let result: GeminiAnalysisService.AnalysisResult
+                    if APIKeys.useMultiStageDetection {
+                        result = await DetectionPipelineService.shared.analyze(image: photo.image).asAnalysisResult()
+                    } else {
+                        result = await GeminiAnalysisService.analyzeFull(
+                            image: photo.image,
+                            slope: photo.slope,
+                            mode: photo.captureMode,
+                            squaresCovered: photo.squaresCovered
+                        )
+                    }
                     guard let cid = linkedCustomer?.id,
                           var c = customerStore.customers.first(where: { $0.id == cid }),
                           let idx = c.photos.firstIndex(where: { $0.id == photo.id }) else { return }

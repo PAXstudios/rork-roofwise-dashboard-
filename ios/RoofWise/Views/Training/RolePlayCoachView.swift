@@ -82,7 +82,7 @@ struct RolePlayCoachView: View {
             }
             .frame(width: 44, height: 44)
             VStack(alignment: .leading, spacing: 4) {
-                Text("Pitch coach powered by Gemini")
+                Text("Pitch coach powered by RoofWise Vision")
                     .font(.system(size: 15, weight: .bold))
                     .foregroundStyle(Theme.ink)
                 Text("Type your door-knock pitch. Get a score, strengths, fixes, and a sharper rewrite you can use today.")

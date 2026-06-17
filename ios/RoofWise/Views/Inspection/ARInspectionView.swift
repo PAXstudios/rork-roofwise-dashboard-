@@ -634,7 +634,7 @@ private struct ARScanningOverlay: View {
                     Text("Analyzing this frame…")
                         .font(.system(size: 16, weight: .heavy))
                         .foregroundStyle(.white)
-                    Text("Gemini Vision · placing 3D markers")
+                    Text("RoofWise Vision · placing 3D markers")
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(.white.opacity(0.7))
                 }
@@ -1264,7 +1264,7 @@ final class ARInspectionCoordinator: NSObject {
                                                              mode: .square,
                                                              squaresCovered: squarePlaced ? 1 : 0)
         if result.failed {
-            return .failure(message: "Gemini analysis failed. Try again.")
+            return .failure(message: "RoofWise Vision analysis failed. Try again.")
         }
         if result.usedMock {
             return .failure(message: "Set EXPO_PUBLIC_GEMINI_API_KEY to use real AR scanning.")

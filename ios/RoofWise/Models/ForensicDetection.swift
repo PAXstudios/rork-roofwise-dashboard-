@@ -98,6 +98,32 @@ nonisolated enum ForensicDamageType: String, CaseIterable, Codable, Sendable {
         }
     }
 
+    /// Maps the expanded forensic taxonomy back onto the legacy 13-token
+    /// `DamageMarkerType` used for overlay rendering, so pipeline detections can
+    /// be surfaced through the existing photo-overlay / findings UI unchanged.
+    var legacyMarkerType: DamageMarkerType {
+        switch self {
+        case .hailHit: return .hailHits
+        case .bruising: return .bruising
+        case .granuleLoss: return .granuleLoss
+        case .matTransfer: return .granuleLoss
+        case .windCreasing: return .windCreasing
+        case .missingTab, .missingShingle, .underlaymentExposure: return .missingShingles
+        case .lifted: return .lifted
+        case .cracking, .tileCracked, .slateCracked: return .cracking
+        case .splitting, .woodSplitWithGrain, .woodFracture, .seamSplit: return .splitting
+        case .blistering, .adhesionFailure: return .blistering
+        case .flashingDamage: return .flashing
+        case .algaeMoss: return .algaeMoss
+        case .structuralSagging: return .structuralSagging
+        case .footfallDamage, .metalDentCosmetic, .metalDentFunctional,
+             .seamDisengagement, .fastenerPullout, .tileBroken, .tileDisplaced,
+             .slateDisplaced, .slateCornerBroken, .woodGranularCrushing,
+             .membranePuncture, .membraneDisplacement, .surfaceAbrasion:
+            return .other
+        }
+    }
+
     /// True for damage that HAAG treats as NON-storm — must be ruled out and
     /// never attributed to a storm event.
     var isNonStormByDefinition: Bool {

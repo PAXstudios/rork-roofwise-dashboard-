@@ -465,3 +465,57 @@ struct DetectionPipelineService {
         }
     }
 }
+
+// MARK: - Legacy adapter
+//
+// Bridges the multi-stage pipeline output back into the legacy
+// `GeminiAnalysisService.AnalysisResult` shape so existing post-capture call
+// sites can consume it without any downstream changes when the
+// `useMultiStageDetection` flag is ON.
+
+extension PhotoDetectionResult {
+    /// Converts verified forensic detections into the legacy result shape
+    /// (overlay markers + grouped findings) used by the photo pipeline.
+    func asAnalysisResult() -> GeminiAnalysisService.AnalysisResult {
+        let markers: [DamageMarker] = detections.map { d in
+            let center = d.normalizedCenter ?? (x: 0.5, y: 0.5)
+            var radius: CGFloat = 0.03
+            if let b = d.box2d, b.count == 4 {
+                let w = abs(Double(b[3] - b[1])) / 1000.0
+                let h = abs(Double(b[2] - b[0])) / 1000.0
+                radius = CGFloat(max(0.012, min(0.5, max(w, h) / 2)))
+            }
+            return DamageMarker(x: CGFloat(center.x), y: CGFloat(center.y), radius: radius,
+                                type: d.damageType.legacyMarkerType,
+                                severity: d.severity.findingSeverity,
+                                note: d.evidence, confidence: d.confidence)
+        }
+
+        var byType: [DamageMarkerType: [ForensicDetection]] = [:]
+        for d in detections { byType[d.damageType.legacyMarkerType, default: []].append(d) }
+        let findings: [InspectionFinding] = byType.map { type, group in
+            let worst: FindingSeverity = group.contains { $0.severity == .severe } ? .severe
+                : (group.contains { $0.severity == .moderate } ? .moderate : .minor)
+            let meanConf = group.reduce(0) { $0 + $1.confidence } / max(1, group.count)
+            return InspectionFinding(
+                label: type.rawValue,
+                display: type.display,
+                value: "\(group.count) \(type.pluralDisplay)",
+                confidence: meanConf,
+                icon: type.icon,
+                tint: type.color,
+                detected: true,
+                severity: worst)
+        }
+
+        return GeminiAnalysisService.AnalysisResult(
+            findings: findings,
+            markers: markers,
+            failed: failed,
+            usedMock: false,
+            noRoofDetected: noRoofDetected,
+            shingleType: classification?.material.displayName,
+            shingleTypeConfidence: classification?.confidence ?? 0,
+            shingleTypeNote: classification?.evidence)
+    }
+}

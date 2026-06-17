@@ -1032,10 +1032,15 @@ struct QuickInspectionView: View {
                         analyzingThumbnail = photo.image
                     }
                     let started = Date()
-                    let result = await GeminiAnalysisService.analyzeFull(image: photo.image,
+                    let result: GeminiAnalysisService.AnalysisResult
+                    if APIKeys.useMultiStageDetection {
+                        result = await DetectionPipelineService.shared.analyze(image: photo.image).asAnalysisResult()
+                    } else {
+                        result = await GeminiAnalysisService.analyzeFull(image: photo.image,
                                                                           slope: photo.slope,
                                                                           mode: photo.captureMode,
                                                                           squaresCovered: photo.squaresCovered)
+                    }
                     let elapsed = Date().timeIntervalSince(started)
                     if elapsed > 0.2 { observedTimings.append(elapsed) }
                     if !observedTimings.isEmpty {
@@ -1180,10 +1185,15 @@ struct QuickInspectionView: View {
     private func retryAnalysis(for photoID: UUID) async {
         guard let idx = capturedPhotos.firstIndex(where: { $0.id == photoID }) else { return }
         let photo = capturedPhotos[idx]
-        let result = await GeminiAnalysisService.analyzeFull(image: photo.image,
+        let result: GeminiAnalysisService.AnalysisResult
+        if APIKeys.useMultiStageDetection {
+            result = await DetectionPipelineService.shared.analyze(image: photo.image).asAnalysisResult()
+        } else {
+            result = await GeminiAnalysisService.analyzeFull(image: photo.image,
                                                               slope: photo.slope,
                                                               mode: photo.captureMode,
                                                               squaresCovered: photo.squaresCovered)
+        }
         guard let newIdx = capturedPhotos.firstIndex(where: { $0.id == photoID }) else { return }
         capturedPhotos[newIdx].findings = result.findings
         capturedPhotos[newIdx].damageMarkers = result.markers
@@ -1336,7 +1346,7 @@ struct QuickInspectionView: View {
                     Image(systemName: "dot.radiowaves.left.and.right")
                         .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(Theme.ember)
-                    Text("Analyzing \(capturedPhotos.count) photo\(capturedPhotos.count == 1 ? "" : "s") with Gemini Vision")
+                    Text("Analyzing \(capturedPhotos.count) photo\(capturedPhotos.count == 1 ? "" : "s") with RoofWise Vision")
                         .font(.system(size: 13, weight: .heavy))
                         .foregroundStyle(.white)
                 }
@@ -2899,7 +2909,7 @@ private struct ResultsView: View {
                     .font(.system(size: 14, weight: .heavy))
                     .foregroundStyle(Theme.ink)
                 Spacer()
-                Text("\(findings.count) categories · Gemini Vision")
+                Text("\(findings.count) categories · RoofWise Vision")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Theme.inkFaint)
             }

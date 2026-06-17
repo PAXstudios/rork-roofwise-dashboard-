@@ -80,7 +80,7 @@ struct DamageExplainerView: View {
                 Text("Translate findings for the homeowner")
                     .font(.system(size: 15, weight: .bold))
                     .foregroundStyle(Theme.ink)
-                Text("Pick a customer's inspection. Gemini turns the technical findings into a friendly script you can read at the door.")
+                Text("Pick a customer's inspection. RoofWise Vision turns the technical findings into a friendly script you can read at the door.")
                     .font(.system(size: 12.5))
                     .foregroundStyle(Theme.inkSoft)
             }

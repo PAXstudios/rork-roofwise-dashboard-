@@ -312,7 +312,7 @@ struct PhotoDamageOverlayView: View {
                 Spacer()
             }
             if notYetAnalyzed {
-                Text("Run Gemini Vision on this photo to detect hail strikes, wind damage, granule loss, and overlay markers directly on the image.")
+                Text("Run RoofWise Vision on this photo to detect hail strikes, wind damage, granule loss, and overlay markers directly on the image.")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.85))
                     .lineSpacing(2)
@@ -322,7 +322,7 @@ struct PhotoDamageOverlayView: View {
                     .foregroundStyle(.white.opacity(0.85))
                     .lineSpacing(2)
             } else {
-                Text("This photo couldn’t be analyzed. Tap retry to run Gemini Vision again.")
+                Text("This photo couldn’t be analyzed. Tap retry to run RoofWise Vision again.")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.85))
             }
@@ -346,7 +346,7 @@ struct PhotoDamageOverlayView: View {
                             .font(.system(size: 13, weight: .heavy))
                     }
                     Text(isRetrying
-                         ? (notYetAnalyzed ? "Analyzing with Gemini…" : "Re-analyzing…")
+                         ? (notYetAnalyzed ? "Analyzing with RoofWise Vision…" : "Re-analyzing…")
                          : (notYetAnalyzed ? "Analyze with AI" : "Retry AI Analysis"))
                         .font(.system(size: 13, weight: .heavy))
                 }

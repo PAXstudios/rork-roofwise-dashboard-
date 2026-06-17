@@ -56,6 +56,13 @@ enum APIKeys {
 
     static let useLiveARAnalysis: Bool = true // toggle for the live AR overlay feature
 
+    /// Step 1.5a feature flag. When `true`, post-capture canonical analysis
+    /// routes through the new multi-stage `DetectionPipelineService` (Stages
+    /// 0-3). When `false` (default), every call site behaves byte-identically
+    /// to today's single-pass `GeminiAnalysisService.analyzeFull`. The live AR
+    /// path is never routed through the pipeline regardless of this flag.
+    static let useMultiStageDetection: Bool = false
+
     // MARK: Live-mode accessors
     static var isLiveGoogleMaps: Bool      { !USE_MOCKS && !googleMapsApiKey.isEmpty }
     static var isLiveGoogleSolar: Bool     { !USE_MOCKS && !googleSolarApiKey.isEmpty }
