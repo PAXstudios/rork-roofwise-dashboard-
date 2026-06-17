@@ -63,6 +63,13 @@ enum APIKeys {
     /// path is never routed through the pipeline regardless of this flag.
     static let useMultiStageDetection: Bool = false
 
+    /// Step 1.5b feature flag. When `true`, post-inspection evaluation can route
+    /// through the new RoofWise Decision Engine (Stages 4-6:
+    /// `DetectionPipelineService.aggregateAndDecide`). When `false` (default),
+    /// the deterministic `DecisionEngine` path is the only one used and behaves
+    /// byte-identically to today. Additive rollout — zero regression when OFF.
+    static let useRoofWiseDecisionEngine: Bool = false
+
     // MARK: Live-mode accessors
     static var isLiveGoogleMaps: Bool      { !USE_MOCKS && !googleMapsApiKey.isEmpty }
     static var isLiveGoogleSolar: Bool     { !USE_MOCKS && !googleSolarApiKey.isEmpty }

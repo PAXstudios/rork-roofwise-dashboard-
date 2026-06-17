@@ -704,3 +704,63 @@ struct GeminiAnalysisService {
     }
 
 }
+
+// MARK: - Text-only completion (RoofWise Decision Engine, Stage 6)
+//
+// Additive. Does NOT touch any existing analyze method. Used by
+// `RoofWiseDecisionEngineService` to run the RoofWise Decision Engine prompt
+// against the aggregated per-slope JSON (no image). Same Rork toolkit proxy,
+// auth, model, and OpenAI-compatible envelope as the vision calls.
+extension GeminiAnalysisService {
+    /// Sends a text-only chat completion (system prompt + JSON payload) and
+    /// returns the assistant message text verbatim. Throws `LiveAnalyzeError`
+    /// on misconfiguration / transport / parse failure.
+    func callRaw(systemPrompt: String, userJSON: String) async throws -> String {
+        guard !secret.isEmpty, let url = chatCompletionsURL else {
+            throw LiveAnalyzeError.notConfigured
+        }
+        let body: [String: Any] = [
+            "model": Self.model,
+            "temperature": 0.0,
+            "messages": [
+                ["role": "system", "content": systemPrompt],
+                ["role": "user", "content": userJSON]
+            ]
+        ]
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("Bearer \(secret)", forHTTPHeaderField: "Authorization")
+        req.timeoutInterval = 90
+        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+
+        let (data, response) = try await URLSession.shared.data(for: req)
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            throw LiveAnalyzeError.badStatus(http.statusCode)
+        }
+        guard let text = Self.extractMessageText(data) else {
+            throw LiveAnalyzeError.unparseable
+        }
+        return text
+    }
+
+    /// Pulls the assistant message text out of the OpenAI-compatible (or legacy
+    /// Gemini-native) response envelope.
+    private static func extractMessageText(_ data: Data) -> String? {
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        if let choices = root["choices"] as? [[String: Any]],
+           let message = choices.first?["message"] as? [String: Any] {
+            if let s = message["content"] as? String { return s }
+            if let parts = message["content"] as? [[String: Any]] {
+                return parts.compactMap { $0["text"] as? String }.joined()
+            }
+        }
+        if let candidates = root["candidates"] as? [[String: Any]],
+           let content = candidates.first?["content"] as? [String: Any],
+           let parts = content["parts"] as? [[String: Any]],
+           let s = parts.first?["text"] as? String {
+            return s
+        }
+        return nil
+    }
+}

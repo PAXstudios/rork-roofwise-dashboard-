@@ -130,6 +130,41 @@ final class InspectionStore {
                                  on: insp)
     }
 
+    // MARK: RoofWise Decision Engine (Stages 4-6) — flag-gated
+
+    /// Runs the multi-stage RoofWise Decision Engine for an inspection using the
+    /// per-photo detection results captured by `DetectionPipelineService`.
+    ///
+    /// This is the ON-path for `APIKeys.useRoofWiseDecisionEngine`. The
+    /// deterministic `DecisionEngine` (invoked by `recomputeSummary`) remains
+    /// the source of truth for the editable Slope/Summary contract and the PDF
+    /// report; the RoofWise engine layers HAAG-grade narratives on top. When
+    /// the flag is OFF this method short-circuits to `nil` and nothing changes.
+    ///
+    /// Stage 6 needs per-photo detections that only exist in the capture flow,
+    /// so this is intentionally separate from the synchronous `recomputeSummary`
+    /// (which has no detection data) — keeping that path byte-identical to today.
+    func evaluateWithRoofWiseEngine(
+        reportId: String,
+        photoResultsBySlope: [UUID: [(photoId: UUID, result: PhotoDetectionResult)]],
+        slopeMetadata: [UUID: (orientation: String, areaSquares: Double, material: HaagRoofMaterial)],
+        inspectionMetadata: InspectionMetadata
+    ) async -> InspectionDecisionResult? {
+        guard APIKeys.useRoofWiseDecisionEngine else { return nil }
+        guard inspection(with: reportId) != nil else { return nil }
+        do {
+            return try await DetectionPipelineService.shared.aggregateAndDecide(
+                inspectionId: UUID(),
+                photoResultsBySlope: photoResultsBySlope,
+                slopeMetadata: slopeMetadata,
+                inspectionMetadata: inspectionMetadata
+            )
+        } catch {
+            print("[RoofWiseEngine] \u{274C} evaluation failed: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
     // MARK: Storm event auto-population
 
     /// Fills `event` on the inspection identified by `reportId` from the

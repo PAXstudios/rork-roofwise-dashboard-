@@ -138,6 +138,67 @@ struct DetectionPipelineService {
         )
     }
 
+    // MARK: - Stages 4-6 orchestration
+
+    /// Runs ONCE per inspection after all per-photo detection finishes:
+    ///   Stage 4  aggregate per-photo detections into per-slope SlopeAggregateData
+    ///   Stage 5  apply HAAG thresholds → per-slope HaagSlopeVerdict
+    ///   Stage 6  RoofWise Decision Engine → roof verdict + narratives
+    /// Additive — does not touch the per-photo `analyze` path.
+    func aggregateAndDecide(
+        inspectionId: UUID,
+        photoResultsBySlope: [UUID: [(photoId: UUID, result: PhotoDetectionResult)]],
+        slopeMetadata: [UUID: (orientation: String, areaSquares: Double, material: HaagRoofMaterial)],
+        inspectionMetadata: InspectionMetadata
+    ) async throws -> InspectionDecisionResult {
+        var slopeData: [SlopeAggregateData] = []
+        var verdicts: [HaagSlopeVerdict] = []
+
+        for (slopeId, results) in photoResultsBySlope {
+            let meta = slopeMetadata[slopeId] ?? (orientation: "", areaSquares: 0, material: HaagRoofMaterial.unknown)
+            let aggregate = SlopeAggregationService.aggregate(
+                slopeId: slopeId,
+                orientation: meta.orientation,
+                material: meta.material,
+                areaSquares: meta.areaSquares,
+                photoResults: results
+            )
+            let verdict = SlopeAggregationService.applyThresholds(
+                data: aggregate,
+                isDiscontinued: inspectionMetadata.isDiscontinued,
+                layers: inspectionMetadata.layers ?? 1,
+                brittleness: inspectionMetadata.brittleness
+            )
+            slopeData.append(aggregate)
+            verdicts.append(verdict)
+        }
+
+        let decision = try await RoofWiseDecisionEngineService.shared.evaluate(
+            slopes: slopeData,
+            slopeVerdicts: verdicts,
+            roofAgeYears: inspectionMetadata.roofAgeYears,
+            layers: inspectionMetadata.layers,
+            pitch: inspectionMetadata.pitch,
+            squareFootage: inspectionMetadata.squareFootage,
+            brittleness: inspectionMetadata.brittleness,
+            isDiscontinued: inspectionMetadata.isDiscontinued,
+            collateralChecklist: inspectionMetadata.collateralChecklist,
+            stormHistory: inspectionMetadata.stormHistory,
+            carrier: inspectionMetadata.carrier,
+            policyType: inspectionMetadata.policyType,
+            deductible: inspectionMetadata.deductible,
+            dayOfLoss: inspectionMetadata.dayOfLoss,
+            customerNotes: inspectionMetadata.customerNotes
+        )
+
+        return InspectionDecisionResult(
+            inspectionId: inspectionId,
+            slopeData: slopeData,
+            slopeVerdicts: verdicts,
+            decision: decision
+        )
+    }
+
     // MARK: - Stage 1: material classification
 
     private func classifyMaterial(base64: String) async throws -> MaterialClassification {
