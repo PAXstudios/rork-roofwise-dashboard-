@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import CoreLocation
 
 // MARK: - Haag Inspection schema (single source of truth)
 //
@@ -19,6 +20,11 @@ struct InspectionJob: Codable, Hashable {
     var carrierName: String
     var policyNumber: String
     var claimNumber: String
+    /// Geocoded coordinate for `propertyAddress`. Filled on creation and via
+    /// the one-time backfill migration. Optional so inspections saved before
+    /// this step decode unchanged (decodeIfPresent → nil).
+    var latitude: Double?
+    var longitude: Double?
 
     enum CodingKeys: String, CodingKey {
         case reportId = "report_id"
@@ -31,6 +37,14 @@ struct InspectionJob: Codable, Hashable {
         case carrierName = "carrier_name"
         case policyNumber = "policy_number"
         case claimNumber = "claim_number"
+        case latitude
+        case longitude
+    }
+
+    /// Real geocoded coordinate, or nil until the geocode resolves.
+    var coordinate: CLLocationCoordinate2D? {
+        guard let latitude, let longitude else { return nil }
+        return CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
     }
 
     static func empty(reportId: String,
@@ -46,7 +60,9 @@ struct InspectionJob: Codable, Hashable {
             propertyAddress: "",
             carrierName: "",
             policyNumber: "",
-            claimNumber: ""
+            claimNumber: "",
+            latitude: nil,
+            longitude: nil
         )
     }
 }

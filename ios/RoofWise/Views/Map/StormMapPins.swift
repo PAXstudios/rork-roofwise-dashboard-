@@ -29,7 +29,11 @@ struct StormPinView: View {
 
     @ViewBuilder
     private var glyph: some View {
-        if event.isHail {
+        if event.isTornado {
+            Image(systemName: "tornado")
+                .font(.system(size: diameter * 0.5, weight: .black))
+                .foregroundStyle(.white)
+        } else if event.isHail {
             Text("H")
                 .font(.system(size: diameter * 0.46, weight: .black))
                 .foregroundStyle(.white)

@@ -52,37 +52,40 @@ extension StormSeverity {
 // MARK: Filters
 
 nonisolated enum StormKindFilter: String, CaseIterable, Identifiable, Sendable {
-    case hail, wind, both
+    case hail, wind, tornado, both
     var id: String { rawValue }
 
     var label: String {
         switch self {
-        case .hail: return "Hail"
-        case .wind: return "Wind"
-        case .both: return "Both"
+        case .hail:    return "Hail"
+        case .wind:    return "Wind"
+        case .tornado: return "Tornado"
+        case .both:    return "All"
         }
     }
 
     var icon: String {
         switch self {
-        case .hail: return "cloud.hail.fill"
-        case .wind: return "wind"
-        case .both: return "cloud.bolt.rain.fill"
+        case .hail:    return "cloud.hail.fill"
+        case .wind:    return "wind"
+        case .tornado: return "tornado"
+        case .both:    return "cloud.bolt.rain.fill"
         }
     }
 }
 
 nonisolated enum StormDateRange: Hashable, Sendable {
-    case last7, last30, last90, lastYear, all
+    case last7, last30, last90, lastYear, last3Years, all
     case custom(start: Date, end: Date)
 
     var label: String {
         switch self {
-        case .last7:    return "Last 7 days"
-        case .last30:   return "Last 30 days"
-        case .last90:   return "Last 90 days"
-        case .lastYear: return "Last 12 months"
-        case .all:      return "All time"
+        case .last7:      return "Last 7 days"
+        case .last30:     return "Last 30 days"
+        case .last90:     return "Last 90 days"
+        case .lastYear:   return "Last 12 months"
+        case .last3Years: return "Last 3 years"
+        case .all:        return "All time"
         case .custom(let s, let e):
             let f = DateFormatter()
             f.dateFormat = "MMM d"
@@ -95,11 +98,12 @@ nonisolated enum StormDateRange: Hashable, Sendable {
         let cal = Calendar.current
         let now = Date()
         switch self {
-        case .last7:    return cal.date(byAdding: .day, value: -7, to: now)
-        case .last30:   return cal.date(byAdding: .day, value: -30, to: now)
-        case .last90:   return cal.date(byAdding: .day, value: -90, to: now)
-        case .lastYear: return cal.date(byAdding: .year, value: -1, to: now)
-        case .all:      return nil
+        case .last7:      return cal.date(byAdding: .day, value: -7, to: now)
+        case .last30:     return cal.date(byAdding: .day, value: -30, to: now)
+        case .last90:     return cal.date(byAdding: .day, value: -90, to: now)
+        case .lastYear:   return cal.date(byAdding: .year, value: -1, to: now)
+        case .last3Years: return cal.date(byAdding: .year, value: -3, to: now)
+        case .all:        return nil
         case .custom(let start, _): return start
         }
     }
@@ -116,11 +120,12 @@ nonisolated enum StormDateRange: Hashable, Sendable {
     /// client-side date filter always has data to work with.
     var monthsBack: Int {
         switch self {
-        case .last7:    return 1
-        case .last30:   return 2
-        case .last90:   return 4
-        case .lastYear: return 13
-        case .all:      return 120
+        case .last7:      return 1
+        case .last30:     return 2
+        case .last90:     return 4
+        case .lastYear:   return 13
+        case .last3Years: return 37
+        case .all:        return 120
         case .custom(let start, _):
             let months = Calendar.current.dateComponents([.month], from: start, to: Date()).month ?? 12
             return max(1, months + 1)
@@ -138,8 +143,9 @@ nonisolated enum StormDateRange: Hashable, Sendable {
 // MARK: StormPinEvent — pure display helpers (nonisolated)
 
 extension StormPinEvent {
-    /// Severity from magnitude. Hail by inches, wind by mph.
+    /// Severity from magnitude. Hail by inches, wind by mph, tornado always severe.
     nonisolated var severity: StormSeverity {
+        if eventType == .tornado { return .severe }
         if let h = hailSizeIn {
             if h >= 1.75 { return .severe }
             if h >= 1.0  { return .moderate }
@@ -168,6 +174,7 @@ extension StormPinEvent {
     /// Pin diameter scales linearly with intensity, clamped to a glove-readable
     /// 30–56 pt so a 3" stone or a 120 mph gust reads big without overflowing.
     nonisolated var glyphDiameter: CGFloat {
+        if eventType == .tornado { return 46 }
         if let h = hailSizeIn {
             return min(56, max(30, 28 + CGFloat(h) * 9))
         }
@@ -180,11 +187,22 @@ extension StormPinEvent {
     /// "H" for hail, "W" for wind — the white letter on the pin.
     nonisolated var typeLetter: String { isHail ? "H" : "W" }
 
+    /// SF Symbol representing the storm type — used by the detail sheet + legend.
+    nonisolated var symbolName: String {
+        switch eventType {
+        case .hail:    return "cloud.hail.fill"
+        case .wind:    return "wind"
+        case .tornado: return "tornado"
+        }
+    }
+
     /// Compact magnitude string for sheets and route labels.
     nonisolated var magnitudeText: String {
-        if let h = hailSizeIn { return String(format: "%.2f\" hail", h) }
-        if let w = windGustMph { return "\(w) mph wind" }
-        return "Storm"
+        switch eventType {
+        case .hail:    return hailSizeIn.map { String(format: "%.2f\" hail", $0) } ?? "Hail"
+        case .wind:    return windGustMph.map { "\($0) mph wind" } ?? "Wind"
+        case .tornado: return windGustMph.map { "Tornado \u{00B7} \($0) mph" } ?? "Tornado"
+        }
     }
 }
 
@@ -192,6 +210,16 @@ extension StormPinEvent {
 
 extension StormPinEvent {
     @MainActor var severityColor: Color { severity.color }
+
+    /// Brand tint by storm type (hail sky, wind ember, tornado crimson). Used
+    /// for type chrome in the detail sheet + legend, distinct from severityColor.
+    @MainActor var typeTint: Color {
+        switch eventType {
+        case .hail:    return Theme.sky
+        case .wind:    return Theme.ember
+        case .tornado: return Theme.crimson
+        }
+    }
 
     /// Recency: green ≤30d, amber 31–90d, gray >90d.
     @MainActor var recencyColor: Color {

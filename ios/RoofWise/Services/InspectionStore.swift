@@ -55,6 +55,7 @@ final class InspectionStore {
     func add(_ inspection: Inspection) -> Inspection {
         inspections.append(inspection)
         save()
+        scheduleGeocode(for: inspection.job.reportId)
         return inspection
     }
 
@@ -71,6 +72,30 @@ final class InspectionStore {
 
     func inspection(with reportId: String) -> Inspection? {
         inspections.first { $0.job.reportId == reportId }
+    }
+
+    // MARK: Geocoded location
+
+    /// Persist a resolved coordinate onto the inspection's job (used on creation
+    /// and by the one-time backfill migration).
+    func setCoordinate(_ coord: CLLocationCoordinate2D, for reportId: String) {
+        guard let idx = inspections.firstIndex(where: { $0.job.reportId == reportId }) else { return }
+        inspections[idx].job.latitude = coord.latitude
+        inspections[idx].job.longitude = coord.longitude
+        save()
+    }
+
+    /// Geocode a newly-created inspection's address in the background
+    /// (cache-first) and persist the coordinate.
+    private func scheduleGeocode(for reportId: String) {
+        Task { [weak self] in
+            guard let self,
+                  let insp = self.inspection(with: reportId),
+                  insp.job.coordinate == nil else { return }
+            if let coord = await CoordinateBackfillService.shared.resolve(address: insp.job.propertyAddress) {
+                self.setCoordinate(coord, for: reportId)
+            }
+        }
     }
 
     // MARK: Slope helpers

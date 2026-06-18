@@ -35,10 +35,10 @@ struct StormPinDetailSheet: View {
         HStack(spacing: 12) {
             ZStack {
                 RoundedRectangle(cornerRadius: 14)
-                    .fill(event.isHail ? Theme.sky.opacity(0.18) : Theme.ember.opacity(0.18))
-                Image(systemName: event.isHail ? "cloud.hail.fill" : "wind")
+                    .fill(event.typeTint.opacity(0.18))
+                Image(systemName: event.symbolName)
                     .font(.system(size: Theme.TypeRamp.title, weight: .heavy))
-                    .foregroundStyle(event.isHail ? Theme.sky : Theme.ember)
+                    .foregroundStyle(event.typeTint)
             }
             .frame(width: 56, height: 56)
 
@@ -54,13 +54,22 @@ struct StormPinDetailSheet: View {
         }
     }
 
+    private var primaryStat: (label: String, value: String) {
+        switch event.eventType {
+        case .hail:
+            return ("Hail Size", String(format: "%.2f\"", event.hailSizeIn ?? 0))
+        case .wind:
+            return ("Peak Gust", "\(event.windGustMph ?? 0) mph")
+        case .tornado:
+            return ("Tornado", event.windGustMph.map { "\($0) mph" } ?? "On record")
+        }
+    }
+
     private var statRow: some View {
         HStack(spacing: 10) {
-            stat(label: event.isHail ? "Hail Size" : "Peak Gust",
-                 value: event.isHail
-                    ? String(format: "%.2f\"", event.hailSizeIn ?? 0)
-                    : "\(event.windGustMph ?? 0) mph",
-                 tint: event.isHail ? Theme.sky : Theme.ember)
+            stat(label: primaryStat.label,
+                 value: primaryStat.value,
+                 tint: event.typeTint)
             stat(label: "Distance",
                  value: String(format: "%.1f mi", event.distanceMiles(from: centerCoord)),
                  tint: Theme.amber)

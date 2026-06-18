@@ -28,11 +28,12 @@ struct StormDateRangeSheet: View {
     }
 
     private let presets: [(StormDateRange, String, String)] = [
-        (.last7,    "Last 7 days",    "bolt.fill"),
-        (.last30,   "Last 30 days",   "calendar"),
-        (.last90,   "Last 90 days",   "calendar"),
-        (.lastYear, "Last 12 months", "calendar"),
-        (.all,      "All time",       "infinity")
+        (.last7,      "Last 7 days",    "bolt.fill"),
+        (.last30,     "Last 30 days",   "calendar"),
+        (.last90,     "Last 90 days",   "calendar"),
+        (.lastYear,   "Last 12 months", "calendar"),
+        (.last3Years, "Last 3 years",   "clock.arrow.circlepath"),
+        (.all,        "All time",       "infinity")
     ]
 
     var body: some View {

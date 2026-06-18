@@ -1,5 +1,6 @@
 import SwiftUI
 import Observation
+import CoreLocation
 
 @Observable
 final class CustomerStore {
@@ -28,6 +29,7 @@ final class CustomerStore {
     func add(_ customer: Customer, makeActive: Bool = true) {
         customers.append(customer)
         if makeActive { activeCustomerID = customer.id }
+        scheduleGeocode(for: customer.id)
     }
 
     /// Creates a lightweight placeholder customer for an inspection where the
@@ -104,15 +106,42 @@ final class CustomerStore {
             stage: .inspectionScheduled,
             stormTagged: insp.event.hasHail || insp.event.hasWind
         )
+        // Reuse coords already geocoded onto the inspection, if any.
+        c.latitude = insp.job.latitude
+        c.longitude = insp.job.longitude
         c.linkedReportId = job.reportId
         customers.append(c)
         if makeActive { activeCustomerID = c.id }
+        scheduleGeocode(for: c.id)
         return c.id
     }
 
     func updateStage(_ id: UUID, to stage: JobPipelineStage) {
         guard let i = customers.firstIndex(where: { $0.id == id }) else { return }
         customers[i].stage = stage
+    }
+
+    // MARK: - Geocoded location
+
+    /// Persist a resolved coordinate onto the customer (used on creation and by
+    /// the one-time backfill migration).
+    func setCoordinate(_ coord: CLLocationCoordinate2D, for id: UUID) {
+        guard let i = customers.firstIndex(where: { $0.id == id }) else { return }
+        customers[i].latitude = coord.latitude
+        customers[i].longitude = coord.longitude
+    }
+
+    /// Geocode a newly-created customer's address in the background (cache-first)
+    /// and store the coordinate so its map pin lands on the real address.
+    private func scheduleGeocode(for id: UUID) {
+        Task { [weak self] in
+            guard let self,
+                  let customer = self.customers.first(where: { $0.id == id }),
+                  customer.coordinate == nil, !customer.isUnassignedDraft else { return }
+            if let coord = await CoordinateBackfillService.shared.resolve(address: customer.address) {
+                self.setCoordinate(coord, for: id)
+            }
+        }
     }
 
     // MARK: - Roof measurement + repair estimate (background)
@@ -211,6 +240,7 @@ final class CustomerStore {
             estimatedValue: ""
         )
         customers.append(new)
+        scheduleGeocode(for: new.id)
         return new.id
     }
 

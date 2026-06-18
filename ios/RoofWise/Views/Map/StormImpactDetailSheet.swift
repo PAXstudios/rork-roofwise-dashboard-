@@ -27,7 +27,19 @@ struct StormImpactDetailSheet: View {
     @State private var radius: Double = 5
     @State private var showEvidenceConfirm = false
 
-    private var tint: Color { event.isHail ? Theme.sky : Theme.ember }
+    private var tint: Color { event.typeTint }
+
+    /// Primary stat shown first: hail size, peak gust, or tornado wind.
+    private var primaryStat: (label: String, value: String) {
+        switch event.eventType {
+        case .hail:
+            return ("Hail Size", String(format: "%.2f\"", event.hailSizeIn ?? 0))
+        case .wind:
+            return ("Peak Gust", "\(event.windGustMph ?? 0) mph")
+        case .tornado:
+            return ("Tornado", event.windGustMph.map { "\($0) mph" } ?? "On record")
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -56,7 +68,7 @@ struct StormImpactDetailSheet: View {
         HStack(spacing: 12) {
             ZStack {
                 RoundedRectangle(cornerRadius: 14).fill(tint.opacity(0.18))
-                Image(systemName: event.isHail ? "cloud.hail.fill" : "wind")
+                Image(systemName: event.symbolName)
                     .font(.system(size: Theme.TypeRamp.title, weight: .heavy))
                     .foregroundStyle(tint)
             }
@@ -95,10 +107,8 @@ struct StormImpactDetailSheet: View {
 
     private var statRow: some View {
         HStack(spacing: 10) {
-            stat(label: event.isHail ? "Hail Size" : "Peak Gust",
-                 value: event.isHail
-                    ? String(format: "%.2f\"", event.hailSizeIn ?? 0)
-                    : "\(event.windGustMph ?? 0) mph",
+            stat(label: primaryStat.label,
+                 value: primaryStat.value,
                  tint: tint)
             stat(label: "Impact Radius",
                  value: "\(Int(event.impactRadiusMiles)) mi",

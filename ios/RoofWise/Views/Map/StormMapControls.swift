@@ -26,7 +26,7 @@ struct StormFilterBar: View {
                 datePill
             }
 
-            if kindFilter != .wind {
+            if kindFilter == .hail || kindFilter == .both {
                 slider(
                     icon: "cloud.hail.fill",
                     title: "Hail ≥",
@@ -37,7 +37,7 @@ struct StormFilterBar: View {
                     valueLabel: String(format: "%.2f\"", hailSizeMin)
                 )
             }
-            if kindFilter != .hail {
+            if kindFilter == .wind || kindFilter == .both {
                 slider(
                     icon: "wind",
                     title: "Wind ≥",
@@ -48,6 +48,9 @@ struct StormFilterBar: View {
                     valueLabel: "\(Int(windMphMin)) mph"
                 )
             }
+            if kindFilter == .tornado {
+                tornadoNote
+            }
         }
         .padding(12)
         .background(.ultraThinMaterial, in: .rect(cornerRadius: 18))
@@ -56,10 +59,27 @@ struct StormFilterBar: View {
 
     private func accent(_ k: StormKindFilter) -> Color {
         switch k {
-        case .hail: return Theme.sky
-        case .wind: return Theme.ember
-        case .both: return Theme.ink
+        case .hail:    return Theme.sky
+        case .wind:    return Theme.ember
+        case .tornado: return Theme.crimson
+        case .both:    return Theme.ink
         }
+    }
+
+    /// Tornadoes carry no user-tunable magnitude slider — they always surface.
+    private var tornadoNote: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "tornado")
+                .font(.system(size: Theme.TypeRamp.subhead, weight: .bold))
+                .foregroundStyle(Theme.crimson)
+                .frame(width: 22)
+            Text("All tornado reports shown")
+                .font(.system(size: Theme.TypeRamp.meta, weight: .heavy))
+                .foregroundStyle(Theme.inkSoft)
+            Spacer()
+        }
+        .frame(minHeight: 44)
+        .padding(.horizontal, 4)
     }
 
     private func chip(_ k: StormKindFilter) -> some View {

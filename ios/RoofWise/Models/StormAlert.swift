@@ -135,7 +135,8 @@ nonisolated struct StormAlert: Codable, Identifiable, Hashable, Sendable {
             windGustMph: (eventType == .wind || eventType == .tornado) ? windMph : nil,
             latitude: latitude,
             longitude: longitude,
-            source: source
+            source: source,
+            eventType: eventType
         )
     }
 }

@@ -1,4 +1,5 @@
 import SwiftUI
+import CoreLocation
 
 // MARK: - Pipeline kind
 
@@ -114,6 +115,13 @@ struct Customer: Identifiable {
     var phone: String = ""
     var email: String = ""
 
+    // Geocoded property location. Filled on record creation (and via the
+    // one-time backfill migration) so map pins land on the real address
+    // instead of a deterministic placeholder. Optional so records created
+    // before geocoding — or while it's still resolving — still load.
+    var latitude: Double? = nil
+    var longitude: Double? = nil
+
     // Insurance / claim
     var insuranceCompany: String = ""
     var policyNumber: String = ""
@@ -159,5 +167,11 @@ struct Customer: Identifiable {
 
     var isUnassignedDraft: Bool {
         ownerName == "Unassigned Inspection" && address.hasPrefix("Add property")
+    }
+
+    /// Real geocoded coordinate, or nil until the geocode resolves.
+    var coordinate: CLLocationCoordinate2D? {
+        guard let latitude, let longitude else { return nil }
+        return CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
     }
 }

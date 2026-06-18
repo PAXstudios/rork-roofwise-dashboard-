@@ -33,6 +33,10 @@ nonisolated struct StormPinEvent: Identifiable, Hashable {
     let latitude: Double
     let longitude: Double
     let source: String   // "NOAA" or "Mock"
+    /// Storm classification. Drives the type chip, pin glyph and severity.
+    /// Inferred from magnitude when not supplied so legacy call sites keep
+    /// working; tornadoes must pass it explicitly to avoid collapsing to wind.
+    let eventType: StormEventType
 
     init(id: UUID = UUID(),
          date: Date,
@@ -40,7 +44,8 @@ nonisolated struct StormPinEvent: Identifiable, Hashable {
          windGustMph: Int? = nil,
          latitude: Double,
          longitude: Double,
-         source: String) {
+         source: String,
+         eventType: StormEventType? = nil) {
         self.id = id
         self.date = date
         self.hailSizeIn = hailSizeIn
@@ -48,18 +53,22 @@ nonisolated struct StormPinEvent: Identifiable, Hashable {
         self.latitude = latitude
         self.longitude = longitude
         self.source = source
+        self.eventType = eventType ?? (hailSizeIn != nil ? .hail : .wind)
     }
 
     var coordinate: CLLocationCoordinate2D {
         .init(latitude: latitude, longitude: longitude)
     }
 
-    var isHail: Bool { hailSizeIn != nil }
+    var isHail: Bool { eventType == .hail }
+    var isTornado: Bool { eventType == .tornado }
 
     var headline: String {
-        if let h = hailSizeIn { return String(format: "%.2f\" Hail", h) }
-        if let w = windGustMph { return "\(w) mph Wind" }
-        return "Storm"
+        switch eventType {
+        case .hail:    return hailSizeIn.map { String(format: "%.2f\" Hail", $0) } ?? "Hail"
+        case .wind:    return windGustMph.map { "\($0) mph Wind" } ?? "Wind"
+        case .tornado: return windGustMph.map { "Tornado \u{00B7} \($0) mph" } ?? "Tornado"
+        }
     }
 }
 

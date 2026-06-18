@@ -62,7 +62,7 @@ struct MapHubView: View {
     @State private var windMphMin: Double = 40       // applied
     @State private var hailSizeMinRaw: Double = 0.5
     @State private var windMphMinRaw: Double = 40
-    @State private var dateRange: StormDateRange = .last90
+    @State private var dateRange: StormDateRange = .last3Years
     @State private var showDateSheet = false
     @State private var filterDebounce: Task<Void, Never>? = nil
 
@@ -80,6 +80,10 @@ struct MapHubView: View {
     @State private var storms: [StormPinEvent] = []
     @State private var stormEvents: [NoaaStormEvent] = []
     @State private var eventByPinId: [UUID: NoaaStormEvent] = [:]
+    // Tracks the center/range the current pins were fetched for so we only
+    // refetch when the map moves a meaningful distance or the range changes.
+    @State private var loadedCenter: CLLocationCoordinate2D? = nil
+    @State private var loadedRange: StormDateRange? = nil
     @State private var radiusFilterMiles: Double? = nil
     @State private var radiusFilterCenter: CLLocationCoordinate2D? = nil
 
@@ -90,6 +94,7 @@ struct MapHubView: View {
     @State private var pickedAddress: AddressSuggestion?
     @State private var shareText: String?
     @State private var showShare = false
+    @State private var showLegendSheet = false
 
     // Knock state (preserved)
     @State private var knockStore = KnockStore()
@@ -117,14 +122,18 @@ struct MapHubView: View {
         guard showStorms else { return [] }
         return storms.filter { s in
             switch kindFilter {
-            case .hail: if !s.isHail { return false }
-            case .wind: if s.isHail { return false }
-            case .both: break
+            case .hail:    if s.eventType != .hail { return false }
+            case .wind:    if s.eventType != .wind { return false }
+            case .tornado: if s.eventType != .tornado { return false }
+            case .both:    break
             }
-            if s.isHail {
+            switch s.eventType {
+            case .hail:
                 if (s.hailSizeIn ?? 0) < hailSizeMin { return false }
-            } else {
+            case .wind:
                 if Double(s.windGustMph ?? 0) < windMphMin { return false }
+            case .tornado:
+                break  // tornadoes bypass magnitude sliders — inherently severe
             }
             return dateRange.contains(s.date)
         }
@@ -150,7 +159,9 @@ struct MapHubView: View {
             for c in store.customers where !c.isUnassignedDraft {
                 let addr = c.address.trimmingCharacters(in: .whitespaces)
                 guard !addr.isEmpty, !addr.hasPrefix("Add property") else { continue }
-                let coord = Self.stableCoord(for: addr)
+                // Real geocoded coordinate when the backfill has run; the stable
+                // hash is only a placeholder until the geocode resolves.
+                let coord = c.coordinate ?? Self.stableCoord(for: addr)
                 let kind: FootprintPin.Kind
                 if c.stage.kind == .job {
                     kind = .signedJob
@@ -169,7 +180,7 @@ struct MapHubView: View {
             guard !linkedReportIds.contains(insp.job.reportId) else { continue }
             let addr = insp.job.propertyAddress.isEmpty ? insp.job.clientName : insp.job.propertyAddress
             guard !addr.isEmpty else { continue }
-            let coord = Self.stableCoord(for: addr)
+            let coord = insp.job.coordinate ?? Self.stableCoord(for: addr)
             pins.append(FootprintPin(kind: .scheduledInspection,
                                      title: insp.job.clientName.isEmpty ? "Job" : insp.job.clientName,
                                      subtitle: addr, latitude: coord.latitude, longitude: coord.longitude))
@@ -191,7 +202,7 @@ struct MapHubView: View {
         InspectionStore.shared.inspections.compactMap { insp -> MapEntityPin? in
             let addr = insp.job.propertyAddress.isEmpty ? insp.job.clientName : insp.job.propertyAddress
             guard !addr.isEmpty else { return nil }
-            let c = Self.stableCoord(for: addr)
+            let c = insp.job.coordinate ?? Self.stableCoord(for: addr)
             return MapEntityPin(kind: .job,
                                 title: insp.job.clientName.isEmpty ? "Job" : insp.job.clientName,
                                 subtitle: addr, latitude: c.latitude, longitude: c.longitude)
@@ -237,6 +248,12 @@ struct MapHubView: View {
                             .padding(.bottom, 8)
                             .transition(.opacity.combined(with: .move(edge: .bottom)))
                     }
+                    HStack {
+                        legendChip
+                        Spacer()
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 8)
                     startKnockingCard
                         .padding(.horizontal, 16)
                         .padding(.bottom, 12)
@@ -258,6 +275,7 @@ struct MapHubView: View {
             }
         }
         .task { await loadStorms() }
+        .task { await CoordinateBackfillService.shared.backfill(customerStore: customerStore) }
         .onAppear {
             presentFocusedStormIfNeeded()
             presentFocusedRoofIfNeeded()
@@ -321,6 +339,7 @@ struct MapHubView: View {
                 )
                 lastRegion = region
                 withAnimation(.easeInOut(duration: 0.4)) { camera = .region(region) }
+                Task { await loadStorms() }
             }
             .presentationDetents([.large])
             .presentationDragIndicator(.visible)
@@ -339,6 +358,11 @@ struct MapHubView: View {
         .sheet(isPresented: $showDateSheet) {
             StormDateRangeSheet(range: $dateRange)
                 .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showLegendSheet) {
+            StormLegendSheet()
+                .presentationDetents([.medium])
                 .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showShare) {
@@ -611,6 +635,7 @@ struct MapHubView: View {
         } else {
             locationProvider.start { coord in apply(coord) }
         }
+        Task { await loadStorms() }
     }
 
     // MARK: - Filter debounce (Step 5)
@@ -758,6 +783,25 @@ struct MapHubView: View {
     // Filtered visible storms helper kept for the Google fallback path.
     private var visibleStorms: [StormPinEvent] { filteredStorms }
 
+    // MARK: - Legend chip (bottom-leading)
+
+    private var legendChip: some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            showLegendSheet = true
+        } label: {
+            Image(systemName: "info.circle.fill")
+                .font(.system(size: Theme.TypeRamp.cta, weight: .heavy))
+                .foregroundStyle(Theme.ink)
+                .frame(width: 56, height: 56)
+                .background(.ultraThinMaterial, in: .capsule)
+                .overlay(Capsule().stroke(Theme.hairline, lineWidth: 0.6))
+                .shadow(color: .black.opacity(0.12), radius: 8, y: 3)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Map legend")
+    }
+
     // MARK: - Knock CTA card
 
     private var startKnockingCard: some View {
@@ -833,6 +877,13 @@ struct MapHubView: View {
     private func loadStorms() async {
         let center = lastRegion.center
         let radius = max(50.0, Double(lastRegion.span.latitudeDelta) * 70.0)
+        // Skip refetch when the range is unchanged and the camera barely moved —
+        // the storm service caches, but this also avoids redundant reverse-geocodes.
+        if let lc = loadedCenter, loadedRange == dateRange {
+            let moved = CLLocation(latitude: lc.latitude, longitude: lc.longitude)
+                .distance(from: CLLocation(latitude: center.latitude, longitude: center.longitude))
+            if moved < 16_000 { return }   // < ~10 mi
+        }
         let fresh = (try? await stormService.events(
             near: center, radiusMi: radius, sinceMonthsBack: dateRange.monthsBack
         )) ?? []
@@ -841,6 +892,8 @@ struct MapHubView: View {
             let pairs = fresh.map { ($0, $0.asPin) }
             self.storms = pairs.map { $0.1 }
             self.eventByPinId = Dictionary(pairs.map { ($0.1.id, $0.0) }, uniquingKeysWith: { a, _ in a })
+            self.loadedCenter = center
+            self.loadedRange = dateRange
         }
     }
 
@@ -929,6 +982,7 @@ struct MapHubView: View {
                 )
                 lastRegion = region
                 withAnimation(.easeInOut(duration: 0.4)) { camera = .region(region) }
+                Task { await loadStorms() }
             }
         }
     }
@@ -989,8 +1043,7 @@ struct MapHubView: View {
     }
 
     private func applyEvidence(storm: StormPinEvent, reportId: String) {
-        let kind: StormEventType = storm.isHail ? .hail
-            : (storm.windGustMph != nil ? .wind : .hail)
+        let kind: StormEventType = storm.eventType
         let evt = NoaaStormEvent(
             id: storm.id.uuidString,
             eventDate: storm.date,
@@ -1072,7 +1125,8 @@ private struct GoogleMapsCanvas: UIViewRepresentable {
         for sp in stormPins {
             let m = GMSMarker(position: sp.coordinate)
             m.title = sp.headline
-            m.icon = GMSMarker.markerImage(with: sp.isHail ? .systemBlue : .systemOrange)
+            let markerColor: UIColor = sp.isTornado ? .systemRed : (sp.isHail ? .systemBlue : .systemOrange)
+            m.icon = GMSMarker.markerImage(with: markerColor)
             m.map = mv
             coord.stormByMarker[ObjectIdentifier(m)] = sp
         }

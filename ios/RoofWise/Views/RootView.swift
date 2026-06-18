@@ -162,6 +162,8 @@ struct RootView: View {
         .task {
             leadsSync.attach(customerStore)
             await leadsSync.syncNow()
+            // One-time migration: geocode any leads/inspections missing coords.
+            await CoordinateBackfillService.shared.backfill(customerStore: customerStore)
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
