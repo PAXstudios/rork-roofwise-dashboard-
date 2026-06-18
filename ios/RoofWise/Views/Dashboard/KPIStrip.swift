@@ -1,7 +1,6 @@
 import SwiftUI
 
 struct KPIStrip: View {
-    var onQuickInspection: () -> Void = {}
     @State private var showNewJob = false
     @State private var showCostEstimator = false
 
@@ -25,15 +24,10 @@ struct KPIStrip: View {
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 12) {
-                    QuickActionCard(title: "Quick Inspection",
-                                    subtitle: "LiDAR + AI capture",
-                                    icon: "camera.viewfinder",
+                    QuickActionCard(title: "New Lead",
+                                    subtitle: "Capture a prospect",
+                                    icon: "person.crop.circle.badge.plus",
                                     tint: Theme.ember,
-                                    action: onQuickInspection)
-                    QuickActionCard(title: "New Job",
-                                    subtitle: "Create a project",
-                                    icon: "plus.rectangle.on.folder.fill",
-                                    tint: Theme.sky,
                                     action: { showNewJob = true })
                     QuickActionCard(title: "Cost Estimator",
                                     subtitle: "Address → squares → $",

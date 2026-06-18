@@ -29,6 +29,7 @@ struct RootView: View {
     @State private var showInspection = false
     @State private var showInspectionChooser = false
     @State private var showMileage = false
+    @State private var showNewLead = false
     @State private var customerStore = CustomerStore()
     @State private var trainingProgress = TrainingProgressStore()
     @State private var leadsFilter: JobPipelineStage? = nil
@@ -94,7 +95,6 @@ struct RootView: View {
             Group {
                 switch tab {
                 case .home: DashboardView(
-                    onQuickInspection: { showInspectionChooser = true },
                     onOpenTraining: { selectTab(.training) },
                     onOpenLeads: {
                         leadsFilter = nil
@@ -128,12 +128,20 @@ struct RootView: View {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
                     showMileage = true
                 }
+            }, onNewLead: {
+                showQuickAction = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                    showNewLead = true
+                }
             })
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
         .fullScreenCover(isPresented: $showInspection) {
             QuickInspectionView()
+        }
+        .fullScreenCover(isPresented: $showNewLead) {
+            NewJobWizard()
         }
         .sheet(isPresented: $showInspectionChooser) {
             InspectionTargetChooserSheet(onProceed: {
@@ -257,6 +265,7 @@ struct QuickActionSheet: View {
     @Environment(\.dismiss) private var dismiss
     var onStartInspection: () -> Void = {}
     var onOpenMileage: () -> Void = {}
+    var onNewLead: () -> Void = {}
     private let actions: [(String, String, Color)] = [
         ("New Lead", "person.crop.circle.badge.plus", Theme.sky),
         ("Start Inspection", "binoculars.fill", Theme.ember),
@@ -286,6 +295,8 @@ struct QuickActionSheet: View {
                                 onStartInspection()
                             } else if item.0 == "Track Mileage" {
                                 onOpenMileage()
+                            } else if item.0 == "New Lead" {
+                                onNewLead()
                             } else {
                                 dismiss()
                             }

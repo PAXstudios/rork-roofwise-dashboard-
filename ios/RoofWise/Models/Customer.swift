@@ -1,5 +1,20 @@
 import SwiftUI
 
+// MARK: - Pipeline kind
+
+/// Splits the pipeline into two buckets the field crew thinks in:
+/// **Leads** are prospects you're still chasing (door → claim → adjuster),
+/// **Jobs** are won work you're delivering (approved → materials → paid).
+enum PipelineKind: String, CaseIterable, Identifiable {
+    case lead, job
+    var id: String { rawValue }
+    var title: String { self == .lead ? "Leads" : "Jobs" }
+    var icon: String { self == .lead ? "person.2.fill" : "hammer.fill" }
+    /// Accent that tints the whole bucket — warm ember for the hunt,
+    /// confident mint for booked work.
+    var accent: Color { self == .lead ? Theme.ember : Theme.mint }
+}
+
 // MARK: - Job Pipeline
 
 enum JobPipelineStage: String, CaseIterable, Identifiable, Codable {
@@ -67,6 +82,18 @@ enum JobPipelineStage: String, CaseIterable, Identifiable, Codable {
 
     var stepIndex: Int {
         Self.allCases.firstIndex(of: self) ?? 0
+    }
+
+    /// Stages from `.approved` onward are booked work (Jobs); everything
+    /// before is still a prospect (Lead). This is the single source of truth
+    /// for the Leads/Jobs split across the app.
+    var kind: PipelineKind {
+        stepIndex >= JobPipelineStage.approved.stepIndex ? .job : .lead
+    }
+
+    /// The stages that belong to one bucket, in pipeline order.
+    static func stages(for kind: PipelineKind) -> [JobPipelineStage] {
+        allCases.filter { $0.kind == kind }
     }
 }
 

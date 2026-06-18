@@ -1,7 +1,6 @@
 import SwiftUI
 
 struct DashboardView: View {
-    var onQuickInspection: () -> Void = {}
     var onOpenTraining: () -> Void = {}
     var onOpenLeads: () -> Void = {}
     var onOpenLeadsStage: (JobPipelineStage?) -> Void = { _ in }
@@ -41,7 +40,7 @@ struct DashboardView: View {
                         }
                     )
                     .staggeredAppear(1, animated: didStagger == false)
-                    KPIStrip(onQuickInspection: onQuickInspection)
+                    KPIStrip()
                         .staggeredAppear(1, animated: didStagger == false)
                     if APIKeys.useLiveARAnalysis {
                         LiveARInspectCTA(onTap: { showLiveAR = true })

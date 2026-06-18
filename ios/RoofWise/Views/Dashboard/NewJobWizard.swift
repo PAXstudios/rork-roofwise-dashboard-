@@ -100,7 +100,7 @@ struct NewJobWizard: View {
                 JobDetailView(reportId: rid)
             }
         }
-        .confirmationDialog("Discard this job?",
+        .confirmationDialog("Discard this lead?",
                             isPresented: $showCancelConfirm,
                             titleVisibility: .visible) {
             Button("Discard", role: .destructive) { dismiss() }
@@ -128,7 +128,7 @@ struct NewJobWizard: View {
 
             Spacer()
             VStack(spacing: 2) {
-                Text("New Job")
+                Text("New Lead")
                     .font(.system(size: 18, weight: .heavy))
                     .foregroundStyle(Theme.ink)
                 Text("Step \(step.rawValue + 1) of \(InspectionWizardStep.allCases.count) · \(step.title)")
@@ -188,7 +188,7 @@ struct NewJobWizard: View {
                 }
             } label: {
                 HStack(spacing: 8) {
-                    Text(step == .review ? "Create Job" : "Next")
+                    Text(step == .review ? "Create Lead" : "Next")
                     Image(systemName: step == .review ? "checkmark" : "arrow.right")
                 }
                 .font(.system(size: 18, weight: .bold))
@@ -313,20 +313,18 @@ private struct WizardSection<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            HStack(spacing: 12) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 14).fill(Theme.emberSoft)
-                    Image(systemName: icon)
-                        .font(.system(size: 22, weight: .bold))
-                        .foregroundStyle(Theme.ember)
-                }
-                .frame(width: 56, height: 56)
+            HStack(spacing: 11) {
+                Image(systemName: icon)
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(Theme.ember)
+                    .frame(width: 34, height: 34)
+                    .background(Theme.emberSoft, in: .rect(cornerRadius: 11))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
-                        .font(.system(size: 22, weight: .heavy))
+                        .font(.system(size: Theme.TypeRamp.titleSm, weight: .heavy))
                         .foregroundStyle(Theme.ink)
                     Text(subtitle)
-                        .font(.system(size: 14, weight: .medium))
+                        .font(.system(size: Theme.TypeRamp.metaSm, weight: .medium))
                         .foregroundStyle(Theme.inkSoft)
                 }
                 Spacer(minLength: 0)
@@ -353,31 +351,31 @@ private struct MicField: View {
     var keyboard: UIKeyboardType = .default
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 7) {
             FieldLabel(text: label)
-            HStack(spacing: 12) {
+            HStack(spacing: 10) {
                 Button {
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                     // Voice-input stub: hooked up when real dictation lands.
                 } label: {
                     Image(systemName: "mic.fill")
-                        .font(.system(size: 18, weight: .bold))
+                        .font(.system(size: 15, weight: .bold))
                         .foregroundStyle(Theme.ember)
-                        .frame(width: 56, height: 56)
-                        .background(Theme.emberSoft, in: .rect(cornerRadius: 14))
+                        .frame(width: 48, height: 50)
+                        .background(Theme.emberSoft, in: .rect(cornerRadius: 12))
                 }
                 .buttonStyle(.plain)
 
                 TextField(placeholder, text: $text)
                     .keyboardType(keyboard)
                     .autocorrectionDisabled()
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.system(size: Theme.TypeRamp.bodyTight, weight: .semibold))
                     .foregroundStyle(Theme.ink)
-                    .padding(.horizontal, 16)
-                    .frame(maxWidth: .infinity, minHeight: 56)
-                    .background(Theme.card, in: .rect(cornerRadius: 14))
-                    .overlay(RoundedRectangle(cornerRadius: 14)
-                        .stroke(Theme.hairline, lineWidth: 1))
+                    .padding(.horizontal, 14)
+                    .frame(maxWidth: .infinity, minHeight: 50)
+                    .background(Theme.card, in: .rect(cornerRadius: 12))
+                    .overlay(RoundedRectangle(cornerRadius: 12)
+                        .stroke(Theme.hairline, lineWidth: 0.6))
             }
         }
     }
@@ -401,17 +399,17 @@ private struct ChipGrid<T: Hashable & Identifiable>: View where T.ID == String {
                         UIImpactFeedbackGenerator(style: .light).impactOccurred()
                     } label: {
                         Text(title(opt))
-                            .font(.system(size: 17, weight: .semibold))
+                            .font(.system(size: Theme.TypeRamp.subhead, weight: .semibold))
                             .foregroundStyle(selected ? .white : Theme.ink)
                             .multilineTextAlignment(.center)
                             .lineLimit(2)
                             .minimumScaleFactor(0.82)
-                            .frame(maxWidth: .infinity, minHeight: 64)
+                            .frame(maxWidth: .infinity, minHeight: 52)
                             .padding(.horizontal, 12)
                             .background(selected ? Theme.ember : Theme.card,
-                                        in: .rect(cornerRadius: 14))
-                            .overlay(RoundedRectangle(cornerRadius: 14)
-                                .stroke(selected ? .clear : Theme.hairline, lineWidth: 1))
+                                        in: .rect(cornerRadius: 12))
+                            .overlay(RoundedRectangle(cornerRadius: 12)
+                                .stroke(selected ? .clear : Theme.hairline, lineWidth: 0.6))
                     }
                     .buttonStyle(.plain)
                 }
@@ -437,17 +435,17 @@ private struct StringChipGrid: View {
                         UIImpactFeedbackGenerator(style: .light).impactOccurred()
                     } label: {
                         Text(opt)
-                            .font(.system(size: 17, weight: .semibold))
+                            .font(.system(size: Theme.TypeRamp.subhead, weight: .semibold))
                             .foregroundStyle(selected ? .white : Theme.ink)
                             .multilineTextAlignment(.center)
                             .lineLimit(2)
                             .minimumScaleFactor(0.82)
-                            .frame(maxWidth: .infinity, minHeight: 64)
+                            .frame(maxWidth: .infinity, minHeight: 52)
                             .padding(.horizontal, 12)
                             .background(selected ? Theme.ember : Theme.card,
-                                        in: .rect(cornerRadius: 14))
-                            .overlay(RoundedRectangle(cornerRadius: 14)
-                                .stroke(selected ? .clear : Theme.hairline, lineWidth: 1))
+                                        in: .rect(cornerRadius: 12))
+                            .overlay(RoundedRectangle(cornerRadius: 12)
+                                .stroke(selected ? .clear : Theme.hairline, lineWidth: 0.6))
                     }
                     .buttonStyle(.plain)
                 }
@@ -472,34 +470,34 @@ private struct BigStepper: View {
                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 } label: {
                     Image(systemName: "minus")
-                        .font(.system(size: 22, weight: .bold))
+                        .font(.system(size: 18, weight: .bold))
                         .foregroundStyle(value <= range.lowerBound ? Theme.inkFaint : Theme.ink)
-                        .frame(width: 64, height: 64)
+                        .frame(width: 54, height: 54)
                         .background(Theme.card, in: .circle)
-                        .overlay(Circle().stroke(Theme.hairline, lineWidth: 1))
+                        .overlay(Circle().stroke(Theme.hairline, lineWidth: 0.6))
                 }
                 .buttonStyle(.plain)
                 .disabled(value <= range.lowerBound)
 
                 Text(format(value))
-                    .font(.system(size: Theme.TypeRamp.display, weight: .heavy))
+                    .font(.system(size: Theme.TypeRamp.title, weight: .heavy))
                     .foregroundStyle(Theme.ink)
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
-                    .frame(maxWidth: .infinity, minHeight: 72)
+                    .frame(maxWidth: .infinity, minHeight: 58)
                     .padding(.horizontal, 8)
-                    .background(Theme.card, in: .rect(cornerRadius: 18))
-                    .overlay(RoundedRectangle(cornerRadius: 18)
-                        .stroke(Theme.hairline, lineWidth: 1))
+                    .background(Theme.card, in: .rect(cornerRadius: 14))
+                    .overlay(RoundedRectangle(cornerRadius: 14)
+                        .stroke(Theme.hairline, lineWidth: 0.6))
 
                 Button {
                     value = min(range.upperBound, value + step)
                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
                 } label: {
                     Image(systemName: "plus")
-                        .font(.system(size: 22, weight: .bold))
+                        .font(.system(size: 18, weight: .bold))
                         .foregroundStyle(.white)
-                        .frame(width: 64, height: 64)
+                        .frame(width: 54, height: 54)
                         .background(Theme.ember, in: .circle)
                 }
                 .buttonStyle(.plain)
@@ -876,17 +874,17 @@ private struct TriChipGrid<Value: Hashable>: View {
                         UIImpactFeedbackGenerator(style: .light).impactOccurred()
                     } label: {
                         Text(opt.title)
-                            .font(.system(size: 17, weight: .semibold))
+                            .font(.system(size: Theme.TypeRamp.subhead, weight: .semibold))
                             .foregroundStyle(selected ? .white : Theme.ink)
                             .multilineTextAlignment(.center)
                             .lineLimit(2)
                             .minimumScaleFactor(0.82)
-                            .frame(maxWidth: .infinity, minHeight: 64)
+                            .frame(maxWidth: .infinity, minHeight: 52)
                             .padding(.horizontal, 12)
                             .background(selected ? Theme.ember : Theme.card,
-                                        in: .rect(cornerRadius: 14))
-                            .overlay(RoundedRectangle(cornerRadius: 14)
-                                .stroke(selected ? .clear : Theme.hairline, lineWidth: 1))
+                                        in: .rect(cornerRadius: 12))
+                            .overlay(RoundedRectangle(cornerRadius: 12)
+                                .stroke(selected ? .clear : Theme.hairline, lineWidth: 0.6))
                     }
                     .buttonStyle(.plain)
                 }
