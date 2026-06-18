@@ -6,7 +6,7 @@ import CoreLocation
 import GoogleMaps
 #endif
 
-// MARK: - Lightweight on-map pin payload
+// MARK: - Lightweight on-map pin payload (Google fallback path)
 
 struct MapEntityPin: Identifiable, Hashable {
     enum Kind: Hashable { case lead, job }
@@ -45,14 +45,26 @@ struct MapHubView: View {
     /// the focused address (one quad per slope, sized by area, oriented by azimuth).
     var focusedRoof: RoofMeasurements? = nil
 
-    // Layer toggles
-    @State private var showLeads  = true
-    @State private var showJobs   = true
-    @State private var showStorms = true
-    @State private var showKnocks = true
+    /// Leads store (injected from RootView). Optional so previews don't trap.
+    @Environment(CustomerStore.self) private var customerStore: CustomerStore?
 
-    // Storms date-range scrubber (months back).
-    @State private var stormMonthsBack: Int = 24
+    // Layer toggles (Step 9)
+    @State private var showStorms = true
+    @State private var showImpactRadius = true
+    @State private var showServiceArea = true
+    @State private var showFootprint = true
+    @State private var showHeat = false
+    @State private var showLayerPopover = false
+
+    // Filters (Step 5)
+    @State private var kindFilter: StormKindFilter = .both
+    @State private var hailSizeMin: Double = 0.5     // applied
+    @State private var windMphMin: Double = 40       // applied
+    @State private var hailSizeMinRaw: Double = 0.5
+    @State private var windMphMinRaw: Double = 40
+    @State private var dateRange: StormDateRange = .last90
+    @State private var showDateSheet = false
+    @State private var filterDebounce: Task<Void, Never>? = nil
 
     // Camera
     @State private var camera: MapCameraPosition = .region(
@@ -67,13 +79,17 @@ struct MapHubView: View {
     // Data
     @State private var storms: [StormPinEvent] = []
     @State private var stormEvents: [NoaaStormEvent] = []
+    @State private var eventByPinId: [UUID: NoaaStormEvent] = [:]
     @State private var radiusFilterMiles: Double? = nil
     @State private var radiusFilterCenter: CLLocationCoordinate2D? = nil
 
     // Sheets / selection
     @State private var selectedStorm: StormPinEvent?
+    @State private var addToLeadStorm: StormPinEvent?
     @State private var showAddressPicker = false
     @State private var pickedAddress: AddressSuggestion?
+    @State private var shareText: String?
+    @State private var showShare = false
 
     // Knock state (preserved)
     @State private var knockStore = KnockStore()
@@ -82,8 +98,10 @@ struct MapHubView: View {
     @State private var showFloatingScript = false
     @State private var floatingScriptOutcome: KnockOutcome = .interested
     @State private var showDoorKnockingMode = false
+    @State private var plannedRoute: [StormRouteStop] = []
 
-    // Services injected from APIKeys flag
+    // Stores / services
+    @State private var serviceAreaStore = ServiceAreaStore.shared
     private let mapsService: MapsService = MapsServiceFactory.make()
     private let stormService: StormEventsServicing = StormEventsServiceFactory.shared
     private let geocoder: GeocodingService = GeocodingServiceFactory.shared
@@ -92,48 +110,92 @@ struct MapHubView: View {
     @State private var locationProvider = MapLocationProvider()
     @State private var didCenterOnUser = false
 
-    // Pre-computed entity pins from real stores.
+    // MARK: Derived data
+
+    /// Storms passing the active type / magnitude / date filters.
+    private var filteredStorms: [StormPinEvent] {
+        guard showStorms else { return [] }
+        return storms.filter { s in
+            switch kindFilter {
+            case .hail: if !s.isHail { return false }
+            case .wind: if s.isHail { return false }
+            case .both: break
+            }
+            if s.isHail {
+                if (s.hailSizeIn ?? 0) < hailSizeMin { return false }
+            } else {
+                if Double(s.windGustMph ?? 0) < windMphMin { return false }
+            }
+            return dateRange.contains(s.date)
+        }
+    }
+
+    private var isClusterZoom: Bool { lastRegion.span.latitudeDelta > 0.14 }
+
+    private var stormClusters: [StormCluster] {
+        StormClustering.clusters(filteredStorms, spanLatDelta: lastRegion.span.latitudeDelta)
+    }
+
+    private var heatCells: [HeatCell] { StormHeatGrid.cells(storms: filteredStorms) }
+    private var heatMax: Int { heatCells.map(\.count).max() ?? 1 }
+
+    /// Real footprint pins built from the user's own leads + jobs (deterministic
+    /// placement by address — we don't store geocoded coords). Inspections not
+    /// represented by a linked customer are added as scheduled-inspection pins.
+    private var footprintPins: [FootprintPin] {
+        var pins: [FootprintPin] = []
+        var linkedReportIds = Set<String>()
+
+        if let store = customerStore {
+            for c in store.customers where !c.isUnassignedDraft {
+                let addr = c.address.trimmingCharacters(in: .whitespaces)
+                guard !addr.isEmpty, !addr.hasPrefix("Add property") else { continue }
+                let coord = Self.stableCoord(for: addr)
+                let kind: FootprintPin.Kind
+                if c.stage.kind == .job {
+                    kind = .signedJob
+                } else if c.stage == .inspectionScheduled || c.stage == .inspectionComplete {
+                    kind = .scheduledInspection
+                } else {
+                    kind = .lead
+                }
+                pins.append(FootprintPin(kind: kind, title: c.ownerName, subtitle: addr,
+                                         latitude: coord.latitude, longitude: coord.longitude))
+                if let rid = c.linkedReportId { linkedReportIds.insert(rid) }
+            }
+        }
+
+        for insp in InspectionStore.shared.inspections {
+            guard !linkedReportIds.contains(insp.job.reportId) else { continue }
+            let addr = insp.job.propertyAddress.isEmpty ? insp.job.clientName : insp.job.propertyAddress
+            guard !addr.isEmpty else { continue }
+            let coord = Self.stableCoord(for: addr)
+            pins.append(FootprintPin(kind: .scheduledInspection,
+                                     title: insp.job.clientName.isEmpty ? "Job" : insp.job.clientName,
+                                     subtitle: addr, latitude: coord.latitude, longitude: coord.longitude))
+        }
+        return pins
+    }
+
+    /// Footprint narrowed to the active radius filter (if any).
+    private var visibleFootprintPins: [FootprintPin] {
+        guard let center = radiusFilterCenter, let miles = radiusFilterMiles else {
+            return footprintPins
+        }
+        return footprintPins.filter { $0.distanceMiles(from: center) <= miles }
+    }
+
+    // Google fallback path pins (kept intact; only used when the SDK is linked).
     private var leadPins: [MapEntityPin] { [] }
-    /// Lead pins narrowed to the active radius filter (if any).
-    private var visibleLeadPins: [MapEntityPin] {
-        guard let center = radiusFilterCenter, let miles = radiusFilterMiles else {
-            return leadPins
-        }
-        return leadPins.filter { pin in
-            CLLocation(latitude: pin.latitude, longitude: pin.longitude)
-                .distance(from: CLLocation(latitude: center.latitude, longitude: center.longitude))
-                / 1609.344 <= miles
-        }
-    }
-
-    /// Job pins narrowed to the active radius filter (if any).
-    private var visibleJobPins: [MapEntityPin] {
-        guard let center = radiusFilterCenter, let miles = radiusFilterMiles else {
-            return jobPins
-        }
-        return jobPins.filter { pin in
-            CLLocation(latitude: pin.latitude, longitude: pin.longitude)
-                .distance(from: CLLocation(latitude: center.latitude, longitude: center.longitude))
-                / 1609.344 <= miles
-        }
-    }
-
     private var jobPins: [MapEntityPin] {
-        let jobs = InspectionStore.shared.inspections.compactMap { insp -> MapEntityPin? in
-            let addr = insp.job.propertyAddress.isEmpty
-                ? insp.job.clientName
-                : insp.job.propertyAddress
+        InspectionStore.shared.inspections.compactMap { insp -> MapEntityPin? in
+            let addr = insp.job.propertyAddress.isEmpty ? insp.job.clientName : insp.job.propertyAddress
             guard !addr.isEmpty else { return nil }
             let c = Self.stableCoord(for: addr)
-            return MapEntityPin(
-                kind: .job,
-                title: insp.job.clientName.isEmpty ? "Job" : insp.job.clientName,
-                subtitle: addr,
-                latitude: c.latitude,
-                longitude: c.longitude
-            )
+            return MapEntityPin(kind: .job,
+                                title: insp.job.clientName.isEmpty ? "Job" : insp.job.clientName,
+                                subtitle: addr, latitude: c.latitude, longitude: c.longitude)
         }
-        return jobs
     }
 
     var body: some View {
@@ -141,13 +203,11 @@ struct MapHubView: View {
             mapCanvas
                 .ignoresSafeArea()
 
-            VStack(spacing: 12) {
-                if !isKnockMode {
-                    standardTopBar
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                }
+            if !isKnockMode {
+                standardTopBar
+                    .padding(.top, 8)
+                    .transition(.move(edge: .top).combined(with: .opacity))
             }
-            .padding(.top, 8)
 
             if isKnockMode {
                 KnockModeHUD(store: knockStore,
@@ -183,16 +243,16 @@ struct MapHubView: View {
                 }
             }
 
-            // Right-edge zoom + status overlay
+            // Right-edge status + FAB column (Step 9)
             if !isKnockMode {
-                VStack(alignment: .trailing, spacing: 10) {
-                    Spacer().frame(height: 120)
+                VStack(alignment: .trailing, spacing: 0) {
+                    Spacer().frame(height: 250)
                     statusPill
                     Spacer()
-                    zoomColumn
+                    fabColumn
+                    Spacer().frame(height: 180)
                 }
                 .padding(.trailing, 14)
-                .padding(.bottom, 220)
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 .allowsHitTesting(true)
             }
@@ -209,30 +269,47 @@ struct MapHubView: View {
                 locationPermissionOverlay
             }
         }
-        .onChange(of: stormMonthsBack) { _, _ in
+        .onChange(of: dateRange) { _, _ in
             Task { await loadStorms() }
         }
+        .onChange(of: hailSizeMinRaw) { _, _ in scheduleFilterDebounce() }
+        .onChange(of: windMphMinRaw) { _, _ in scheduleFilterDebounce() }
         .sheet(item: $editingHouse) { h in
             KnockOutcomeSheet(store: knockStore, houseID: h.id)
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
         .sheet(item: $selectedStorm) { storm in
-            StormPinDetailSheet(
+            StormImpactDetailSheet(
                 event: storm,
+                noaaEventId: eventByPinId[storm.id]?.id,
                 centerCoord: lastRegion.center,
+                affectedAreas: affectedAreas(for: storm),
+                leadsInRadius: leadsCount(in: storm),
+                jobsInRadius: jobsCount(in: storm),
                 currentReportId: currentReportId,
+                onDoorKnock: { startDoorKnock(for: storm) },
+                onAddToLeadList: { presentAddToLead(storm) },
+                onShare: { shareStorm(storm) },
                 onFindNearby: { miles in
                     selectedStorm = nil
                     applyRadiusFilter(center: storm.coordinate, miles: miles)
                 },
                 onUseAsEvidence: currentReportId.map { rid in
-                    {
-                        applyEvidence(storm: storm, reportId: rid)
-                    }
+                    { applyEvidence(storm: storm, reportId: rid) }
                 }
             )
             .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+            .presentationContentInteraction(.scrolls)
+        }
+        .sheet(item: $addToLeadStorm) { storm in
+            AddToLeadListSheet(
+                service: mapsService,
+                stormHeadline: storm.headline,
+                onAdd: { addresses in handleAddLeads(addresses, storm: storm) }
+            )
+            .presentationDetents([.large])
             .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showAddressPicker) {
@@ -243,18 +320,37 @@ struct MapHubView: View {
                     span: .init(latitudeDelta: 0.04, longitudeDelta: 0.04)
                 )
                 lastRegion = region
-                withAnimation(.easeInOut(duration: 0.4)) {
-                    camera = .region(region)
-                }
+                withAnimation(.easeInOut(duration: 0.4)) { camera = .region(region) }
             }
             .presentationDetents([.large])
             .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showLayerPopover) {
+            StormLayerPopover(
+                showStorms: $showStorms,
+                showImpactRadius: $showImpactRadius,
+                showServiceArea: $showServiceArea,
+                showFootprint: $showFootprint,
+                showHeat: $showHeat
+            )
+            .presentationDetents([.height(460), .large])
+            .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showDateSheet) {
+            StormDateRangeSheet(range: $dateRange)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showShare) {
+            if let text = shareText {
+                ActivityShareView(items: [text])
+            }
         }
         .animation(.spring(response: 0.32, dampingFraction: 0.85), value: isKnockMode)
         .animation(.spring(response: 0.32, dampingFraction: 0.85), value: showFloatingScript)
         .animation(.spring(response: 0.3, dampingFraction: 0.85), value: radiusFilterMiles)
         .fullScreenCover(isPresented: $showDoorKnockingMode) {
-            DoorKnockingModeView(routeStormAlertId: focusedStormAlertId)
+            DoorKnockingModeView(routeStormAlertId: focusedStormAlertId, plannedRoute: plannedRoute)
         }
     }
 
@@ -266,10 +362,10 @@ struct MapHubView: View {
         if APIKeys.isLiveGoogleMaps {
             GoogleMapsCanvas(
                 region: $lastRegion,
-                stormPins: visibleStorms,
-                leadPins: showLeads ? leadPins : [],
-                jobPins: showJobs ? jobPins : [],
-                knockHouses: showKnocks ? knockStore.houses : [],
+                stormPins: filteredStorms,
+                leadPins: showFootprint ? leadPins : [],
+                jobPins: showFootprint ? jobPins : [],
+                knockHouses: showFootprint ? knockStore.houses : [],
                 isKnockMode: isKnockMode,
                 onSelectStorm: { selectedStorm = $0 },
                 onSelectKnock: { editingHouse = $0 },
@@ -286,45 +382,13 @@ struct MapHubView: View {
     private var mapKitCanvas: some View {
         MapReader { proxy in
             Map(position: $camera) {
-                if showStorms {
-                    ForEach(visibleStorms) { sp in
-                        Annotation(sp.headline, coordinate: sp.coordinate) {
-                            Button { selectedStorm = sp } label: { stormGlyph(sp) }
-                                .buttonStyle(.plain)
-                                .accessibilityLabel("Storm: \(sp.headline)")
-                        }
-                    }
-                }
-                if showLeads {
-                    ForEach(visibleLeadPins) { p in
-                        Annotation(p.title, coordinate: p.coordinate) {
-                            entityGlyph(p)
-                        }
-                    }
-                }
-                if showJobs {
-                    ForEach(visibleJobPins) { p in
-                        Annotation(p.title, coordinate: p.coordinate) {
-                            entityGlyph(p)
-                        }
-                    }
-                }
-                ForEach(roofPolygons) { poly in
-                    MapPolygon(coordinates: poly.coordinates)
-                        .foregroundStyle(poly.color.opacity(0.45))
-                        .stroke(poly.color, lineWidth: 2)
-                }
-                if showKnocks {
-                    ForEach(knockStore.houses) { h in
-                        if let lat = h.latitude, let lng = h.longitude {
-                            Annotation(h.outcome.rawValue,
-                                       coordinate: .init(latitude: lat, longitude: lng)) {
-                                Button { editingHouse = h } label: { knockGlyph(h.outcome) }
-                                    .buttonStyle(.plain)
-                            }
-                        }
-                    }
-                }
+                UserAnnotation()
+                heatOverlay
+                serviceAreaOverlay
+                impactOverlay
+                roofOverlay
+                footprintOverlay
+                stormOverlay
             }
             .mapStyle(.standard(elevation: .flat, pointsOfInterest: .excludingAll))
             .onMapCameraChange(frequency: .onEnd) { ctx in
@@ -344,107 +408,134 @@ struct MapHubView: View {
         }
     }
 
+    // MARK: - Map content builders (split to keep the type-checker fast)
+
+    @MapContentBuilder private var heatOverlay: some MapContent {
+        if showHeat {
+            ForEach(heatCells) { cell in
+                MapPolygon(coordinates: cell.coordinates)
+                    .foregroundStyle(cell.fillColor(maxCount: heatMax))
+            }
+        }
+    }
+
+    @MapContentBuilder private var serviceAreaOverlay: some MapContent {
+        if showServiceArea {
+            ForEach(serviceAreaStore.areas) { area in
+                if let lat = area.centerLat, let lng = area.centerLng {
+                    MapPolygon(coordinates: ServiceAreaGeometry.boundingBox(
+                        center: .init(latitude: lat, longitude: lng), radiusMiles: 5))
+                        .foregroundStyle(Theme.ink.opacity(0.12))
+                        .stroke(Theme.ink, lineWidth: 1.5)
+                }
+            }
+        }
+    }
+
+    @MapContentBuilder private var impactOverlay: some MapContent {
+        if showImpactRadius && !isClusterZoom {
+            ForEach(filteredStorms) { s in
+                MapCircle(center: s.coordinate, radius: s.impactRadiusMeters)
+                    .foregroundStyle(Theme.ember.opacity(0.12))
+                    .stroke(Theme.ember.opacity(0.35), lineWidth: 1)
+            }
+        }
+    }
+
+    @MapContentBuilder private var roofOverlay: some MapContent {
+        ForEach(roofPolygons) { poly in
+            MapPolygon(coordinates: poly.coordinates)
+                .foregroundStyle(poly.color.opacity(0.45))
+                .stroke(poly.color, lineWidth: 2)
+        }
+    }
+
+    @MapContentBuilder private var footprintOverlay: some MapContent {
+        if showFootprint {
+            ForEach(visibleFootprintPins) { p in
+                Annotation(p.title, coordinate: p.coordinate) {
+                    FootprintPinView(kind: p.kind)
+                }
+            }
+            ForEach(knockStore.houses) { h in
+                if let lat = h.latitude, let lng = h.longitude {
+                    Annotation(h.outcome.rawValue,
+                               coordinate: .init(latitude: lat, longitude: lng)) {
+                        Button { editingHouse = h } label: { knockGlyph(h.outcome) }
+                            .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+    }
+
+    @MapContentBuilder private var stormOverlay: some MapContent {
+        if showStorms {
+            ForEach(stormClusters) { cluster in
+                Annotation(cluster.single?.headline ?? "\(cluster.count) storms",
+                           coordinate: cluster.coordinate) {
+                    stormClusterButton(cluster)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func stormClusterButton(_ cluster: StormCluster) -> some View {
+        if let s = cluster.single {
+            Button { selectedStorm = s } label: { StormPinView(event: s) }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Storm: \(s.headline)")
+        } else {
+            Button { zoomToCluster(cluster) } label: {
+                StormClusterView(count: cluster.count,
+                                 color: cluster.worst?.severityColor ?? Theme.inkFaint)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
     // MARK: - Top bar
 
     private var standardTopBar: some View {
-        VStack(spacing: 12) {
-            HStack(spacing: 10) {
-                Button { showAddressPicker = true } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "magnifyingglass")
-                            .font(.system(size: Theme.TypeRamp.metaSm, weight: .semibold))
-                            .foregroundStyle(Theme.inkFaint)
-                        Text(pickedAddress?.title ?? "Search the field")
-                            .font(.system(size: Theme.TypeRamp.metaSm))
-                            .foregroundStyle(pickedAddress == nil ? Theme.inkFaint : Theme.ink)
-                            .lineLimit(1)
-                        Spacer()
-                        if pickedAddress != nil {
-                            Button {
-                                pickedAddress = nil
-                            } label: {
-                                Image(systemName: "xmark.circle.fill")
-                                    .font(.system(size: Theme.TypeRamp.meta, weight: .bold))
-                                    .foregroundStyle(Theme.inkFaint)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                    .padding(12)
-                    .background(.ultraThinMaterial, in: .rect(cornerRadius: 14))
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(.horizontal, 16)
-
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    chip(label: "Leads",  icon: "person.fill",   color: Theme.sky,   on: $showLeads)
-                    chip(label: "Jobs",   icon: "hammer.fill",   color: Theme.ember, on: $showJobs)
-                    chip(label: "Storms", icon: "bolt.fill",     color: Theme.crimson, on: $showStorms)
-                    chip(label: "Knocks", icon: "hand.tap.fill", color: Theme.amber, on: $showKnocks)
-                }
+        VStack(spacing: 10) {
+            searchRow
                 .padding(.horizontal, 16)
-            }
-
-            if showStorms {
-                stormDateScrubber
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-            }
+            StormFilterBar(
+                kindFilter: $kindFilter,
+                hailSizeMin: $hailSizeMinRaw,
+                windMphMin: $windMphMinRaw,
+                dateRangeLabel: dateRange.label,
+                onDatePill: { showDateSheet = true }
+            )
+            .padding(.horizontal, 16)
         }
-        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: showStorms)
+        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: kindFilter)
     }
 
-    private var stormDateScrubber: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 12) {
-                ForEach([3, 6, 12, 24], id: \.self) { m in
-                    Button {
-                        let g = UISelectionFeedbackGenerator(); g.selectionChanged()
-                        stormMonthsBack = m
-                    } label: {
-                        Text("\(m)m")
-                            .font(.system(size: Theme.TypeRamp.bodyTight, weight: .heavy))
-                            .foregroundStyle(stormMonthsBack == m ? .white : Theme.ink)
-                            .frame(minWidth: 64, minHeight: 56)
-                            .padding(.horizontal, 14)
-                            .background(
-                                stormMonthsBack == m
-                                    ? AnyShapeStyle(Theme.crimson)
-                                    : AnyShapeStyle(.ultraThinMaterial),
-                                in: .capsule
-                            )
-                            .overlay(Capsule()
-                                .stroke(stormMonthsBack == m ? .clear : Theme.hairline,
-                                        lineWidth: 0.6))
+    private var searchRow: some View {
+        Button { showAddressPicker = true } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: Theme.TypeRamp.metaSm, weight: .semibold))
+                    .foregroundStyle(Theme.inkFaint)
+                Text(pickedAddress?.title ?? "Search the field")
+                    .font(.system(size: Theme.TypeRamp.metaSm))
+                    .foregroundStyle(pickedAddress == nil ? Theme.inkFaint : Theme.ink)
+                    .lineLimit(1)
+                Spacer()
+                if pickedAddress != nil {
+                    Button { pickedAddress = nil } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: Theme.TypeRamp.meta, weight: .bold))
+                            .foregroundStyle(Theme.inkFaint)
                     }
                     .buttonStyle(.plain)
                 }
             }
-            .padding(.horizontal, 16)
-        }
-    }
-
-    // 64pt+ tap target chip per glove rules.
-    private func chip(label: String, icon: String, color: Color, on: Binding<Bool>) -> some View {
-        Button {
-            let g = UISelectionFeedbackGenerator(); g.selectionChanged()
-            withAnimation(.spring(duration: 0.25)) { on.wrappedValue.toggle() }
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: icon)
-                    .font(.system(size: Theme.TypeRamp.subhead, weight: .bold))
-                Text(label)
-                    .font(.system(size: Theme.TypeRamp.bodyTight, weight: .heavy))
-            }
-            .foregroundStyle(on.wrappedValue ? .white : Theme.ink)
-            .padding(.horizontal, 16).padding(.vertical, 14)
-            .frame(minHeight: 48)
-            .background(
-                on.wrappedValue ? AnyShapeStyle(color) : AnyShapeStyle(.ultraThinMaterial),
-                in: .capsule
-            )
-            .overlay(Capsule().stroke(on.wrappedValue ? .clear : Theme.hairline, lineWidth: 0.6))
+            .padding(14)
+            .frame(minHeight: 56)
+            .background(.ultraThinMaterial, in: .rect(cornerRadius: 14))
         }
         .buttonStyle(.plain)
     }
@@ -466,8 +557,10 @@ struct MapHubView: View {
         .overlay(Capsule().stroke(Theme.hairline, lineWidth: 0.5))
     }
 
-    private var zoomColumn: some View {
-        VStack(spacing: 8) {
+    private var fabColumn: some View {
+        VStack(spacing: 10) {
+            MapFAB(symbol: "square.3.layers.3d", tint: Theme.ink) { showLayerPopover = true }
+            MapFAB(symbol: "location.fill", tint: Theme.sky) { recenterOnUser() }
             zoomButton(symbol: "plus") { zoom(by: 0.5) }
             zoomButton(symbol: "minus") { zoom(by: 2.0) }
         }
@@ -475,7 +568,7 @@ struct MapHubView: View {
 
     private func zoomButton(symbol: String, action: @escaping () -> Void) -> some View {
         Button {
-            let g = UIImpactFeedbackGenerator(style: .light); g.impactOccurred()
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
             action()
         } label: {
             Image(systemName: symbol)
@@ -496,6 +589,40 @@ struct MapHubView: View {
         let newRegion = MKCoordinateRegion(center: lastRegion.center, span: span)
         lastRegion = newRegion
         withAnimation(.easeInOut(duration: 0.25)) { camera = .region(newRegion) }
+    }
+
+    private func zoomToCluster(_ cluster: StormCluster) {
+        let span = max(0.04, lastRegion.span.latitudeDelta / 3)
+        let region = MKCoordinateRegion(center: cluster.coordinate,
+                                        span: .init(latitudeDelta: span, longitudeDelta: span))
+        lastRegion = region
+        withAnimation(.easeInOut(duration: 0.4)) { camera = .region(region) }
+    }
+
+    private func recenterOnUser() {
+        let apply: (CLLocationCoordinate2D) -> Void = { coord in
+            let region = MKCoordinateRegion(center: coord,
+                                            span: .init(latitudeDelta: 0.05, longitudeDelta: 0.05))
+            lastRegion = region
+            withAnimation(.easeInOut(duration: 0.4)) { camera = .region(region) }
+        }
+        if let coord = locationProvider.lastCoord {
+            apply(coord)
+        } else {
+            locationProvider.start { coord in apply(coord) }
+        }
+    }
+
+    // MARK: - Filter debounce (Step 5)
+
+    private func scheduleFilterDebounce() {
+        filterDebounce?.cancel()
+        filterDebounce = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(180))
+            guard !Task.isCancelled else { return }
+            hailSizeMin = hailSizeMinRaw
+            windMphMin = windMphMinRaw
+        }
     }
 
     // MARK: - Radius filter chrome
@@ -536,7 +663,6 @@ struct MapHubView: View {
     private func applyRadiusFilter(center: CLLocationCoordinate2D, miles: Double) {
         radiusFilterCenter = center
         radiusFilterMiles = miles
-        // Re-center map on storm
         let region = MKCoordinateRegion(
             center: center,
             span: .init(latitudeDelta: max(0.04, miles / 35), longitudeDelta: max(0.04, miles / 35))
@@ -545,17 +671,99 @@ struct MapHubView: View {
         withAnimation(.easeInOut(duration: 0.4)) { camera = .region(region) }
     }
 
-    // Filtered visible storms. Radius filter doesn't hide storms themselves —
-    // only Leads/Jobs are narrowed; the radius chrome still tells the story.
-    private var visibleStorms: [StormPinEvent] {
-        showStorms ? storms : []
+    // MARK: - Affected areas + counts (Step 6)
+
+    private func affectedAreas(for storm: StormPinEvent) -> [ServiceArea] {
+        serviceAreaStore.areas.filter { area in
+            guard let lat = area.centerLat, let lng = area.centerLng else { return false }
+            let d = CLLocation(latitude: lat, longitude: lng)
+                .distance(from: CLLocation(latitude: storm.latitude, longitude: storm.longitude)) / 1609.344
+            return d <= storm.impactRadiusMiles + 3
+        }
     }
+
+    private func leadsCount(in storm: StormPinEvent) -> Int {
+        footprintPins.filter {
+            $0.kind == .lead && $0.distanceMiles(from: storm.coordinate) <= storm.impactRadiusMiles
+        }.count
+    }
+
+    private func jobsCount(in storm: StormPinEvent) -> Int {
+        footprintPins.filter {
+            $0.kind != .lead && $0.distanceMiles(from: storm.coordinate) <= storm.impactRadiusMiles
+        }.count
+    }
+
+    // MARK: - Door-knock route (Step 7)
+
+    private func startDoorKnock(for storm: StormPinEvent) {
+        let visited: [CLLocationCoordinate2D] = knockStore.houses.compactMap { h in
+            guard let lat = h.latitude, let lng = h.longitude else { return nil }
+            return CLLocationCoordinate2D(latitude: lat, longitude: lng)
+        }
+        plannedRoute = StormRouteBuilder.build(
+            storm: storm,
+            userLocation: locationProvider.lastCoord,
+            leads: footprintPins,
+            visited: visited,
+            serviceAreas: serviceAreaStore.areas
+        )
+        selectedStorm = nil
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            showDoorKnockingMode = true
+        }
+    }
+
+    // MARK: - Add to Lead List (Step 6)
+
+    private func presentAddToLead(_ storm: StormPinEvent) {
+        selectedStorm = nil
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            addToLeadStorm = storm
+        }
+    }
+
+    private func handleAddLeads(_ addresses: [AddressSuggestion], storm: StormPinEvent?) {
+        guard let store = customerStore else { return }
+        for s in addresses {
+            let addr = s.fullAddress.trimmingCharacters(in: .whitespaces)
+            guard !addr.isEmpty else { continue }
+            var c = Customer(ownerName: "New Lead", address: addr,
+                             stage: .knocked, stormTagged: storm != nil)
+            c.dateOfLoss = storm?.date
+            store.add(c, makeActive: false)
+        }
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+    }
+
+    // MARK: - Share storm report (Step 6)
+
+    private func shareStorm(_ storm: StormPinEvent) {
+        shareText = shareString(for: storm)
+        selectedStorm = nil
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { showShare = true }
+    }
+
+    private func shareString(for storm: StormPinEvent) -> String {
+        let date = storm.date.formatted(date: .abbreviated, time: .omitted)
+        let link: String
+        if let noaa = eventByPinId[storm.id] {
+            link = "https://www.ncdc.noaa.gov/stormevents/eventdetails.jsp?id=\(noaa.id)"
+        } else {
+            link = "https://www.spc.noaa.gov/climo/reports/"
+        }
+        return "RoofWise storm report — \(storm.magnitudeText) on \(date). NOAA details: \(link)"
+    }
+
+    // Filtered visible storms helper kept for the Google fallback path.
+    private var visibleStorms: [StormPinEvent] { filteredStorms }
 
     // MARK: - Knock CTA card
 
     private var startKnockingCard: some View {
         Button {
-            let g = UIImpactFeedbackGenerator(style: .medium); g.impactOccurred()
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            plannedRoute = []
             showDoorKnockingMode = true
         } label: {
             HStack(alignment: .top, spacing: 12) {
@@ -590,6 +798,7 @@ struct MapHubView: View {
                     .foregroundStyle(Theme.ember)
             }
             .padding(14)
+            .frame(minHeight: 88)
             .background(Theme.card, in: .rect(cornerRadius: 18))
             .overlay(RoundedRectangle(cornerRadius: 18).stroke(Theme.hairline, lineWidth: 0.6))
             .shadow(color: Theme.ink.opacity(0.10), radius: 14, y: 4)
@@ -598,32 +807,6 @@ struct MapHubView: View {
     }
 
     // MARK: - Glyphs
-
-    private func stormGlyph(_ sp: StormPinEvent) -> some View {
-        ZStack {
-            Circle().fill(.white)
-                .frame(width: 36, height: 36)
-                .shadow(color: .black.opacity(0.18), radius: 4, y: 2)
-            Circle()
-                .fill(sp.isHail ? Theme.sky : Theme.ember)
-                .frame(width: 28, height: 28)
-            Image(systemName: sp.isHail ? "cloud.hail.fill" : "wind")
-                .font(.system(size: Theme.TypeRamp.metaSm, weight: .heavy))
-                .foregroundStyle(.white)
-        }
-    }
-
-    private func entityGlyph(_ p: MapEntityPin) -> some View {
-        ZStack {
-            Circle().fill(.white)
-                .frame(width: 30, height: 30)
-                .shadow(color: .black.opacity(0.16), radius: 3, y: 2)
-            Circle().fill(p.color).frame(width: 22, height: 22)
-            Image(systemName: p.icon)
-                .font(.system(size: Theme.TypeRamp.captionSm, weight: .heavy))
-                .foregroundStyle(.white)
-        }
-    }
 
     private func knockGlyph(_ outcome: KnockOutcome) -> some View {
         ZStack {
@@ -641,23 +824,23 @@ struct MapHubView: View {
     private func placeKnock(at coord: CLLocationCoordinate2D) {
         knockStore.lastLocation = coord
         let house = knockStore.add(coord: coord)
-        let g = UIImpactFeedbackGenerator(style: .medium); g.impactOccurred()
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         editingHouse = house
     }
 
     // MARK: - Data
 
     private func loadStorms() async {
-        // Use NOAA-backed storm events. Region is the current camera center,
-        // padded so the user always sees a reasonable spread when zoomed in.
         let center = lastRegion.center
         let radius = max(50.0, Double(lastRegion.span.latitudeDelta) * 70.0)
         let fresh = (try? await stormService.events(
-            near: center, radiusMi: radius, sinceMonthsBack: stormMonthsBack
+            near: center, radiusMi: radius, sinceMonthsBack: dateRange.monthsBack
         )) ?? []
         await MainActor.run {
             self.stormEvents = fresh
-            self.storms = fresh.map { $0.asPin }
+            let pairs = fresh.map { ($0, $0.asPin) }
+            self.storms = pairs.map { $0.1 }
+            self.eventByPinId = Dictionary(pairs.map { ($0.1.id, $0.0) }, uniquingKeysWith: { a, _ in a })
         }
     }
 
@@ -686,8 +869,7 @@ struct MapHubView: View {
     }
 
     /// Synthesised polygons — we don't have real roof footprint coords, so
-    /// each slope renders as a small quad fanned out around the focused
-    /// address, sized by squares and rotated by azimuth.
+    /// each slope renders as a small quad fanned out around the focused address.
     private var roofPolygons: [RoofPolygon] {
         guard let address = focusedAddress,
               let roof = focusedRoof,
@@ -714,12 +896,10 @@ struct MapHubView: View {
         }
     }
 
-    /// Build a 4-coord quad anchored at `center`, fanned out by `azimuth`,
-    /// with side length proportional to √(squares).
     private static func quad(around center: CLLocationCoordinate2D,
                              azimuthDegrees: Double,
                              squares: Double) -> [CLLocationCoordinate2D] {
-        let baseSide = max(0.00006, sqrt(max(squares, 1.0)) * 0.00018) // deg-ish
+        let baseSide = max(0.00006, sqrt(max(squares, 1.0)) * 0.00018)
         let rad = azimuthDegrees * .pi / 180.0
         let outOffset = baseSide * 1.1
         let cx = center.latitude  + cos(rad) * outOffset
@@ -739,7 +919,6 @@ struct MapHubView: View {
     }
 
     private func startLocationIfNeeded() {
-        // Only auto-center on the user when no focused address / storm is set.
         guard focusedAddress == nil, focusedStorm == nil else { return }
         locationProvider.start { coord in
             if !didCenterOnUser {
@@ -790,13 +969,9 @@ struct MapHubView: View {
 
     private func presentFocusedStormIfNeeded() {
         guard let pin = focusedStorm else { return }
-        // Recenter and pop the detail sheet on the next runloop so the map is
-        // mounted before we mutate camera state.
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(120))
             if let miles = initialRadiusFilterMiles {
-                // Apply radius filter (also recenters camera) — this satisfies
-                // "only impacted Leads/Jobs and the storm itself show".
                 applyRadiusFilter(center: pin.coordinate, miles: miles)
             } else {
                 let region = MKCoordinateRegion(
@@ -814,8 +989,6 @@ struct MapHubView: View {
     }
 
     private func applyEvidence(storm: StormPinEvent, reportId: String) {
-        // Convert the on-map StormPinEvent into the canonical StormEvent that
-        // InspectionStore knows how to apply.
         let kind: StormEventType = storm.isHail ? .hail
             : (storm.windGustMph != nil ? .wind : .hail)
         let evt = NoaaStormEvent(
@@ -843,10 +1016,20 @@ struct MapHubView: View {
             h ^= UInt64(b)
             h = h &* 0x100000001b3
         }
-        let lat = 32.85 + Double(h % 400) / 1000.0          // 32.850 .. 33.250
-        let lng = -96.92 + Double((h / 400) % 480) / 1000.0  // -96.920 .. -96.440
+        let lat = 32.85 + Double(h % 400) / 1000.0
+        let lng = -96.92 + Double((h / 400) % 480) / 1000.0
         return .init(latitude: lat, longitude: lng)
     }
+}
+
+// MARK: - System share sheet wrapper
+
+private struct ActivityShareView: UIViewControllerRepresentable {
+    let items: [Any]
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+    func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
 }
 
 // MARK: - Google Maps wrapper (active only when SDK is linked)
@@ -937,8 +1120,6 @@ private struct GoogleMapsCanvas: UIViewRepresentable {
         }
 
         func mapView(_ mapView: GMSMapView, idleAt position: GMSCameraPosition) {
-            // Reflect google camera back into MK region so zoom buttons keep
-            // working on the SwiftUI side if the user toggles modes.
             let visible = mapView.projection.visibleRegion()
             let north = visible.farLeft.latitude
             let south = visible.nearLeft.latitude

@@ -13,6 +13,11 @@ struct DoorKnockingModeView: View {
     /// hero CTA or push notification path.
     var routeStormAlertId: String? = nil
 
+    /// Optional pre-built canvassing route (Step 7). When non-empty, the route
+    /// renders as a connecting polyline with numbered stops. Purely additive —
+    /// existing callers that omit it are byte-identical in behaviour.
+    var plannedRoute: [StormRouteStop] = []
+
     @State private var sessionId: UUID? = nil
     @State private var camera: MapCameraPosition = .region(
         MKCoordinateRegion(center: .init(latitude: 33.05, longitude: -96.75),
@@ -118,6 +123,15 @@ struct DoorKnockingModeView: View {
     private var mapCanvas: some View {
         Map(position: $camera) {
             UserAnnotation()
+            if !plannedRoute.isEmpty {
+                MapPolyline(coordinates: plannedRoute.map(\.coordinate))
+                    .stroke(Theme.ember, lineWidth: 4)
+                ForEach(plannedRoute) { stop in
+                    Annotation(stop.title, coordinate: stop.coordinate) {
+                        RouteStopPinView(order: stop.order)
+                    }
+                }
+            }
             ForEach(allKnocks) { k in
                 Annotation(k.outcome.label,
                            coordinate: .init(latitude: k.lat, longitude: k.lng)) {
