@@ -13,6 +13,8 @@ import {
   IconSettings,
   IconSpark,
   IconVideo,
+  IconClapper,
+  IconUsers,
   IconMic,
   IconX,
 } from "@/components/Icons";
@@ -21,6 +23,8 @@ const nav = [
   { href: "/dashboard", label: "Create", Icon: IconChat, exact: true },
   { href: "/dashboard/studio", label: "Video Studio", Icon: IconVideo },
   { href: "/dashboard/ugc", label: "UGC Video", Icon: IconMic },
+  { href: "/dashboard/characters", label: "Characters", Icon: IconUsers },
+  { href: "/dashboard/editor", label: "Video Editor", Icon: IconClapper },
   { href: "/dashboard/library", label: "Library", Icon: IconLayers },
   { href: "/dashboard/calendar", label: "Calendar", Icon: IconCalendar },
   { href: "/dashboard/analytics", label: "Analytics", Icon: IconChart },

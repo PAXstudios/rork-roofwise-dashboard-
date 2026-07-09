@@ -11,7 +11,14 @@ export const maxDuration = 300;
 // HF_CREDENTIALS this returns { clips: [] } and the client keeps using the
 // in-browser preview player.
 export async function POST(req: NextRequest) {
-  let body: { kind?: VideoKind; scenes?: VideoScene[]; aspect?: string; maxScenes?: number };
+  let body: {
+    kind?: VideoKind;
+    scenes?: VideoScene[];
+    aspect?: string;
+    maxScenes?: number;
+    soulId?: string;
+    music?: boolean;
+  };
   try {
     body = await req.json();
   } catch {
@@ -29,6 +36,8 @@ export async function POST(req: NextRequest) {
     : await renderVideo(body.kind, body.scenes, {
         aspect: body.aspect,
         maxScenes: body.maxScenes,
+        soulId: body.soulId,
+        music: body.music,
       });
 
   return NextResponse.json({

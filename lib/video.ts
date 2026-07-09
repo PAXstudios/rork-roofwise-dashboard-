@@ -186,7 +186,7 @@ export interface RenderResult {
 export async function renderVideo(
   kind: VideoKind,
   scenes: VideoScene[],
-  opts: { aspect?: string; maxScenes?: number } = {}
+  opts: { aspect?: string; maxScenes?: number; soulId?: string; music?: boolean } = {}
 ): Promise<RenderResult> {
   const creds = hfCredentials();
   if (!creds) return { clips: [], engine: "none" };
@@ -202,13 +202,16 @@ export async function renderVideo(
 
   for (const scene of scenes.slice(0, max)) {
     try {
-      // 1) still frame
+      // 1) still frame — carry the creator's trained face (Soul) when provided
       const imgPrompt =
         kind === "ugc"
           ? `${scene.visual}. Vertical UGC selfie-style shot of a creator talking to camera. ${scene.caption}`
           : `${scene.visual}. Cinematic, high quality. ${scene.caption}`;
+      const soulInput = opts.soulId
+        ? { custom_reference_id: opts.soulId, custom_reference_strength: 0.8 }
+        : {};
       const img = await client.subscribe("/v1/text2image/soul", {
-        input: { prompt: imgPrompt, width_and_height: dims, quality: "1080p", batch_size: 1 },
+        input: { prompt: imgPrompt, width_and_height: dims, quality: "1080p", batch_size: 1, ...soulInput },
         withPolling: true,
       });
       const imageUrl = img.images?.[0]?.url;
@@ -291,6 +294,32 @@ export async function renderViaHiggsfieldCli(
     }
   }
   return { clips, engine: "higgsfield", error: clips.length ? undefined : error };
+}
+
+// Repurpose an existing video to a different aspect ratio via Higgsfield's
+// `reframe` workflow. Demo mode acknowledges the target ratio (the player
+// already renders any aspect).
+export async function reframeVideo(
+  videoUrl: string,
+  targetAspect: string
+): Promise<{ ok: boolean; url: string | null; engine: "higgsfield" | "demo"; error?: string }> {
+  if (!cliRenderEnabled()) {
+    return { ok: true, url: null, engine: "demo" };
+  }
+  try {
+    const { execFile } = await import("node:child_process");
+    const { promisify } = await import("node:util");
+    const run = promisify(execFile);
+    const { stdout } = await run(
+      "higgsfield",
+      ["workflow", "run", "reframe", "--video", videoUrl, "--aspect_ratio", targetAspect, "--wait", "--json"],
+      { maxBuffer: 1024 * 1024 * 8 }
+    );
+    const url = extractUrlFromCli(stdout);
+    return { ok: Boolean(url), url, engine: "higgsfield", error: url ? undefined : "No result URL" };
+  } catch (err: any) {
+    return { ok: false, url: null, engine: "higgsfield", error: err?.stderr || err?.message };
+  }
 }
 
 function extractUrlFromCli(stdout: string): string | null {

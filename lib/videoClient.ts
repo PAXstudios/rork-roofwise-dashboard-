@@ -53,12 +53,12 @@ export async function renderClips(
   kind: VideoKind,
   scenes: VideoScene[],
   aspect: string,
-  maxScenes?: number
+  opts: { maxScenes?: number; soulId?: string; music?: boolean } = {}
 ): Promise<RenderResult> {
   const res = await fetch("/api/video/render", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ kind, scenes, aspect, maxScenes }),
+    body: JSON.stringify({ kind, scenes, aspect, ...opts }),
   });
   const data = await res.json();
   return {

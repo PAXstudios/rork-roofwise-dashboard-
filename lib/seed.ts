@@ -1,4 +1,4 @@
-import type { Connection, Draft, SocialPost, Platform, VideoProject } from "./types";
+import type { Connection, Draft, SocialPost, Platform, VideoProject, Character } from "./types";
 
 // Deterministic pseudo-random so SSR and client agree (no Date.now/Math.random
 // in initial render paths). Seeded generator.
@@ -140,6 +140,15 @@ export const VIDEO_BG: Record<string, string> = {
   slate: "linear-gradient(135deg,#334155,#0f172a)",
 };
 export const VIDEO_BG_KEYS = Object.keys(VIDEO_BG);
+
+export const seedCharacters: Character[] = [
+  { id: "char-maya", name: "Maya", kind: "preset", vibe: "energetic Gen-Z creator, warm and fast-talking", gender: "female", swatch: "sunset", status: "ready", engine: "demo", createdAt: NOW - 30 * DAY },
+  { id: "char-jordan", name: "Jordan", kind: "preset", vibe: "calm expert, measured and trustworthy", gender: "male", swatch: "ocean", status: "ready", engine: "demo", createdAt: NOW - 30 * DAY },
+  { id: "char-alex", name: "Alex", kind: "preset", vibe: "hype street-style creator, bold and punchy", gender: "neutral", swatch: "ember", status: "ready", engine: "demo", createdAt: NOW - 30 * DAY },
+  { id: "char-sam", name: "Sam", kind: "preset", vibe: "friendly girl-next-door, relatable and bubbly", gender: "female", swatch: "violet", status: "ready", engine: "demo", createdAt: NOW - 30 * DAY },
+  { id: "char-chris", name: "Chris", kind: "preset", vibe: "authoritative founder, sharp and confident", gender: "male", swatch: "night", status: "ready", engine: "demo", createdAt: NOW - 30 * DAY },
+  { id: "char-nina", name: "Nina", kind: "preset", vibe: "aesthetic lifestyle creator, soft and aspirational", gender: "female", swatch: "lime", status: "ready", engine: "demo", createdAt: NOW - 30 * DAY },
+];
 
 export const seedVideos: VideoProject[] = [
   {

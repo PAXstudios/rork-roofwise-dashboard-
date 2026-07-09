@@ -139,6 +139,13 @@ export const IconClapper = (p: P) => (
     <path d="M3 8l2.2-3.6 3.4 1M8.6 5.4l3.4 1M14 6.4l3.4 1L21 8" />
   </svg>
 );
+export const IconUsers = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+    <circle cx="9" cy="7" r="4" />
+    <path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13A4 4 0 0 1 16 11" />
+  </svg>
+);
 
 // Brand / platform marks
 export const IconLinkedIn = (p: P) => (

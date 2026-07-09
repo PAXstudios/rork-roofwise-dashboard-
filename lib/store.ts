@@ -13,8 +13,16 @@ import type {
   Platform,
   DraftStatus,
   VideoProject,
+  Character,
+  EditProject,
 } from "./types";
-import { seedConnections, seedDrafts, seedVideos, DEMO_ACCENTS } from "./seed";
+import {
+  seedConnections,
+  seedDrafts,
+  seedVideos,
+  seedCharacters,
+  DEMO_ACCENTS,
+} from "./seed";
 
 function uid(prefix = "id") {
   // Avoid Math.random for hydration stability where it matters; here it's only
@@ -44,6 +52,8 @@ interface AppState {
   conversations: Conversation[];
   activeConversationId: string | null;
   videos: VideoProject[];
+  characters: Character[];
+  editProjects: EditProject[];
 
   // auth
   signup: (name: string, email: string) => void;
@@ -73,6 +83,16 @@ interface AppState {
   updateVideo: (id: string, patch: Partial<VideoProject>) => void;
   deleteVideo: (id: string) => void;
 
+  // characters
+  addCharacter: (c: Character) => void;
+  updateCharacter: (id: string, patch: Partial<Character>) => void;
+  deleteCharacter: (id: string) => void;
+
+  // video editor projects
+  addEditProject: (e: EditProject) => void;
+  updateEditProject: (id: string, patch: Partial<EditProject>) => void;
+  deleteEditProject: (id: string) => void;
+
   // conversations
   newConversation: (mode: ChatMode) => string;
   setActiveConversation: (id: string | null) => void;
@@ -94,6 +114,8 @@ export const useStore = create<AppState>()(
       conversations: [],
       activeConversationId: null,
       videos: seedVideos,
+      characters: seedCharacters,
+      editProjects: [],
 
       signup: (name, email) => {
         const accent = DEMO_ACCENTS[name.length % DEMO_ACCENTS.length];
@@ -206,6 +228,24 @@ export const useStore = create<AppState>()(
       deleteVideo: (id) =>
         set((s) => ({ videos: s.videos.filter((v) => v.id !== id) })),
 
+      addCharacter: (c) => set((s) => ({ characters: [c, ...s.characters] })),
+      updateCharacter: (id, patch) =>
+        set((s) => ({
+          characters: s.characters.map((c) => (c.id === id ? { ...c, ...patch } : c)),
+        })),
+      deleteCharacter: (id) =>
+        set((s) => ({ characters: s.characters.filter((c) => c.id !== id) })),
+
+      addEditProject: (e) => set((s) => ({ editProjects: [e, ...s.editProjects] })),
+      updateEditProject: (id, patch) =>
+        set((s) => ({
+          editProjects: s.editProjects.map((e) =>
+            e.id === id ? { ...e, ...patch, updatedAt: Date.now() } : e
+          ),
+        })),
+      deleteEditProject: (id) =>
+        set((s) => ({ editProjects: s.editProjects.filter((e) => e.id !== id) })),
+
       newConversation: (mode) => {
         const id = uid("conv");
         const titles: Record<ChatMode, string> = {
@@ -285,6 +325,8 @@ export const useStore = create<AppState>()(
           conversations: [],
           activeConversationId: null,
           videos: seedVideos,
+          characters: seedCharacters,
+          editProjects: [],
         }),
     }),
     {

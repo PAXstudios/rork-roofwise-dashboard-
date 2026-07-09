@@ -4,9 +4,13 @@ import { useMemo, useState } from "react";
 import { useStore } from "@/lib/store";
 import { useHydrated, timeAgo } from "@/lib/hooks";
 import { generateStoryboard, renderClips } from "@/lib/videoClient";
+import { scoreVideoClient, reframeClient } from "@/lib/studioClient";
 import { VideoPlayer } from "./VideoPlayer";
+import { CharacterPicker } from "./CharacterPicker";
+import { ScoreCard } from "./ScoreCard";
 import { PLATFORM_META, PlatformBadge } from "@/components/platform";
-import type { VideoKind, VideoAspect, VideoScene, VideoProject, Platform } from "@/lib/types";
+import Link from "next/link";
+import type { VideoKind, VideoAspect, VideoScene, VideoProject, Platform, VideoScore } from "@/lib/types";
 import {
   IconSpark,
   IconTrash,
@@ -14,6 +18,7 @@ import {
   IconCheck,
   IconLayers,
   IconClock,
+  IconTarget,
 } from "@/components/Icons";
 
 const ASPECTS: { key: VideoAspect; label: string }[] = [
@@ -36,6 +41,7 @@ export function VideoStudio({ kind }: { kind: VideoKind }) {
   const hydrated = useHydrated();
   const voice = useStore((s) => s.voice);
   const videos = useStore((s) => s.videos);
+  const characters = useStore((s) => s.characters);
   const addVideo = useStore((s) => s.addVideo);
   const updateVideo = useStore((s) => s.updateVideo);
   const deleteVideo = useStore((s) => s.deleteVideo);
@@ -47,6 +53,8 @@ export function VideoStudio({ kind }: { kind: VideoKind }) {
   const [voiceStyle, setVoiceStyle] = useState(isUgc ? "energetic" : "storyteller");
   const [persona, setPersona] = useState(PERSONAS[0]);
   const [hookStyle, setHookStyle] = useState(HOOK_STYLES[0]);
+  const [characterId, setCharacterId] = useState<string>("");
+  const [music, setMusic] = useState(true);
 
   const [scenes, setScenes] = useState<VideoScene[]>([]);
   const [title, setTitle] = useState("");
@@ -56,6 +64,11 @@ export function VideoStudio({ kind }: { kind: VideoKind }) {
   const [clips, setClips] = useState<{ sceneId: string; url: string }[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
   const [savedId, setSavedId] = useState<string | null>(null);
+  const [score, setScore] = useState<VideoScore | null>(null);
+  const [scoring, setScoring] = useState(false);
+
+  const character = characters.find((c) => c.id === characterId) || null;
+  const effectivePersona = character ? `${character.name} — ${character.vibe}` : persona;
 
   const myVideos = useMemo(() => videos.filter((v) => v.kind === kind), [videos, kind]);
 
@@ -65,12 +78,13 @@ export function VideoStudio({ kind }: { kind: VideoKind }) {
     setNotice(null);
     setClips([]);
     setSavedId(null);
+    setScore(null);
     const res = await generateStoryboard({
       kind,
       prompt: prompt.trim(),
       aspect,
       voiceStyle,
-      persona: isUgc ? persona : undefined,
+      persona: isUgc ? effectivePersona : undefined,
       hookStyle: isUgc ? hookStyle : undefined,
       niche: voice.niche,
       audience: voice.audience,
@@ -90,7 +104,10 @@ export function VideoStudio({ kind }: { kind: VideoKind }) {
     if (!scenes.length || rendering) return;
     setRendering(true);
     setNotice(null);
-    const res = await renderClips(kind, scenes, aspect);
+    const res = await renderClips(kind, scenes, aspect, {
+      soulId: character?.soulId,
+      music,
+    });
     setRendering(false);
     if (res.clips.length) {
       setClips(res.clips);
@@ -104,6 +121,29 @@ export function VideoStudio({ kind }: { kind: VideoKind }) {
     }
   }
 
+  async function onScore() {
+    if (!scenes.length || scoring) return;
+    setScoring(true);
+    const res = await scoreVideoClient({ scenes, videoUrl: clips[0]?.url });
+    setScoring(false);
+    if (res.ok && res.score) setScore(res.score);
+  }
+
+  async function onReframe(target: VideoAspect) {
+    setAspect(target);
+    if (!clips.length) {
+      setNotice(`Preview reframed to ${target}. Render to produce a real ${target} cut.`);
+      return;
+    }
+    setNotice(`Repurposing to ${target}…`);
+    const res = await reframeClient(clips[0].url, target);
+    setNotice(
+      res.url
+        ? `Repurposed to ${target} with Higgsfield.`
+        : `Reframe queued for ${target}. Add Higgsfield credentials to produce the ${target} MP4.`
+    );
+  }
+
   function saveProject() {
     if (!scenes.length) return;
     const project: VideoProject = {
@@ -113,14 +153,17 @@ export function VideoStudio({ kind }: { kind: VideoKind }) {
       prompt,
       platform,
       aspect,
-      persona: isUgc ? persona : undefined,
+      persona: isUgc ? effectivePersona : undefined,
+      characterId: isUgc ? characterId || undefined : undefined,
       hookStyle: isUgc ? hookStyle : undefined,
       voiceStyle,
+      music,
       scenes,
       status: clips.length ? "ready" : "draft",
       sceneClips: clips.length ? clips : undefined,
       engine: clips.length ? "provider" : "demo",
       provider: clips.length ? "higgsfield" : undefined,
+      score: score || undefined,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
@@ -144,10 +187,13 @@ export function VideoStudio({ kind }: { kind: VideoKind }) {
     setVoiceStyle(v.voiceStyle);
     if (v.persona) setPersona(v.persona);
     if (v.hookStyle) setHookStyle(v.hookStyle);
+    if (v.characterId) setCharacterId(v.characterId);
+    setMusic(v.music ?? true);
     setScenes(v.scenes);
     setTitle(v.title);
     setClips(v.sceneClips || []);
     setEngine(v.engine === "provider" ? "provider" : "demo");
+    setScore(v.score || null);
     setSavedId(v.id);
     setNotice(null);
   }
@@ -229,24 +275,25 @@ export function VideoStudio({ kind }: { kind: VideoKind }) {
                 </select>
               </div>
               {isUgc && (
-                <>
-                  <div>
-                    <label className="label">Creator persona</label>
-                    <select className="input" value={persona} onChange={(e) => setPersona(e.target.value)}>
-                      {PERSONAS.map((p) => (
-                        <option key={p} value={p}>{p}</option>
-                      ))}
-                    </select>
+                <div className="sm:col-span-2">
+                  <div className="mb-1.5 flex items-center justify-between">
+                    <label className="label !mb-0">Creator character</label>
+                    <Link href="/dashboard/characters" className="text-xs font-semibold text-brand-300 hover:text-brand-200">
+                      Manage / create →
+                    </Link>
                   </div>
-                  <div>
-                    <label className="label">Hook style</label>
-                    <select className="input" value={hookStyle} onChange={(e) => setHookStyle(e.target.value)}>
-                      {HOOK_STYLES.map((h) => (
-                        <option key={h} value={h}>{h}</option>
-                      ))}
-                    </select>
-                  </div>
-                </>
+                  <CharacterPicker value={characterId} onChange={setCharacterId} />
+                </div>
+              )}
+              {isUgc && (
+                <div>
+                  <label className="label">Hook style</label>
+                  <select className="input" value={hookStyle} onChange={(e) => setHookStyle(e.target.value)}>
+                    {HOOK_STYLES.map((h) => (
+                      <option key={h} value={h}>{h}</option>
+                    ))}
+                  </select>
+                </div>
               )}
               <div>
                 <label className="label">Publish to</label>
@@ -255,6 +302,20 @@ export function VideoStudio({ kind }: { kind: VideoKind }) {
                     <option key={p} value={p}>{PLATFORM_META[p].label}</option>
                   ))}
                 </select>
+              </div>
+              <div className="flex items-end">
+                <button
+                  type="button"
+                  onClick={() => setMusic((m) => !m)}
+                  className={`flex w-full items-center justify-between rounded-xl border px-4 py-3 text-sm transition ${
+                    music ? "border-brand-500/50 bg-brand-500/10 text-ink" : "border-line text-ink-soft hover:bg-white/[0.04]"
+                  }`}
+                >
+                  <span>🎵 Background music</span>
+                  <span className={`grid h-5 w-9 items-center rounded-full px-0.5 ${music ? "bg-brand-500" : "bg-white/10"}`}>
+                    <span className={`h-4 w-4 rounded-full bg-white transition ${music ? "translate-x-4" : ""}`} />
+                  </span>
+                </button>
               </div>
             </div>
 
@@ -329,6 +390,13 @@ export function VideoStudio({ kind }: { kind: VideoKind }) {
                     <><IconSpark width={16} height={16} /> Render real video (Higgsfield)</>
                   )}
                 </button>
+                <button onClick={onScore} disabled={scoring} className="btn-ghost">
+                  {scoring ? (
+                    <><span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" /> Scoring…</>
+                  ) : (
+                    <><IconTarget width={16} height={16} /> Score virality</>
+                  )}
+                </button>
                 <button onClick={saveProject} className="btn-ghost">
                   {savedId ? <><IconCheck width={16} height={16} className="text-accent-lime" /> Saved</> : <><IconPlus width={16} height={16} /> Save to library</>}
                 </button>
@@ -356,7 +424,7 @@ export function VideoStudio({ kind }: { kind: VideoKind }) {
                 scenes={scenes}
                 kind={kind}
                 aspect={aspect}
-                persona={isUgc ? persona : undefined}
+                persona={isUgc ? (character?.name || effectivePersona) : undefined}
                 clips={clips.length ? clips : undefined}
               />
             ) : (
@@ -367,7 +435,31 @@ export function VideoStudio({ kind }: { kind: VideoKind }) {
                 </div>
               </div>
             )}
+            {scenes.length > 0 && (
+              <div className="mt-4 border-t border-line pt-3">
+                <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-ink-faint">
+                  Repurpose (reframe)
+                </div>
+                <div className="flex gap-1.5">
+                  {(["9:16", "1:1", "16:9"] as VideoAspect[]).map((a) => (
+                    <button
+                      key={a}
+                      onClick={() => onReframe(a)}
+                      className={`flex-1 rounded-lg border px-2 py-1.5 text-xs transition ${
+                        aspect === a
+                          ? "border-brand-500/50 bg-brand-500/10 text-ink"
+                          : "border-line text-ink-soft hover:bg-white/[0.04]"
+                      }`}
+                    >
+                      {a}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
+
+          {score && <ScoreCard score={score} />}
 
           {hydrated && myVideos.length > 0 && (
             <div className="card p-4">
