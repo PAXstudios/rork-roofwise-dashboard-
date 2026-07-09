@@ -438,7 +438,7 @@ export function VideoStudio({ kind }: { kind: VideoKind }) {
                       <IconSpark width={16} height={16} />
                       {isUgc && heygenBacked
                         ? `Render with HeyGen (${character?.name})`
-                        : "Render real video"}
+                        : "Render with Higgsfield"}
                     </>
                   )}
                 </button>
@@ -453,6 +453,13 @@ export function VideoStudio({ kind }: { kind: VideoKind }) {
                   {savedId ? <><IconCheck width={16} height={16} className="text-accent-lime" /> Saved</> : <><IconPlus width={16} height={16} /> Save to library</>}
                 </button>
               </div>
+              {isUgc && (
+                <p className="mt-2 text-[11px] text-ink-faint">
+                  {heygenBacked
+                    ? `Rendering a real talking-head with ${character?.name} via HeyGen (lip-synced speech).`
+                    : "Pick a HeyGen character above for a real talking-head. Otherwise this renders cinematic scenes via Higgsfield."}
+                </p>
+              )}
               {notice && (
                 <p className="mt-3 rounded-lg border border-line bg-white/[0.02] px-3 py-2 text-xs text-ink-soft">{notice}</p>
               )}

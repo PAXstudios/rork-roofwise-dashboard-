@@ -42,13 +42,23 @@ export async function listAvatars(limit = 60): Promise<HeyGenAvatar[]> {
     .slice(0, limit);
 }
 
-let voiceCache: HeyGenVoice[] | null = null;
-export async function listVoices(): Promise<HeyGenVoice[]> {
+export interface HeyGenVoiceFull extends HeyGenVoice {
+  preview_audio?: string;
+  emotion_support?: boolean;
+  support_pause?: boolean;
+}
+
+let voiceCache: HeyGenVoiceFull[] | null = null;
+export async function listVoices(): Promise<HeyGenVoiceFull[]> {
   if (voiceCache) return voiceCache;
   const res = await fetch(`${API}/v2/voices`, { headers: headers() });
   if (!res.ok) throw new Error(`HeyGen voices ${res.status}`);
   const data = await res.json();
-  voiceCache = (data?.data?.voices || []) as HeyGenVoice[];
+  const voices = (data?.data?.voices || []) as HeyGenVoiceFull[];
+  // Drop placeholder/empty entries HeyGen returns at the top of the list.
+  voiceCache = voices.filter(
+    (v) => v.voice_id && v.name && !/voice-name-here/i.test(v.name)
+  );
   return voiceCache;
 }
 

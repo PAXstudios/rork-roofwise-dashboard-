@@ -28,6 +28,30 @@ export interface HeyGenAvatarItem {
   premium: boolean;
 }
 
+export interface HeyGenVoiceItem {
+  id: string;
+  name: string;
+  language: string;
+  gender: string | null;
+  preview?: string;
+  emotion?: boolean;
+}
+
+export async function listHeyGenVoices(opts: { language?: string; q?: string } = {}): Promise<{
+  ok: boolean;
+  configured: boolean;
+  total?: number;
+  languages: string[];
+  voices: HeyGenVoiceItem[];
+  error?: string;
+}> {
+  const params = new URLSearchParams();
+  if (opts.language) params.set("language", opts.language);
+  if (opts.q) params.set("q", opts.q);
+  const res = await fetch(`/api/heygen/voices?${params.toString()}`);
+  return res.json();
+}
+
 export async function listHeyGenAvatars(): Promise<{
   ok: boolean;
   configured: boolean;

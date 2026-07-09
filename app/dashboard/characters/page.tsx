@@ -11,6 +11,7 @@ import {
   type HeyGenAvatarItem,
 } from "@/lib/studioClient";
 import { CharacterAvatar } from "@/components/dashboard/CharacterPicker";
+import { VoicePicker } from "@/components/dashboard/VoicePicker";
 import type { Character } from "@/lib/types";
 import {
   IconPlus,
@@ -490,6 +491,8 @@ function CreateCharacterModal({
   const [name, setName] = useState("");
   const [vibe, setVibe] = useState("");
   const [images, setImages] = useState<string[]>([]);
+  const [voiceId, setVoiceId] = useState<string | undefined>();
+  const [voiceName, setVoiceName] = useState<string | undefined>();
   const [training, setTraining] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [demoNote, setDemoNote] = useState(false);
@@ -573,6 +576,7 @@ function CreateCharacterModal({
         imageUrl: avatarUrl,
         soulId: res.soulId,
         heygenTalkingPhotoId: res.talkingPhotoId,
+        voiceId,
         status: "ready",
         engine: res.engine,
         createdAt: Date.now(),
@@ -748,6 +752,34 @@ function CreateCharacterModal({
             />
             <p className="mt-1 text-[11px] text-ink-faint">
               How should they come across on camera? This guides their scripts.
+            </p>
+          </div>
+
+          <div>
+            <div className="mb-1.5 flex items-center justify-between">
+              <label className="label !mb-0">Voice</label>
+              <a
+                href="https://app.heygen.com/settings?nav=Voices"
+                target="_blank"
+                rel="noreferrer"
+                className="text-[11px] font-semibold text-brand-300 hover:text-brand-200"
+              >
+                Clone your voice in HeyGen ↗
+              </a>
+            </div>
+            <VoicePicker
+              value={voiceId}
+              defaultGender={null}
+              onChange={(id, n) => {
+                setVoiceId(id);
+                setVoiceName(n);
+              }}
+            />
+            <p className="mt-1 text-[11px] text-ink-faint">
+              {voiceName
+                ? `Voice: ${voiceName}. `
+                : "Pick a voice — or clone your own in HeyGen and it shows up here. "}
+              Leave blank to auto-match by gender.
             </p>
           </div>
 
