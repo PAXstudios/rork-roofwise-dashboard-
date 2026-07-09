@@ -31,3 +31,9 @@ next-env.d.ts
 # expo / rork (legacy native app)
 .expo
 .rork
+
+# installed agent skills (Higgsfield etc.)
+.agents
+
+# skills manifest (skills live in ignored .agents/)
+skills-lock.json

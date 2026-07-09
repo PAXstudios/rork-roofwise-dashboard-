@@ -13,6 +13,7 @@ import {
   IconCheck,
   IconX,
   IconLayers,
+  IconSend,
 } from "@/components/Icons";
 
 type Filter = "all" | DraftStatus;
@@ -49,10 +50,45 @@ export default function LibraryPage() {
   const updateDraft = useStore((s) => s.updateDraft);
   const deleteDraft = useStore((s) => s.deleteDraft);
   const setDraftStatus = useStore((s) => s.setDraftStatus);
+  const markPublished = useStore((s) => s.markPublished);
 
   const [filter, setFilter] = useState<Filter>("all");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [publishingId, setPublishingId] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+
+  async function publish(d: Draft) {
+    if (!d.body.trim()) {
+      setToast("Add some content before publishing.");
+      setTimeout(() => setToast(null), 2500);
+      return;
+    }
+    setPublishingId(d.id);
+    try {
+      const res = await fetch("/api/publish", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ platform: d.platform, text: d.body }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        markPublished(d.id, { publishedUrl: data.url, engine: data.engine, metrics: data.metrics });
+        setToast(
+          data.engine === "live"
+            ? `Published live to ${PLATFORM_META[d.platform].label}.`
+            : `Published to ${PLATFORM_META[d.platform].label} (demo). Add ${d.platform.toUpperCase()} tokens for live posting.`
+        );
+      } else {
+        setToast(data.error || "Publish failed.");
+      }
+    } catch {
+      setToast("Publish failed — network error.");
+    } finally {
+      setPublishingId(null);
+      setTimeout(() => setToast(null), 3500);
+    }
+  }
 
   const counts = useMemo(() => {
     const c: Record<Filter, number> = {
@@ -117,6 +153,11 @@ export default function LibraryPage() {
 
   return (
     <div className="space-y-6">
+      {toast && (
+        <div className="fixed bottom-5 left-1/2 z-50 -translate-x-1/2 rounded-full border border-line-strong bg-bg-elevated px-4 py-2.5 text-sm text-ink shadow-card">
+          {toast}
+        </div>
+      )}
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
@@ -181,9 +222,11 @@ export default function LibraryPage() {
               key={d.id}
               draft={d}
               copied={copiedId === d.id}
+              publishing={publishingId === d.id}
               onEdit={() => setEditingId(d.id)}
               onCopy={() => copyBody(d)}
               onCycle={() => cycleStatus(d)}
+              onPublish={() => publish(d)}
               onDelete={() => {
                 if (confirm("Delete this draft? This cannot be undone.")) {
                   deleteDraft(d.id);
@@ -211,16 +254,20 @@ export default function LibraryPage() {
 function DraftCard({
   draft,
   copied,
+  publishing,
   onEdit,
   onCopy,
   onCycle,
+  onPublish,
   onDelete,
 }: {
   draft: Draft;
   copied: boolean;
+  publishing: boolean;
   onEdit: () => void;
   onCopy: () => void;
   onCycle: () => void;
+  onPublish: () => void;
   onDelete: () => void;
 }) {
   return (
@@ -279,6 +326,31 @@ function DraftCard({
             : `Updated ${timeAgo(draft.updatedAt)}`}
         </span>
         <div className="flex items-center gap-1">
+          {draft.status !== "published" ? (
+            <button
+              onClick={onPublish}
+              disabled={publishing}
+              title={`Publish to ${PLATFORM_META[draft.platform].label}`}
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-brand-400/40 bg-brand-500/15 px-2.5 text-xs font-semibold text-brand-200 transition hover:bg-brand-500/25 disabled:opacity-60"
+            >
+              {publishing ? (
+                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-brand-200/40 border-t-brand-200" />
+              ) : (
+                <IconSend width={13} height={13} />
+              )}
+              Publish
+            </button>
+          ) : draft.publishedUrl ? (
+            <a
+              href={draft.publishedUrl}
+              target="_blank"
+              rel="noreferrer"
+              title="View published post"
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-emerald-400/30 bg-emerald-400/10 px-2.5 text-xs font-semibold text-emerald-300 hover:bg-emerald-400/20"
+            >
+              <IconCheck width={13} height={13} /> Live
+            </a>
+          ) : null}
           <IconBtn label="Edit" onClick={onEdit}>
             <IconPen width={15} height={15} />
           </IconBtn>

@@ -12,8 +12,9 @@ import type {
   ChatMode,
   Platform,
   DraftStatus,
+  VideoProject,
 } from "./types";
-import { seedConnections, seedDrafts, DEMO_ACCENTS } from "./seed";
+import { seedConnections, seedDrafts, seedVideos, DEMO_ACCENTS } from "./seed";
 
 function uid(prefix = "id") {
   // Avoid Math.random for hydration stability where it matters; here it's only
@@ -42,6 +43,7 @@ interface AppState {
   drafts: Draft[];
   conversations: Conversation[];
   activeConversationId: string | null;
+  videos: VideoProject[];
 
   // auth
   signup: (name: string, email: string) => void;
@@ -61,6 +63,15 @@ interface AppState {
   updateDraft: (id: string, patch: Partial<Draft>) => void;
   deleteDraft: (id: string) => void;
   setDraftStatus: (id: string, status: DraftStatus, scheduledAt?: number) => void;
+  markPublished: (
+    id: string,
+    info: { publishedUrl?: string; engine: "live" | "demo"; metrics?: Draft["metrics"] }
+  ) => void;
+
+  // videos
+  addVideo: (v: VideoProject) => void;
+  updateVideo: (id: string, patch: Partial<VideoProject>) => void;
+  deleteVideo: (id: string) => void;
 
   // conversations
   newConversation: (mode: ChatMode) => string;
@@ -82,6 +93,7 @@ export const useStore = create<AppState>()(
       drafts: seedDrafts,
       conversations: [],
       activeConversationId: null,
+      videos: seedVideos,
 
       signup: (name, email) => {
         const accent = DEMO_ACCENTS[name.length % DEMO_ACCENTS.length];
@@ -167,6 +179,32 @@ export const useStore = create<AppState>()(
             d.id === id ? { ...d, status, scheduledAt, updatedAt: Date.now() } : d
           ),
         })),
+      markPublished: (id, info) =>
+        set((s) => ({
+          drafts: s.drafts.map((d) =>
+            d.id === id
+              ? {
+                  ...d,
+                  status: "published",
+                  publishedAt: Date.now(),
+                  publishedUrl: info.publishedUrl,
+                  publishEngine: info.engine,
+                  metrics: info.metrics ?? d.metrics,
+                  updatedAt: Date.now(),
+                }
+              : d
+          ),
+        })),
+
+      addVideo: (v) => set((s) => ({ videos: [v, ...s.videos] })),
+      updateVideo: (id, patch) =>
+        set((s) => ({
+          videos: s.videos.map((v) =>
+            v.id === id ? { ...v, ...patch, updatedAt: Date.now() } : v
+          ),
+        })),
+      deleteVideo: (id) =>
+        set((s) => ({ videos: s.videos.filter((v) => v.id !== id) })),
 
       newConversation: (mode) => {
         const id = uid("conv");
@@ -246,6 +284,7 @@ export const useStore = create<AppState>()(
           drafts: seedDrafts,
           conversations: [],
           activeConversationId: null,
+          videos: seedVideos,
         }),
     }),
     {

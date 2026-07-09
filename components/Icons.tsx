@@ -127,6 +127,18 @@ export const IconGlobe = (p: P) => (
     <path d="M3 12h18M12 3a15 15 0 0 1 0 18 15 15 0 0 1 0-18z" />
   </svg>
 );
+export const IconVideo = (p: P) => (
+  <svg {...base(p)}>
+    <rect x="2" y="5" width="14" height="14" rx="2.5" />
+    <path d="M16 9.5 22 6v12l-6-3.5z" />
+  </svg>
+);
+export const IconClapper = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M3 8h18v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z" />
+    <path d="M3 8l2.2-3.6 3.4 1M8.6 5.4l3.4 1M14 6.4l3.4 1L21 8" />
+  </svg>
+);
 
 // Brand / platform marks
 export const IconLinkedIn = (p: P) => (

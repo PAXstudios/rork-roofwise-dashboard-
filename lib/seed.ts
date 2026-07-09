@@ -1,4 +1,4 @@
-import type { Connection, Draft, SocialPost, Platform } from "./types";
+import type { Connection, Draft, SocialPost, Platform, VideoProject } from "./types";
 
 // Deterministic pseudo-random so SSR and client agree (no Date.now/Math.random
 // in initial render paths). Seeded generator.
@@ -126,4 +126,77 @@ export const DEMO_ACCENTS = [
   "#f97316",
   "#14b8a6",
   "#3b82f6",
+];
+
+// Gradient backgrounds used by the in-browser video player scenes.
+export const VIDEO_BG: Record<string, string> = {
+  indigo: "linear-gradient(135deg,#4f46e5,#a855f7)",
+  sunset: "linear-gradient(135deg,#f97316,#ec4899)",
+  ocean: "linear-gradient(135deg,#0ea5e9,#14b8a6)",
+  violet: "linear-gradient(135deg,#7c3aed,#db2777)",
+  lime: "linear-gradient(135deg,#65a30d,#0d9488)",
+  night: "linear-gradient(135deg,#1e1b4b,#4c1d95)",
+  ember: "linear-gradient(135deg,#dc2626,#f59e0b)",
+  slate: "linear-gradient(135deg,#334155,#0f172a)",
+};
+export const VIDEO_BG_KEYS = Object.keys(VIDEO_BG);
+
+export const seedVideos: VideoProject[] = [
+  {
+    id: "vid-seed-1",
+    kind: "ugc",
+    title: "3 mistakes killing your reach",
+    prompt: "A punchy UGC hook about the 3 mistakes creators make that kill their reach",
+    platform: "instagram",
+    aspect: "9:16",
+    persona: "Maya — energetic creator",
+    hookStyle: "Contrarian",
+    voiceStyle: "energetic",
+    status: "ready",
+    engine: "demo",
+    createdAt: NOW - 4 * DAY,
+    updatedAt: NOW - 4 * DAY,
+    scenes: [
+      {
+        id: "s1",
+        durationSec: 3,
+        voiceover: "Stop making these 3 mistakes that are quietly killing your reach.",
+        caption: "3 mistakes killing your reach",
+        visual: "Creator talking to camera, close up, quick zoom",
+        bg: "sunset",
+      },
+      {
+        id: "s2",
+        durationSec: 4,
+        voiceover: "One: you're posting for the algorithm instead of your audience.",
+        caption: "#1 Posting for the algorithm",
+        visual: "Text overlay, phone scrolling b-roll",
+        bg: "violet",
+      },
+      {
+        id: "s3",
+        durationSec: 4,
+        voiceover: "Two: your hook takes too long. You have one second, not ten.",
+        caption: "#2 Slow hooks",
+        visual: "Stopwatch graphic, fast cut",
+        bg: "ocean",
+      },
+      {
+        id: "s4",
+        durationSec: 4,
+        voiceover: "Three: no clear next step. Tell them exactly what to do.",
+        caption: "#3 No call to action",
+        visual: "Creator pointing, arrow graphic",
+        bg: "ember",
+      },
+      {
+        id: "s5",
+        durationSec: 3,
+        voiceover: "Fix these and watch your reach climb. Follow for more.",
+        caption: "Follow for more →",
+        visual: "Smiling creator, subscribe animation",
+        bg: "indigo",
+      },
+    ],
+  },
 ];
