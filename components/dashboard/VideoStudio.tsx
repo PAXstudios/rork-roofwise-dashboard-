@@ -115,8 +115,8 @@ export function VideoStudio({ kind }: { kind: VideoKind }) {
     } else {
       setNotice(
         res.error
-          ? `Higgsfield render unavailable: ${res.error}. Add HF_CREDENTIALS to render real MP4s — preview is playing below.`
-          : "No Higgsfield credentials set — playing the in-browser preview. Add HF_CREDENTIALS (or run with the authenticated CLI) to render real video."
+          ? `Higgsfield render unavailable: ${res.error}. Preview is playing below.`
+          : "Real AI rendering is off — playing the in-browser preview. To turn it on: get an API key at higgsfield.ai (Account → API Keys), create a .env.local file in the project root with HF_CREDENTIALS=KEY_ID:KEY_SECRET, then restart the dev server."
       );
     }
   }

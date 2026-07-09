@@ -1,10 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useStore } from "@/lib/store";
 import { useHydrated } from "@/lib/hooks";
-import { createCharacter } from "@/lib/studioClient";
+import { createCharacter, generatePortraitClient } from "@/lib/studioClient";
 import { CharacterAvatar } from "@/components/dashboard/CharacterPicker";
 import type { Character } from "@/lib/types";
 import {
@@ -14,6 +14,7 @@ import {
   IconCheck,
   IconX,
   IconMic,
+  IconVideo,
 } from "@/components/Icons";
 
 const MAX_PHOTOS = 8;
@@ -71,8 +72,8 @@ export default function CharactersPage() {
         <span className="min-w-0">
           <span className="block font-semibold">Create your own character</span>
           <span className="block text-sm text-ink-soft">
-            Upload photos of a real face and turn it into a face-faithful AI Soul —
-            yours to cast in every UGC video.
+            Scan your face with the camera (or upload photos) and cre8tor analyzes
+            it into a realistic AI twin — yours to cast in every UGC video.
           </span>
         </span>
         <span className="ml-auto hidden shrink-0 text-brand-300 transition group-hover:translate-x-0.5 sm:block">
@@ -226,6 +227,141 @@ function CharacterCard({
   );
 }
 
+// Guided webcam face scan: live selfie preview + staged capture prompts.
+// Each shot is grabbed off a canvas as a data URL and handed to the parent.
+const SCAN_STEPS = [
+  "Look straight at the camera",
+  "Turn slightly to your left",
+  "Turn slightly to your right",
+  "Tilt your chin up a touch",
+  "Big natural smile",
+];
+
+function CameraCapture({
+  onCapture,
+  onDone,
+  captured,
+}: {
+  onCapture: (dataUrl: string) => void;
+  onDone: () => void;
+  captured: number;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const [ready, setReady] = useState(false);
+  const [camError, setCamError] = useState<string | null>(null);
+  const [flash, setFlash] = useState(false);
+  const step = Math.min(captured, SCAN_STEPS.length - 1);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function start() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "user", width: { ideal: 720 }, height: { ideal: 720 } },
+          audio: false,
+        });
+        if (cancelled) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play().catch(() => {});
+        }
+        setReady(true);
+      } catch {
+        setCamError(
+          "Couldn't access the camera. Allow camera permission in your browser, or add photos from files instead."
+        );
+      }
+    }
+    start();
+    return () => {
+      cancelled = true;
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    };
+  }, []);
+
+  function snap() {
+    const video = videoRef.current;
+    if (!video || !ready) return;
+    const side = Math.min(video.videoWidth, video.videoHeight) || 640;
+    const canvas = document.createElement("canvas");
+    canvas.width = side;
+    canvas.height = side;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    // center-crop to a square and mirror so it matches the preview
+    const sx = (video.videoWidth - side) / 2;
+    const sy = (video.videoHeight - side) / 2;
+    ctx.translate(side, 0);
+    ctx.scale(-1, 1);
+    ctx.drawImage(video, sx, sy, side, side, 0, 0, side, side);
+    onCapture(canvas.toDataURL("image/jpeg", 0.85));
+    setFlash(true);
+    window.setTimeout(() => setFlash(false), 180);
+  }
+
+  if (camError) {
+    return (
+      <p className="rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs text-amber-200">
+        {camError}
+      </p>
+    );
+  }
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-line">
+      <div className="relative mx-auto aspect-square w-full max-w-[320px] bg-black">
+        <video
+          ref={videoRef}
+          playsInline
+          muted
+          className="h-full w-full object-cover"
+          style={{ transform: "scaleX(-1)" }}
+        />
+        {/* face guide ring */}
+        <div className="pointer-events-none absolute inset-0 grid place-items-center">
+          <div className="h-[68%] w-[54%] rounded-[50%] border-2 border-dashed border-white/50" />
+        </div>
+        {flash && <div className="absolute inset-0 bg-white/70" />}
+        {!ready && (
+          <div className="absolute inset-0 grid place-items-center text-xs text-ink-faint">
+            Starting camera…
+          </div>
+        )}
+        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent px-3 pb-3 pt-8 text-center">
+          <p className="text-sm font-semibold text-white">{SCAN_STEPS[step]}</p>
+          <p className="text-[11px] text-white/70">
+            {captured}/{SCAN_STEPS.length} captures
+          </p>
+        </div>
+      </div>
+      <div className="flex items-center justify-center gap-2 border-t border-line bg-white/[0.02] p-3">
+        <button type="button" onClick={snap} disabled={!ready} className="btn-primary h-10 px-5 text-sm">
+          {captured === 0 ? "Capture" : "Capture next"}
+        </button>
+        {captured >= 3 && (
+          <button type="button" onClick={onDone} className="btn-ghost h-10 px-4 text-sm">
+            <IconCheck width={15} height={15} /> Done
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const ANALYSIS_STEPS = [
+  "Detecting face in captures…",
+  "Mapping facial landmarks…",
+  "Analyzing skin tone & lighting…",
+  "Building your identity model…",
+  "Generating your AI avatar…",
+];
+
 function CreateCharacterModal({
   onClose,
   onCreated,
@@ -240,6 +376,8 @@ function CreateCharacterModal({
   const [training, setTraining] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [demoNote, setDemoNote] = useState(false);
+  const [source, setSource] = useState<"camera" | "upload">("camera");
+  const [analysisStep, setAnalysisStep] = useState(-1);
 
   function handleFiles(fileList: FileList | null) {
     if (!fileList) return;
@@ -270,25 +408,52 @@ function CreateCharacterModal({
       return;
     }
     if (images.length === 0) {
-      setError("Upload at least one photo of the face.");
+      setError("Capture your face with the camera or add at least one photo.");
       return;
     }
     setError(null);
     setDemoNote(false);
     setTraining(true);
+
+    // Walk the analysis stages while the training/portrait calls run, so the
+    // user sees what's happening to their face captures.
+    setAnalysisStep(0);
+    const ticker = window.setInterval(() => {
+      setAnalysisStep((s) => Math.min(s + 1, ANALYSIS_STEPS.length - 1));
+    }, 1100);
+
     try {
       const res = await createCharacter(name.trim(), images);
       if (!res.ok) {
+        window.clearInterval(ticker);
+        setAnalysisStep(-1);
         setError(res.error || "Couldn't train that character. Please try again.");
         setTraining(false);
         return;
       }
+
+      // Generate a photoreal AI avatar from the trained identity. Falls back
+      // to the first face capture when no Higgsfield credentials are set.
+      setAnalysisStep(ANALYSIS_STEPS.length - 1);
+      let avatarUrl = images[0];
+      try {
+        const portrait = await generatePortraitClient({
+          name: name.trim(),
+          vibe: vibe.trim() || "confident, friendly creator",
+          soulId: res.soulId,
+        });
+        if (portrait.url) avatarUrl = portrait.url;
+      } catch {
+        /* keep the captured photo */
+      }
+
+      window.clearInterval(ticker);
       addCharacter({
         id: `char-${Math.random().toString(36).slice(2, 10)}`,
         name: name.trim(),
         kind: "custom",
         vibe: vibe.trim() || "custom AI creator",
-        imageUrl: images[0],
+        imageUrl: avatarUrl,
         soulId: res.soulId,
         status: "ready",
         engine: res.engine,
@@ -298,6 +463,7 @@ function CreateCharacterModal({
         // Surface the demo note briefly, then close.
         setDemoNote(true);
         setTraining(false);
+        setAnalysisStep(-1);
         window.setTimeout(() => {
           onCreated(`${name.trim()} is ready to cast.`);
           onClose();
@@ -307,6 +473,8 @@ function CreateCharacterModal({
       onCreated(`${name.trim()} is trained and ready to cast.`);
       onClose();
     } catch {
+      window.clearInterval(ticker);
+      setAnalysisStep(-1);
       setError("Something went wrong while training. Please try again.");
       setTraining(false);
     }
@@ -348,35 +516,75 @@ function CreateCharacterModal({
             />
           </div>
 
-          {/* face upload */}
+          {/* face capture */}
           <div>
-            <label className="label">Face photos</label>
-            <label
-              className={`flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-line-strong bg-white/[0.02] px-4 py-6 text-center transition hover:border-brand-500/50 ${
-                training ? "pointer-events-none opacity-60" : ""
-              }`}
-            >
-              <span className="grid h-10 w-10 place-items-center rounded-xl bg-brand-500/15 text-brand-300">
-                <IconPlus width={18} height={18} />
-              </span>
-              <span className="text-sm text-ink-soft">
-                Tap to add photos ({images.length}/{MAX_PHOTOS})
-              </span>
-              <span className="text-[11px] text-ink-faint">
-                Upload 5–20 clear photos of one face, varied angles &amp; lighting.
-              </span>
-              <input
-                type="file"
-                accept="image/*"
-                multiple
-                className="hidden"
-                disabled={training}
-                onChange={(e) => {
-                  handleFiles(e.target.files);
-                  e.target.value = "";
-                }}
+            <div className="mb-1.5 flex items-center justify-between">
+              <label className="label !mb-0">Your face</label>
+              <div className="flex rounded-lg border border-line p-0.5">
+                {(
+                  [
+                    { key: "camera", label: "Camera", Icon: IconVideo },
+                    { key: "upload", label: "Upload", Icon: IconPlus },
+                  ] as const
+                ).map(({ key, label, Icon }) => (
+                  <button
+                    key={key}
+                    type="button"
+                    disabled={training}
+                    onClick={() => setSource(key)}
+                    className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs transition ${
+                      source === key
+                        ? "bg-brand-500/20 text-brand-200"
+                        : "text-ink-faint hover:text-ink"
+                    }`}
+                  >
+                    <Icon width={13} height={13} />
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {source === "camera" && !training && images.length < MAX_PHOTOS && (
+              <CameraCapture
+                captured={images.length}
+                onCapture={(dataUrl) =>
+                  setImages((prev) =>
+                    prev.length >= MAX_PHOTOS ? prev : [...prev, dataUrl]
+                  )
+                }
+                onDone={() => setSource("upload")}
               />
-            </label>
+            )}
+
+            {source === "upload" && (
+              <label
+                className={`flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-line-strong bg-white/[0.02] px-4 py-6 text-center transition hover:border-brand-500/50 ${
+                  training ? "pointer-events-none opacity-60" : ""
+                }`}
+              >
+                <span className="grid h-10 w-10 place-items-center rounded-xl bg-brand-500/15 text-brand-300">
+                  <IconPlus width={18} height={18} />
+                </span>
+                <span className="text-sm text-ink-soft">
+                  Tap to add photos ({images.length}/{MAX_PHOTOS})
+                </span>
+                <span className="text-[11px] text-ink-faint">
+                  Upload 5–20 clear photos of one face, varied angles &amp; lighting.
+                </span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  disabled={training}
+                  onChange={(e) => {
+                    handleFiles(e.target.files);
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+            )}
 
             {images.length > 0 && (
               <div className="mt-3 grid grid-cols-4 gap-2 sm:grid-cols-5">
@@ -419,6 +627,40 @@ function CreateCharacterModal({
               How should they come across on camera? This guides their scripts.
             </p>
           </div>
+
+          {training && analysisStep >= 0 && (
+            <div className="rounded-xl border border-line bg-white/[0.02] p-3.5">
+              <div className="mb-2 flex items-center gap-2 text-xs font-semibold">
+                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-line-strong border-t-brand-400" />
+                Analyzing your face
+              </div>
+              <div className="space-y-1.5">
+                {ANALYSIS_STEPS.map((s, i) => (
+                  <p
+                    key={s}
+                    className={`flex items-center gap-2 text-xs ${
+                      i < analysisStep
+                        ? "text-ink-faint line-through"
+                        : i === analysisStep
+                          ? "text-ink"
+                          : "text-ink-faint/60"
+                    }`}
+                  >
+                    {i < analysisStep ? (
+                      <IconCheck width={12} height={12} className="text-accent-lime" />
+                    ) : (
+                      <span
+                        className={`h-1.5 w-1.5 rounded-full ${
+                          i === analysisStep ? "animate-pulse-dot bg-brand-400" : "bg-white/15"
+                        }`}
+                      />
+                    )}
+                    {s}
+                  </p>
+                ))}
+              </div>
+            </div>
+          )}
 
           {error && (
             <p className="rounded-lg border border-red-400/30 bg-red-400/10 px-3 py-2 text-xs text-red-300">

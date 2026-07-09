@@ -16,6 +16,19 @@ export async function createCharacter(name: string, images: string[]): Promise<{
   return res.json();
 }
 
+export async function generatePortraitClient(input: {
+  name: string;
+  vibe: string;
+  soulId?: string;
+}): Promise<{ ok: boolean; url: string | null; engine: "higgsfield" | "demo"; error?: string }> {
+  const res = await fetch("/api/character/portrait", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return res.json();
+}
+
 export async function scoreVideoClient(input: {
   scenes?: VideoScene[];
   videoUrl?: string;

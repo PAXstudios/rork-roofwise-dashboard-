@@ -2,11 +2,11 @@
 
 import { useStore } from "@/lib/store";
 import { useHydrated } from "@/lib/hooks";
-import { VIDEO_BG } from "@/lib/seed";
+import { AvatarFace } from "./AvatarFace";
 import type { Character } from "@/lib/types";
 
-// Circular avatar for a character: real uploaded face (imageUrl) or a gradient
-// disc built from the character's swatch key with their first initial.
+// Circular avatar for a character: real photo/generated portrait (imageUrl)
+// when present, otherwise an illustrated procedural face.
 export function CharacterAvatar({
   character,
   size = 44,
@@ -14,7 +14,6 @@ export function CharacterAvatar({
   character: Character;
   size?: number;
 }) {
-  const initial = character.name.trim().charAt(0).toUpperCase() || "?";
   if (character.imageUrl) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
@@ -28,21 +27,7 @@ export function CharacterAvatar({
       />
     );
   }
-  const gradient = VIDEO_BG[character.swatch || "indigo"] || VIDEO_BG.indigo;
-  return (
-    <span
-      aria-hidden
-      className="grid place-items-center rounded-full font-semibold text-white"
-      style={{
-        width: size,
-        height: size,
-        background: gradient,
-        fontSize: Math.round(size * 0.4),
-      }}
-    >
-      {initial}
-    </span>
-  );
+  return <AvatarFace character={character} size={size} />;
 }
 
 // Compact, self-contained picker meant to sit inside the UGC studio form.
