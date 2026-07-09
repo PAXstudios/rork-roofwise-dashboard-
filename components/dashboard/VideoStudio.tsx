@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { useStore } from "@/lib/store";
 import { useHydrated, timeAgo } from "@/lib/hooks";
 import { generateStoryboard, renderClips } from "@/lib/videoClient";
-import { scoreVideoClient, reframeClient } from "@/lib/studioClient";
+import { scoreVideoClient, reframeClient, renderHeyGen, pollHeyGen } from "@/lib/studioClient";
 import { VideoPlayer } from "./VideoPlayer";
 import { CharacterPicker } from "./CharacterPicker";
 import { ScoreCard } from "./ScoreCard";
@@ -62,6 +62,8 @@ export function VideoStudio({ kind }: { kind: VideoKind }) {
   const [generating, setGenerating] = useState(false);
   const [rendering, setRendering] = useState(false);
   const [clips, setClips] = useState<{ sceneId: string; url: string }[]>([]);
+  const [renderUrl, setRenderUrl] = useState<string | null>(null);
+  const [renderPhase, setRenderPhase] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [savedId, setSavedId] = useState<string | null>(null);
   const [score, setScore] = useState<VideoScore | null>(null);
@@ -100,10 +102,51 @@ export function VideoStudio({ kind }: { kind: VideoKind }) {
     setEngine(res.engine);
   }
 
+  const heygenBacked = Boolean(character?.heygenAvatarId || character?.heygenTalkingPhotoId);
+
   async function onRender() {
     if (!scenes.length || rendering) return;
     setRendering(true);
     setNotice(null);
+    setRenderUrl(null);
+
+    // UGC + a HeyGen-backed character → a real talking avatar video.
+    if (isUgc && heygenBacked) {
+      setRenderPhase("Sending your script to HeyGen…");
+      const submit = await renderHeyGen({
+        scenes,
+        aspect,
+        avatarId: character?.heygenAvatarId,
+        talkingPhotoId: character?.heygenTalkingPhotoId,
+        voiceId: character?.voiceId,
+        gender: character?.gender,
+      });
+      if (!submit.ok || !submit.videoId) {
+        setRendering(false);
+        setRenderPhase(null);
+        setNotice(
+          submit.error
+            ? `HeyGen: ${submit.error}`
+            : "HeyGen isn't configured — add HEYGEN_API_KEY to .env.local and restart."
+        );
+        return;
+      }
+      setRenderPhase("HeyGen is filming your avatar… usually 1–3 minutes.");
+      const done = await pollHeyGen(submit.videoId, (s) =>
+        setRenderPhase(`HeyGen is filming your avatar… (${s})`)
+      );
+      setRendering(false);
+      setRenderPhase(null);
+      if (done.ok && done.videoUrl) {
+        setRenderUrl(done.videoUrl);
+        setNotice(`Your avatar video is ready — rendered with HeyGen.`);
+      } else {
+        setNotice(`HeyGen: ${done.error || "render failed"}. Preview is playing below.`);
+      }
+      return;
+    }
+
+    // Otherwise → Higgsfield per-scene clips.
     const res = await renderClips(kind, scenes, aspect, {
       soulId: character?.soulId,
       music,
@@ -116,7 +159,9 @@ export function VideoStudio({ kind }: { kind: VideoKind }) {
       setNotice(
         res.error
           ? `Higgsfield render unavailable: ${res.error}. Preview is playing below.`
-          : "Real AI rendering is off — playing the in-browser preview. To turn it on: get an API key at higgsfield.ai (Account → API Keys), create a .env.local file in the project root with HF_CREDENTIALS=KEY_ID:KEY_SECRET, then restart the dev server."
+          : isUgc
+            ? "Tip: pick a HeyGen character above (Characters → HeyGen library) for real avatar video — or add HF_CREDENTIALS for Higgsfield rendering. Playing the in-browser preview."
+            : "Real AI rendering is off — playing the in-browser preview. To turn it on: get an API key at higgsfield.ai (Account → API Keys), create a .env.local file in the project root with HF_CREDENTIALS=KEY_ID:KEY_SECRET, then restart the dev server."
       );
     }
   }
@@ -159,10 +204,11 @@ export function VideoStudio({ kind }: { kind: VideoKind }) {
       voiceStyle,
       music,
       scenes,
-      status: clips.length ? "ready" : "draft",
+      status: renderUrl || clips.length ? "ready" : "draft",
+      renderUrl: renderUrl || undefined,
       sceneClips: clips.length ? clips : undefined,
-      engine: clips.length ? "provider" : "demo",
-      provider: clips.length ? "higgsfield" : undefined,
+      engine: renderUrl || clips.length ? "provider" : "demo",
+      provider: renderUrl ? "heygen" : clips.length ? "higgsfield" : undefined,
       score: score || undefined,
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -192,6 +238,7 @@ export function VideoStudio({ kind }: { kind: VideoKind }) {
     setScenes(v.scenes);
     setTitle(v.title);
     setClips(v.sceneClips || []);
+    setRenderUrl(v.renderUrl || null);
     setEngine(v.engine === "provider" ? "provider" : "demo");
     setScore(v.score || null);
     setSavedId(v.id);
@@ -385,9 +432,14 @@ export function VideoStudio({ kind }: { kind: VideoKind }) {
               <div className="mt-4 flex flex-wrap gap-2">
                 <button onClick={onRender} disabled={rendering} className="btn-primary">
                   {rendering ? (
-                    <><span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" /> Rendering with Higgsfield…</>
+                    <><span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" /> Rendering…</>
                   ) : (
-                    <><IconSpark width={16} height={16} /> Render real video (Higgsfield)</>
+                    <>
+                      <IconSpark width={16} height={16} />
+                      {isUgc && heygenBacked
+                        ? `Render with HeyGen (${character?.name})`
+                        : "Render real video"}
+                    </>
                   )}
                 </button>
                 <button onClick={onScore} disabled={scoring} className="btn-ghost">
@@ -405,8 +457,10 @@ export function VideoStudio({ kind }: { kind: VideoKind }) {
                 <p className="mt-3 rounded-lg border border-line bg-white/[0.02] px-3 py-2 text-xs text-ink-soft">{notice}</p>
               )}
               {rendering && (
-                <p className="mt-2 text-xs text-ink-faint">
-                  Higgsfield is generating each scene (image → motion). This can take a few minutes per clip.
+                <p className="mt-2 flex items-center gap-2 text-xs text-ink-faint">
+                  <span className="h-1.5 w-1.5 animate-pulse-dot rounded-full bg-brand-400" />
+                  {renderPhase ||
+                    "Higgsfield is generating each scene (image → motion). This can take a few minutes per clip."}
                 </p>
               )}
             </div>
@@ -425,7 +479,8 @@ export function VideoStudio({ kind }: { kind: VideoKind }) {
                 kind={kind}
                 aspect={aspect}
                 persona={isUgc ? (character?.name || effectivePersona) : undefined}
-                clips={clips.length ? clips : undefined}
+                clips={!renderUrl && clips.length ? clips : undefined}
+                renderUrl={renderUrl || undefined}
               />
             ) : (
               <div className={`mx-auto grid w-full max-w-[300px] place-items-center rounded-2xl border border-dashed border-line-strong text-center ${aspect === "9:16" ? "aspect-[9/16]" : aspect === "1:1" ? "aspect-square" : "aspect-video"}`}>

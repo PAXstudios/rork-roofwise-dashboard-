@@ -133,7 +133,8 @@ export interface VideoProject {
   renderUrl?: string; // single stitched MP4 when available
   sceneClips?: { sceneId: string; url: string }[]; // per-scene rendered clips
   engine?: "provider" | "demo";
-  provider?: string; // e.g. "higgsfield"
+  provider?: string; // e.g. "higgsfield" | "heygen"
+  heygenVideoId?: string;
   score?: VideoScore;
   createdAt: number;
   updatedAt: number;
@@ -153,8 +154,13 @@ export interface Character {
   imageUrl?: string;
   // Higgsfield Soul reference id once a custom face is trained
   soulId?: string;
+  // HeyGen identifiers — stock avatar or a custom face "talking photo"
+  heygenAvatarId?: string;
+  heygenTalkingPhotoId?: string;
+  heygenPreviewVideo?: string;
+  voiceId?: string;
   status: "ready" | "training" | "failed";
-  engine?: "higgsfield" | "demo";
+  engine?: "higgsfield" | "heygen" | "demo";
   createdAt: number;
 }
 

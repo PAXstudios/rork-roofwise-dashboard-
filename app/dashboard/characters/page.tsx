@@ -4,7 +4,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useStore } from "@/lib/store";
 import { useHydrated } from "@/lib/hooks";
-import { createCharacter, generatePortraitClient } from "@/lib/studioClient";
+import {
+  createCharacter,
+  generatePortraitClient,
+  listHeyGenAvatars,
+  type HeyGenAvatarItem,
+} from "@/lib/studioClient";
 import { CharacterAvatar } from "@/components/dashboard/CharacterPicker";
 import type { Character } from "@/lib/types";
 import {
@@ -24,8 +29,52 @@ export default function CharactersPage() {
   const characters = useStore((s) => s.characters);
   const deleteCharacter = useStore((s) => s.deleteCharacter);
 
+  const addCharacter = useStore((s) => s.addCharacter);
   const [creating, setCreating] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [heygen, setHeygen] = useState<HeyGenAvatarItem[]>([]);
+  const [heygenState, setHeygenState] = useState<"loading" | "off" | "error" | "ready">("loading");
+
+  useEffect(() => {
+    let cancelled = false;
+    listHeyGenAvatars()
+      .then((res) => {
+        if (cancelled) return;
+        if (!res.configured) setHeygenState("off");
+        else if (!res.ok) setHeygenState("error");
+        else {
+          setHeygen(res.avatars);
+          setHeygenState("ready");
+        }
+      })
+      .catch(() => !cancelled && setHeygenState("error"));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  function addHeyGenAvatar(a: HeyGenAvatarItem) {
+    if (characters.some((c) => c.heygenAvatarId === a.id)) {
+      setToast(`${a.name} is already in your characters.`);
+      window.setTimeout(() => setToast(null), 3000);
+      return;
+    }
+    addCharacter({
+      id: `char-${Math.random().toString(36).slice(2, 10)}`,
+      name: a.name,
+      kind: "custom",
+      vibe: "real HeyGen presenter — speaks your script with lip-sync",
+      gender: (a.gender as Character["gender"]) || undefined,
+      imageUrl: a.preview,
+      heygenAvatarId: a.id,
+      heygenPreviewVideo: a.previewVideo,
+      status: "ready",
+      engine: "heygen",
+      createdAt: Date.now(),
+    });
+    setToast(`${a.name} added — pick them in the UGC studio.`);
+    window.setTimeout(() => setToast(null), 3500);
+  }
 
   const { presets, custom } = useMemo(() => {
     return {
@@ -57,7 +106,7 @@ export default function CharactersPage() {
         </div>
         <span className="chip">
           <IconSpark width={13} height={13} className="text-brand-300" />
-          Powered by Higgsfield Soul
+          Powered by HeyGen + Higgsfield
         </span>
       </div>
 
@@ -107,10 +156,78 @@ export default function CharactersPage() {
             </section>
           )}
 
+          {/* HeyGen real-avatar library */}
+          <section className="mb-8">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-faint">
+                HeyGen avatar library
+              </h2>
+              <span className="chip !text-[10px]">real presenters · lip-synced speech</span>
+            </div>
+
+            {heygenState === "loading" && (
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <div key={i} className="card h-44 animate-pulse bg-white/[0.02]" />
+                ))}
+              </div>
+            )}
+
+            {heygenState === "off" && (
+              <div className="card p-4 text-sm text-ink-soft">
+                Connect HeyGen to browse 100+ real human avatars: add{" "}
+                <code className="rounded bg-white/[0.06] px-1.5 py-0.5 text-xs">HEYGEN_API_KEY=…</code>{" "}
+                to <code className="rounded bg-white/[0.06] px-1.5 py-0.5 text-xs">.env.local</code> and
+                restart the dev server.
+              </div>
+            )}
+
+            {heygenState === "error" && (
+              <div className="card p-4 text-sm text-amber-200">
+                Couldn&apos;t reach HeyGen right now — check your API key or try again shortly.
+              </div>
+            )}
+
+            {heygenState === "ready" && (
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+                {heygen.slice(0, 20).map((a) => (
+                  <div key={a.id} className="card group flex flex-col overflow-hidden p-0">
+                    <div className="relative aspect-[4/5] w-full overflow-hidden bg-bg-elevated">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={a.preview}
+                        alt={a.name}
+                        className="h-full w-full object-cover transition group-hover:scale-[1.03]"
+                        loading="lazy"
+                      />
+                      {a.premium && (
+                        <span className="absolute left-2 top-2 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-semibold text-amber-300">
+                          Premium
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center justify-between gap-2 p-2.5">
+                      <div className="min-w-0">
+                        <p className="truncate text-xs font-semibold">{a.name}</p>
+                        <p className="text-[10px] capitalize text-ink-faint">{a.gender || "presenter"}</p>
+                      </div>
+                      <button
+                        onClick={() => addHeyGenAvatar(a)}
+                        className="btn-primary h-7 shrink-0 !px-2.5 text-[11px]"
+                      >
+                        <IconPlus width={11} height={11} /> Add
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
           {/* preset library */}
           <section>
             <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink-faint">
-              Preset library
+              Illustrated presets
             </h2>
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
               {presets.map((c) => (
@@ -455,10 +572,16 @@ function CreateCharacterModal({
         vibe: vibe.trim() || "custom AI creator",
         imageUrl: avatarUrl,
         soulId: res.soulId,
+        heygenTalkingPhotoId: res.talkingPhotoId,
         status: "ready",
         engine: res.engine,
         createdAt: Date.now(),
       });
+      if (res.engine === "heygen") {
+        onCreated(`${name.trim()} is ready — a real speaking avatar of your face.`);
+        onClose();
+        return;
+      }
       if (res.engine === "demo") {
         // Surface the demo note briefly, then close.
         setDemoNote(true);
