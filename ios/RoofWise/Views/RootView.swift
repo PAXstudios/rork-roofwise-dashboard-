@@ -35,6 +35,8 @@ struct RootView: View {
     @State private var leadsFilter: JobPipelineStage? = nil
     @State private var auth = AuthStore.shared
     @State private var leadsSync = LeadsSyncService.shared
+    /// First-launch product tour. Survives sign-out; only shown once per install.
+    @State private var showOnboarding: Bool = !OnboardingStore.hasCompleted
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
@@ -50,15 +52,25 @@ struct RootView: View {
                 case .unknown:
                     LaunchSplashView()
                 case .signedOut:
-                    WelcomeView()
-                        .transition(.opacity)
+                    if showOnboarding {
+                        OnboardingView {
+                            withAnimation(.easeInOut(duration: 0.35)) {
+                                showOnboarding = false
+                            }
+                        }
+                        .transition(.opacity.combined(with: .scale(scale: 1.02)))
+                    } else {
+                        WelcomeView()
+                            .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    }
                 case .signedIn:
                     signedInBody
                         .transition(.opacity)
                 }
             }
         }
-        .animation(.easeInOut(duration: 0.25), value: stateKey)
+        .animation(.easeInOut(duration: 0.28), value: stateKey)
+        .animation(.easeInOut(duration: 0.28), value: showOnboarding)
     }
 
     /// Switches tabs with a spring, remembering the prior tab so the content
@@ -83,8 +95,8 @@ struct RootView: View {
     private var stateKey: Int {
         switch auth.state {
         case .unknown: return 0
-        case .signedOut: return 1
-        case .signedIn: return 2
+        case .signedOut: return showOnboarding ? 1 : 2
+        case .signedIn: return 3
         }
     }
 
@@ -175,17 +187,47 @@ struct RootView: View {
 
 /// Minimal launch splash shown while we hydrate the persisted Supabase session.
 struct LaunchSplashView: View {
+    @State private var pulse = false
+
     var body: some View {
         ZStack {
-            LinearGradient(colors: [Theme.ink, Theme.inkRaised],
-                           startPoint: .topLeading, endPoint: .bottomTrailing)
-                .ignoresSafeArea()
-            VStack(spacing: 18) {
-                Image(systemName: "house.lodge.fill")
-                    .font(.system(size: 38, weight: .bold))
+            LinearGradient(
+                colors: [Theme.ink, Theme.inkRaised, Theme.ink],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
+
+            Circle()
+                .fill(Theme.ember.opacity(0.45))
+                .frame(width: 280, height: 280)
+                .blur(radius: 90)
+                .offset(x: -80, y: -160)
+                .scaleEffect(pulse ? 1.08 : 0.94)
+
+            VStack(spacing: 20) {
+                ZStack {
+                    Circle()
+                        .fill(Theme.ember.opacity(0.18))
+                        .frame(width: 96, height: 96)
+                        .scaleEffect(pulse ? 1.1 : 0.95)
+                    Image("LogoMark")
+                        .resizable()
+                        .renderingMode(.original)
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 56, height: 56)
+                        .shadow(color: Theme.ember.opacity(0.45), radius: 18)
+                }
+                Text("RoofWise")
+                    .font(.system(size: 22, weight: .heavy, design: .rounded))
                     .foregroundStyle(.white)
-                ProgressView().tint(.white)
+                    .tracking(0.4)
+                ProgressView()
+                    .tint(Theme.ember)
             }
+        }
+        .onAppear {
+            withAnimation(Theme.Motion.pulse) { pulse = true }
         }
     }
 }
