@@ -42,7 +42,7 @@ struct ScheduleCard: View {
     }
 
     private var emptyState: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
                 Image(systemName: "calendar.badge.clock")
                     .font(.system(size: 18, weight: .bold))
@@ -51,7 +51,7 @@ struct ScheduleCard: View {
                     .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(Theme.ink)
             }
-            Text("Schedule an inspection from a lead profile and it will show up here.")
+            Text("No jobs yet — start your first inspection from a lead profile and today’s stops will land here.")
                 .font(.system(size: 12))
                 .foregroundStyle(Theme.inkFaint)
         }

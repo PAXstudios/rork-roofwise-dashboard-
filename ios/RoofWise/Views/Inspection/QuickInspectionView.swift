@@ -2490,9 +2490,9 @@ private struct ResultsView: View {
                 photos: photos,
                 findings: findings,
                 packet: nil,
-                repName: "Sarah Jenkins",
-                repPhone: "(214) 555-0142",
-                repCompany: "RoofWise · Forensic Field Team"
+                repName: HomeLiveData.displayName(),
+                repPhone: "",
+                repCompany: InspectorUser.current.company.isEmpty ? "RoofWise" : InspectorUser.current.company
             )
             if let url = PDFReportService.generate(input: input) {
                 pdfURL = url

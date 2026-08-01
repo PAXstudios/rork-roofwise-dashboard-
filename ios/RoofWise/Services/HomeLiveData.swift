@@ -8,24 +8,56 @@ enum HomeLiveData {
 
     // MARK: - KPI strip
 
+    /// When `true`, the KPI strip should render an empty invite instead of
+    /// zeroed metric tiles (zeros-as-data look like a populated dashboard).
+    static func kpisAreEmpty(customers: [Customer],
+                             alerts: [StormAlert] = StormAlertStore.shared.alerts,
+                             estimates: [SavedEstimate] = EstimatesStore.shared.estimates,
+                             proposals: [Proposal] = ProposalStore.shared.proposals) -> Bool {
+        customers.isEmpty
+            && alerts.filter(\.isActive).isEmpty
+            && estimates.isEmpty
+            && proposals.isEmpty
+    }
+
     static func kpis(customers: [Customer],
-                     alerts: [StormAlert] = StormAlertStore.shared.alerts) -> [KPIMetric] {
+                     alerts: [StormAlert] = StormAlertStore.shared.alerts,
+                     estimates: [SavedEstimate] = EstimatesStore.shared.estimates,
+                     proposals: [Proposal] = ProposalStore.shared.proposals) -> [KPIMetric] {
         let jobsInProgress = customers.filter {
             $0.stage.kind == .job && $0.stage != .paid
         }.count
         let activeLeads = customers.filter { $0.stage.kind == .lead }.count
         let stormTagged = customers.filter(\.stormTagged).count
         let activeAlerts = alerts.filter(\.isActive).count
-
         let closingSoon = customers.filter {
             $0.stage == .approved || $0.stage == .materialOrdered
         }.count
 
-        return [
+        // Revenue: signed proposals first, then saved estimates. Never invent.
+        let signedTotal = proposals
+            .filter { $0.status == .signed }
+            .map(\.total)
+            .reduce(0, +)
+        let estimateTotal = estimates.map(\.subtotal).reduce(0, +)
+        let revenueValue: Double? = {
+            if signedTotal > 0 { return signedTotal }
+            if estimateTotal > 0 { return estimateTotal }
+            return nil
+        }()
+        let revenueSource: String = {
+            if signedTotal > 0 { return "Signed proposals" }
+            if estimateTotal > 0 { return "Saved estimates" }
+            return "No estimates yet"
+        }()
+
+        var metrics: [KPIMetric] = [
             KPIMetric(
                 title: "Jobs In Progress",
                 value: "\(jobsInProgress)",
-                delta: closingSoon > 0 ? "\(closingSoon) closing soon" : (jobsInProgress == 0 ? "Add a job to start" : "On track"),
+                delta: closingSoon > 0
+                    ? "\(closingSoon) closing soon"
+                    : (jobsInProgress == 0 ? "Start your first inspection" : "On track"),
                 deltaPositive: true,
                 icon: "hammer.fill",
                 tint: Theme.mint
@@ -37,16 +69,32 @@ enum HomeLiveData {
                 deltaPositive: activeLeads > 0,
                 icon: "person.2.fill",
                 tint: Theme.amber
-            ),
-            KPIMetric(
-                title: "Storm-Impacted",
-                value: "\(max(stormTagged, activeAlerts))",
-                delta: activeAlerts > 0 ? "\(activeAlerts) active alert\(activeAlerts == 1 ? "" : "s")" : (stormTagged > 0 ? "Tagged leads" : "No active storms"),
-                deltaPositive: false,
-                icon: "cloud.bolt.rain.fill",
-                tint: Theme.crimson
             )
         ]
+
+        if let revenueValue {
+            metrics.append(KPIMetric(
+                title: "Pipeline $",
+                value: formatCompactCurrency(revenueValue),
+                delta: revenueSource,
+                deltaPositive: true,
+                icon: "chart.line.uptrend.xyaxis",
+                tint: Theme.mint
+            ))
+        }
+
+        metrics.append(KPIMetric(
+            title: "Storm-Impacted",
+            value: "\(max(stormTagged, activeAlerts))",
+            delta: activeAlerts > 0
+                ? "\(activeAlerts) active alert\(activeAlerts == 1 ? "" : "s")"
+                : (stormTagged > 0 ? "Tagged leads" : "No active storms"),
+            deltaPositive: false,
+            icon: "cloud.bolt.rain.fill",
+            tint: Theme.crimson
+        ))
+
+        return metrics
     }
 
     // MARK: - Pipeline (compact 5-column board)
@@ -60,6 +108,7 @@ enum HomeLiveData {
                 .filter { stages.contains($0.stage) }
                 .compactMap { parseMoney($0.estimatedValue) }
                 .reduce(0, +)
+            // Fall back to signed/saved estimate dollars when stage value is blank.
             return total > 0 ? formatCompactCurrency(total) : "—"
         }
 
@@ -114,20 +163,16 @@ enum HomeLiveData {
         }
     }
 
-    // MARK: - Schedule (today's inspections)
+    static func homePipelineIsEmpty(customers: [Customer]) -> Bool {
+        homePipelineStages(customers: customers).allSatisfy { $0.count == 0 }
+    }
+
+    // MARK: - Schedule (today's inspections — real timestamps only)
 
     static func todaySchedule(customers: [Customer],
                               inspections: [Inspection] = InspectionStore.shared.inspections) -> [ScheduleItem] {
         let cal = Calendar.current
         let today = cal.startOfDay(for: Date())
-
-        // Prefer inspections scheduled / created today; fall back to open jobs.
-        var items: [ScheduleItem] = []
-
-        let todaysInspections = inspections.filter {
-            cal.isDate($0.job.inspectionDate, inSameDayAs: today)
-        }
-        .sorted { $0.job.inspectionDate < $1.job.inspectionDate }
 
         let timeFmt: DateFormatter = {
             let f = DateFormatter()
@@ -135,11 +180,18 @@ enum HomeLiveData {
             return f
         }()
 
-        for insp in todaysInspections.prefix(8) {
+        // Only real Inspection records dated today. Do NOT invent clock times
+        // for scheduled customers without a timestamp.
+        let todaysInspections = inspections.filter {
+            cal.isDate($0.job.inspectionDate, inSameDayAs: today)
+        }
+        .sorted { $0.job.inspectionDate < $1.job.inspectionDate }
+
+        return todaysInspections.prefix(8).map { insp in
             let name = insp.job.clientName.isEmpty ? "Inspection" : insp.job.clientName
             let addr = insp.job.propertyAddress.isEmpty ? "Address pending" : insp.job.propertyAddress
             let storm = insp.event.hasHail || insp.event.hasWind
-            items.append(ScheduleItem(
+            return ScheduleItem(
                 time: timeFmt.string(from: insp.job.inspectionDate),
                 kind: .inspection,
                 title: name,
@@ -147,29 +199,26 @@ enum HomeLiveData {
                 assignee: displayName(),
                 assigneeColor: Theme.ember,
                 priority: storm ? .storm : .normal
-            ))
+            )
         }
+    }
 
-        if items.isEmpty {
-            // Surface open scheduled customers so the card isn't empty when the
-            // inspector has booked work but no Inspection record for "today".
-            let scheduled = customers
-                .filter { $0.stage == .inspectionScheduled || $0.stage == .adjusterMeeting }
-                .prefix(6)
-            for (idx, c) in scheduled.enumerated() {
-                let hour = 8 + idx * 2
-                items.append(ScheduleItem(
-                    time: String(format: "%02d:00", min(hour, 17)),
+    /// Scheduled stops without a clock time (used by Plan for non-today days).
+    static func untimedScheduledStops(customers: [Customer]) -> [ScheduleItem] {
+        customers
+            .filter { $0.stage == .inspectionScheduled || $0.stage == .adjusterMeeting }
+            .prefix(8)
+            .map { c in
+                ScheduleItem(
+                    time: "—",
                     kind: c.stage == .adjusterMeeting ? .followUp : .inspection,
                     title: c.ownerName.isEmpty ? "Scheduled stop" : c.ownerName,
                     address: c.address.isEmpty ? "Address pending" : c.address,
                     assignee: displayName(),
                     assigneeColor: Theme.sky,
                     priority: c.stormTagged ? .storm : .normal
-                ))
+                )
             }
-        }
-        return Array(items)
     }
 
     static func scheduleSubtitle(items: [ScheduleItem]) -> String {
@@ -188,7 +237,6 @@ enum HomeLiveData {
         customers
             .filter { !$0.isUnassignedDraft }
             .sorted { lhs, rhs in
-                // Prefer later pipeline stages, then name for stability.
                 if lhs.stage.stepIndex != rhs.stage.stepIndex {
                     return lhs.stage.stepIndex > rhs.stage.stepIndex
                 }
@@ -201,7 +249,7 @@ enum HomeLiveData {
                     address: c.address.isEmpty ? "Address pending" : c.address,
                     status: jobStatus(for: c.stage),
                     subtitle: recentSubtitle(for: c),
-                    imageURL: "" // real photos live on the customer profile
+                    imageURL: ""
                 )
             }
     }
@@ -236,7 +284,7 @@ enum HomeLiveData {
         }
     }
 
-    // MARK: - Tasks + activity (honest, store-backed)
+    // MARK: - Tasks + activity (store-backed)
 
     static func derivedTasks(customers: [Customer],
                              queue: TrainingQueueStore = .shared) -> [TaskItem] {
@@ -291,8 +339,22 @@ enum HomeLiveData {
 
     static func recentActivity(customers: [Customer],
                                inspections: [Inspection] = InspectionStore.shared.inspections,
-                               alerts: [StormAlert] = StormAlertStore.shared.alerts) -> [ActivityEntry] {
+                               alerts: [StormAlert] = StormAlertStore.shared.alerts,
+                               activity: ActivityStore = .shared) -> [ActivityEntry] {
         var entries: [ActivityEntry] = []
+
+        // Real ActivityStore events across known inspections (newest first).
+        let reportIds = inspections.map(\.id) + ["ai-calibration"]
+        let storeEvents = activity.recentAcross(reportIds: reportIds, limit: 8)
+        for e in storeEvents where e.kind != .uiTap {
+            entries.append(ActivityEntry(
+                icon: icon(for: e.kind),
+                iconColor: color(for: e.kind),
+                title: e.summary,
+                detail: e.detail ?? e.inspectionId,
+                time: relativeTime(e.timestamp)
+            ))
+        }
 
         // Latest storm alerts
         for a in alerts.sorted(by: { $0.createdAt > $1.createdAt }).prefix(2) {
@@ -397,7 +459,6 @@ enum HomeLiveData {
         if case .signedIn(_, let email, _) = AuthStore.shared.state,
            let email, !email.isEmpty {
             let local = email.split(separator: "@").first.map(String.init) ?? email
-            // "jane.doe" → "Jane Doe"
             let parts = local
                 .replacingOccurrences(of: ".", with: " ")
                 .replacingOccurrences(of: "_", with: " ")
@@ -406,7 +467,6 @@ enum HomeLiveData {
             let name = parts.joined(separator: " ")
             if !name.isEmpty { return name }
         }
-        // Fall back to the inspector profile only when no auth email exists.
         let n = InspectorUser.current.name.trimmingCharacters(in: .whitespaces)
         return n.isEmpty ? "Inspector" : n
     }
@@ -472,7 +532,6 @@ enum HomeLiveData {
             .replacingOccurrences(of: "–", with: "-")
             .replacingOccurrences(of: "—", with: "-")
             .trimmingCharacters(in: .whitespaces)
-        // Ranges like "12000-18000" → take the midpoint.
         if cleaned.contains("-") {
             let parts = cleaned.split(separator: "-").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
             guard parts.count == 2 else { return parts.first }
@@ -501,6 +560,27 @@ enum HomeLiveData {
         f.dateFormat = "MMM d"
         return f.string(from: date)
     }
+
+    private static func icon(for kind: ActivityEvent.Kind) -> String {
+        switch kind {
+        case .jobCreated: return "plus.circle.fill"
+        case .stormMatched, .weatherSynced: return "bolt.fill"
+        case .proposalSigned, .proposalSent, .proposalDrafted, .proposalViewed: return "doc.richtext.fill"
+        case .estimateSaved, .estimateConverted: return "dollarsign.circle.fill"
+        case .knockLogged, .knockConvertedToLead: return "hand.tap.fill"
+        case .reportGenerated: return "doc.text.fill"
+        case .aiCalibrationUpdated: return "slider.horizontal.3"
+        default: return "circle.fill"
+        }
+    }
+
+    private static func color(for kind: ActivityEvent.Kind) -> Color {
+        switch kind {
+        case .stormMatched, .weatherSynced: return Theme.ember
+        case .proposalSigned, .estimateConverted: return Theme.mint
+        case .proposalSent, .proposalDrafted: return Theme.sky
+        case .knockLogged: return Theme.amber
+        default: return Theme.inkSoft
+        }
+    }
 }
-
-

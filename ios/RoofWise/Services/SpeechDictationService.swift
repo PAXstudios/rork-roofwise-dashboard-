@@ -49,6 +49,13 @@ final class SpeechDictationService {
             state = .unavailable("Allow Speech Recognition in Settings to dictate notes.")
             return
         }
+
+        let micStatus = await Self.requestMicrophoneAuthorization()
+        guard micStatus else {
+            state = .unavailable("Allow Microphone access in Settings to dictate notes.")
+            return
+        }
+
         guard let recognizer, recognizer.isAvailable else {
             state = .unavailable("Speech recognition isn’t available right now.")
             return
@@ -58,7 +65,7 @@ final class SpeechDictationService {
             try startEngine(with: recognizer)
             state = .listening
         } catch {
-            state = .unavailable("Couldn’t start the microphone.")
+            state = .unavailable("Couldn’t start the microphone. Check Settings → Privacy → Microphone.")
         }
     }
 
@@ -107,6 +114,14 @@ final class SpeechDictationService {
         await withCheckedContinuation { continuation in
             SFSpeechRecognizer.requestAuthorization { status in
                 continuation.resume(returning: status)
+            }
+        }
+    }
+
+    private static func requestMicrophoneAuthorization() async -> Bool {
+        await withCheckedContinuation { continuation in
+            AVAudioApplication.requestRecordPermission { granted in
+                continuation.resume(returning: granted)
             }
         }
     }

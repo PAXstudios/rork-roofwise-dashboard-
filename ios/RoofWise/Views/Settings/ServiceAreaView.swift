@@ -6,7 +6,6 @@ struct ServiceAreaView: View {
     @State private var errorMessage: String? = nil
     @State private var pendingDelete: ServiceArea? = nil
     @State private var showRationale: Bool = false
-    @State private var speech = SpeechDictationService()
     @FocusState private var focused: Bool
 
     private let didAskNotificationsKey = "rw.notifications.didAsk"
@@ -112,21 +111,7 @@ struct ServiceAreaView: View {
                     }
                     .buttonStyle(.plain)
                 }
-                Button {
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                    speech.toggle()
-                } label: {
-                    Image(systemName: speech.isListening ? "mic.fill" : "mic")
-                        .font(.system(size: Theme.TypeRamp.subhead, weight: .heavy))
-                        .foregroundStyle(.white)
-                        .frame(width: 44, height: 44)
-                        .background(speech.isListening ? Theme.ember : Theme.ink, in: .rect(cornerRadius: 12))
-                }
-                .buttonStyle(.plain)
-                .onChange(of: speech.transcript) { _, value in
-                    guard !value.isEmpty else { return }
-                    query = value
-                }
+                VoiceInputButton(text: $query, style: .icon)
             }
             .padding(14)
             .frame(minHeight: 64)

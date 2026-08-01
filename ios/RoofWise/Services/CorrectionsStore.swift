@@ -58,6 +58,12 @@ final class CorrectionsStore {
     // MARK: Mutations
 
     @discardableResult
+    /// Wipes every correction (account deletion).
+    func clearAll() {
+        items = []
+        persist()
+    }
+
     func append(_ correction: Correction) -> Correction {
         items.insert(correction, at: 0)
         persist()

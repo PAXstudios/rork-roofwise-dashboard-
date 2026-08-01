@@ -52,8 +52,8 @@ struct KnockedHouse: Identifiable {
     var outcome: KnockOutcome
     var notes: String = ""
     var loggedAt: Date = Date()
-    /// The rep who logged the knock.
-    var rep: String = "Sarah Jenkins"
+    /// The rep who logged the knock. Empty until the logger fills it in.
+    var rep: String = ""
 
     var prettyCoord: String {
         guard let lat = latitude, let lng = longitude else { return "GPS pending" }

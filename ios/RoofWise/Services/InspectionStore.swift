@@ -70,6 +70,12 @@ final class InspectionStore {
         save()
     }
 
+    /// Wipes every inspection (account deletion).
+    func clearAll() {
+        inspections = []
+        save()
+    }
+
     func inspection(with reportId: String) -> Inspection? {
         inspections.first { $0.job.reportId == reportId }
     }

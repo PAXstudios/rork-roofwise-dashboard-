@@ -129,6 +129,12 @@ final class LeadsSyncService {
         status = .idle
     }
 
+    /// Wipes every lead/job in the attached CustomerStore (account deletion).
+    func clearAttachedCustomers() {
+        customerStoreRef?.clearAll()
+        resetLedger()
+    }
+
     // MARK: - Helpers
 
     private static func hash(of c: Customer) -> Int {

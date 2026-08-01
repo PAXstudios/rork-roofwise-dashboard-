@@ -67,6 +67,12 @@ final class ProposalStore {
 
     var all: [Proposal] { proposals }
 
+    /// Wipes every proposal (account deletion).
+    func clearAll() {
+        proposals = []
+        persist()
+    }
+
     // MARK: Persistence
 
     private var fileURL: URL? {

@@ -51,7 +51,7 @@ struct AccountView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This permanently removes your account, leads, inspections, and photos from this device and requests deletion from RoofWise servers. This cannot be undone.")
+            Text("This permanently deletes your account, inspections, photos, corrections, and related data from RoofWise. This cannot be undone.")
         }
         .confirmationDialog(
             "Are you absolutely sure?",
@@ -68,7 +68,7 @@ struct AccountView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Final step. Your account and all associated data will be erased.")
+            Text("Final confirmation. Your account, inspections, photos, and corrections will be erased permanently.")
         }
     }
 
@@ -125,51 +125,26 @@ struct AccountView: View {
 
     private var legalCard: some View {
         VStack(spacing: 0) {
-            legalRow(
-                icon: "hand.raised.fill",
+            LegalSafariLink(
                 title: "Privacy Policy",
-                url: LegalLinks.privacyPolicy
+                url: LegalLinks.privacyPolicy,
+                icon: "hand.raised.fill"
             )
             Rectangle().fill(Theme.hairline).frame(height: 0.6)
-            legalRow(
-                icon: "doc.text.fill",
-                title: "Terms of Use",
-                url: LegalLinks.termsOfUse
+            LegalSafariLink(
+                title: "Terms of Service",
+                url: LegalLinks.termsOfUse,
+                icon: "doc.text.fill"
             )
             Rectangle().fill(Theme.hairline).frame(height: 0.6)
-            legalRow(
-                icon: "envelope.fill",
+            LegalSafariLink(
                 title: "Support",
-                url: LegalLinks.support
+                url: LegalLinks.support,
+                icon: "envelope.fill"
             )
         }
         .background(Theme.card, in: .rect(cornerRadius: 18))
         .overlay(RoundedRectangle(cornerRadius: 18).stroke(Theme.hairline, lineWidth: 0.6))
-    }
-
-    private func legalRow(icon: String, title: String, url: URL) -> some View {
-        Link(destination: url) {
-            HStack(spacing: 14) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 10).fill(Theme.ink.opacity(0.06))
-                    Image(systemName: icon)
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(Theme.ink)
-                }
-                .frame(width: 40, height: 40)
-                Text(title)
-                    .font(.system(size: Theme.TypeRamp.body, weight: .bold))
-                    .foregroundStyle(Theme.ink)
-                Spacer()
-                Image(systemName: "arrow.up.right")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(Theme.inkFaint)
-            }
-            .padding(14)
-            .frame(minHeight: 56)
-            .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
     }
 
     private var signOutButton: some View {

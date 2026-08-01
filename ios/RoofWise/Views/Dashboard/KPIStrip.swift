@@ -5,9 +5,25 @@ struct KPIStrip: View {
     @State private var showNewJob = false
     @State private var showCostEstimator = false
     @State private var alertStore = StormAlertStore.shared
+    @State private var estimatesStore = EstimatesStore.shared
+    @State private var proposalStore = ProposalStore.shared
 
     private var metrics: [KPIMetric] {
-        HomeLiveData.kpis(customers: store.customers, alerts: alertStore.alerts)
+        HomeLiveData.kpis(
+            customers: store.customers,
+            alerts: alertStore.alerts,
+            estimates: estimatesStore.estimates,
+            proposals: proposalStore.proposals
+        )
+    }
+
+    private var isEmpty: Bool {
+        HomeLiveData.kpisAreEmpty(
+            customers: store.customers,
+            alerts: alertStore.alerts,
+            estimates: estimatesStore.estimates,
+            proposals: proposalStore.proposals
+        )
     }
 
     var body: some View {
@@ -32,8 +48,12 @@ struct KPIStrip: View {
                                     icon: "dollarsign.circle.fill",
                                     tint: Theme.mint,
                                     action: { showCostEstimator = true })
-                    ForEach(metrics) { metric in
-                        KPICard(metric: metric)
+                    if isEmpty {
+                        KPIEmptyInvite(onStart: { showNewJob = true })
+                    } else {
+                        ForEach(metrics) { metric in
+                            KPICard(metric: metric)
+                        }
                     }
                 }
                 .padding(.horizontal, 20)
@@ -45,6 +65,41 @@ struct KPIStrip: View {
         .fullScreenCover(isPresented: $showCostEstimator) {
             CostEstimatorWizard()
         }
+    }
+}
+
+/// Genuine empty state — not zeros rendered as data.
+private struct KPIEmptyInvite: View {
+    var onStart: () -> Void = {}
+
+    var body: some View {
+        Button(action: onStart) {
+            VStack(alignment: .leading, spacing: 12) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(Theme.ember)
+                    .frame(width: 40, height: 40)
+                    .background(Theme.emberSoft, in: .rect(cornerRadius: 12))
+                Text("No jobs yet")
+                    .font(.system(size: 17, weight: .heavy))
+                    .foregroundStyle(Theme.ink)
+                Text("Start your first inspection to fill Overview with live numbers.")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Theme.inkSoft)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("Start inspection")
+                    .font(.system(size: 12, weight: .heavy))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(Theme.ember, in: .capsule)
+            }
+            .frame(width: 200, height: 168, alignment: .topLeading)
+            .padding(16)
+            .background(Theme.card, in: .rect(cornerRadius: 20))
+            .overlay(RoundedRectangle(cornerRadius: 20).stroke(Theme.hairline, lineWidth: 0.6))
+        }
+        .buttonStyle(.plain)
     }
 }
 

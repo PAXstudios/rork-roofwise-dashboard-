@@ -6,7 +6,7 @@ import SwiftUI
 // Touch targets ≥56pt, ≥12pt spacing between tappable elements, no thin
 // affordances, high contrast for outdoor sun, big primary CTAs.
 
-// MARK: - Models (mock-only)
+// MARK: - Models
 
 struct HomeJobStage {
     let label: String
@@ -52,18 +52,6 @@ struct HomePipelineStage: Identifiable {
     let color: Color
     let count: Int
     let mappedStage: JobPipelineStage?
-}
-
-/// Kept as a namespace so older call sites compile; all data now comes from
-/// `HomeLiveData` (real CustomerStore / InspectionStore counts).
-enum HomeSectionsMock {
-    static func recentJobs(from customers: [Customer]) -> [HomeRecentJob] {
-        HomeLiveData.homeRecentJobs(customers: customers)
-    }
-
-    static func pipeline(from customers: [Customer]) -> [HomePipelineStage] {
-        HomeLiveData.homePipelineStages(customers: customers)
-    }
 }
 
 // MARK: - 1. Storm Alert Hero (dynamic, Phase 6D)
@@ -338,7 +326,7 @@ struct RecentJobsHomeSection: View {
     var onOpenJob: (HomeRecentJob) -> Void = { _ in }
 
     private var jobs: [HomeRecentJob] {
-        HomeSectionsMock.recentJobs(from: store.customers)
+        HomeLiveData.homeRecentJobs(customers: store.customers)
     }
 
     var body: some View {
@@ -372,10 +360,10 @@ struct RecentJobsHomeSection: View {
                         .font(.system(size: 18, weight: .bold))
                         .foregroundStyle(Theme.inkFaint)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("No jobs yet")
+                        Text("No jobs yet — start your first inspection")
                             .font(.system(size: 14, weight: .bold))
                             .foregroundStyle(Theme.ink)
-                        Text("Create a New Lead to populate this row.")
+                        Text("Create a New Lead and it will show up here.")
                             .font(.system(size: 12))
                             .foregroundStyle(Theme.inkFaint)
                     }
@@ -521,7 +509,11 @@ struct PipelineMiniSection: View {
     var onTapStage: (HomePipelineStage) -> Void = { _ in }
 
     private var stages: [HomePipelineStage] {
-        HomeSectionsMock.pipeline(from: store.customers)
+        HomeLiveData.homePipelineStages(customers: store.customers)
+    }
+
+    private var isEmpty: Bool {
+        HomeLiveData.homePipelineIsEmpty(customers: store.customers)
     }
 
     var body: some View {
@@ -549,20 +541,41 @@ struct PipelineMiniSection: View {
             .padding(.horizontal, 20)
             .padding(.bottom, 6)
 
-            ScrollView(.horizontal, showsIndicators: false) {
+            if isEmpty {
                 HStack(spacing: 12) {
-                    ForEach(stages) { stage in
-                        Button {
-                            UIImpactFeedbackGenerator(style: .soft).impactOccurred()
-                            onTapStage(stage)
-                        } label: {
-                            PipelineMiniChip(stage: stage)
-                        }
-                        .buttonStyle(.plain)
+                    Image(systemName: "chart.bar.doc.horizontal")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(Theme.inkFaint)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("No pipeline yet")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(Theme.ink)
+                        Text("No jobs yet — start your first inspection and stages fill in.")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Theme.inkFaint)
                     }
+                    Spacer(minLength: 0)
                 }
+                .padding(16)
+                .background(Theme.card, in: .rect(cornerRadius: 16))
+                .overlay(RoundedRectangle(cornerRadius: 16).stroke(Theme.hairline, lineWidth: 0.6))
                 .padding(.horizontal, 20)
-                .padding(.vertical, 4)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(stages) { stage in
+                            Button {
+                                UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+                                onTapStage(stage)
+                            } label: {
+                                PipelineMiniChip(stage: stage)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 4)
+                }
             }
         }
     }

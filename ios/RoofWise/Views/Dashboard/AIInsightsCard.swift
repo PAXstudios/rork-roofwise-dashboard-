@@ -82,10 +82,12 @@ struct AIInsightsCard: View {
 
             if items.isEmpty {
                 HStack(spacing: 10) {
-                    Image(systemName: "checkmark.seal")
+                    Image(systemName: queue.pendingCount == 0 && store.customers.isEmpty ? "camera.viewfinder" : "checkmark.seal")
                         .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(Theme.mint)
-                    Text("No low-confidence detections right now.")
+                        .foregroundStyle(store.customers.isEmpty ? Theme.inkFaint : Theme.mint)
+                    Text(store.customers.isEmpty
+                         ? "No jobs yet — analyze inspection photos and low-confidence hits land here."
+                         : "No low-confidence detections right now.")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(Theme.inkSoft)
                 }

@@ -26,6 +26,12 @@ final class CustomerStore {
         activeCustomerID = id
     }
 
+    /// Wipes every lead/job (account deletion).
+    func clearAll() {
+        customers = []
+        activeCustomerID = nil
+    }
+
     func add(_ customer: Customer, makeActive: Bool = true) {
         customers.append(customer)
         if makeActive { activeCustomerID = customer.id }

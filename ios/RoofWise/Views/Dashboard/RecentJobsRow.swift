@@ -56,10 +56,10 @@ struct RecentJobsRow: View {
                 .font(.system(size: 18, weight: .bold))
                 .foregroundStyle(Theme.inkFaint)
             VStack(alignment: .leading, spacing: 2) {
-                Text("No jobs yet")
+                Text("No jobs yet — start your first inspection")
                     .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(Theme.ink)
-                Text("Create a New Lead or finish an inspection to populate this row.")
+                Text("Create a New Lead or finish an inspection and it will show up here.")
                     .font(.system(size: 12))
                     .foregroundStyle(Theme.inkFaint)
             }

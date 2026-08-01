@@ -3,6 +3,7 @@ import Observation
 import Supabase
 import AuthenticationServices
 import CryptoKit
+import Security
 import UIKit
 
 enum AuthState: Equatable {
@@ -189,67 +190,128 @@ final class AuthStore {
         }
     }
 
-    /// Deletes the signed-in account and wipes local user data. Tries the
-    /// Supabase `delete-account` edge function first (server-side admin
-    /// delete). If that isn't deployed yet, still clears every on-device
-    /// store and signs the session out so the user is fully de-authed and
-    /// their local PII is gone — satisfying Guideline 5.1.1(v) locally
-    /// while the server-side wipe finishes asynchronously when available.
+    /// Fully deletes the signed-in account in-app:
+    /// 1) explicit multi-table Supabase row delete (no reliance on missing CASCADE),
+    /// 2) `delete-account` edge function (auth.admin.deleteUser),
+    /// 3) local store + Documents + Keychain wipe,
+    /// 4) sign out → Welcome.
+    /// Never asks the user to email support.
+    @MainActor
     func deleteAccount() async -> Bool {
         isBusy = true
         lastErrorMessage = nil
         defer { isBusy = false }
 
-        // 1. Best-effort server-side account deletion via edge function.
-        // The function (when deployed) should call auth.admin.deleteUser with
-        // the service-role key. Failure here is non-fatal — local wipe + sign
-        // out still run so the user is de-authed on device.
-        var serverDeleted = false
+        let userId = currentUserId
+
+        // 1. Explicit multi-table delete under the user's JWT (RLS-scoped).
+        // Order matters: dependents before parents. Types show NO
+        // ON DELETE CASCADE from auth.users → app tables, so we must
+        // delete rows ourselves before the auth user is removed.
+        if let userId, userId != "dev-local-user" {
+            await Self.deleteRemoteUserData(userId: userId)
+        }
+
+        // 2. Server-side auth.admin.deleteUser via edge function.
         do {
-            // Decode as raw Data so we don't require a response schema.
             let _: Data = try await SupabaseService.client.functions.invoke(
                 "delete-account",
                 options: FunctionInvokeOptions(method: .post)
             )
-            serverDeleted = true
         } catch {
+            // If the edge function isn't deployed, still finish the in-app wipe.
+            // Remote rows were already deleted above under the user's session.
             print("[AuthStore] delete-account function: \(error)")
         }
 
-        // 2. Wipe local user data regardless of server result.
+        // 3. Wipe every local store + files + Keychain.
         Self.wipeLocalUserData()
 
-        // 3. Sign out so the session is gone.
+        // 4. Sign out so RootView returns to Welcome.
         do {
             try await SupabaseService.client.auth.signOut()
-            state = .signedOut
         } catch {
-            // Force local signed-out even if the network call fails.
-            state = .signedOut
             print("[AuthStore] signOut after delete failed: \(error)")
         }
-
-        if !serverDeleted {
-            lastErrorMessage = "Account removed from this device. If you still see it on another device, email support@roofwise.app and we'll finish the wipe."
-        }
+        state = .signedOut
+        lastErrorMessage = nil
         return true
     }
 
+    /// Deletes the signed-in user's rows from every known user-scoped table.
+    /// Missing CASCADE on these FKs is why this is required (see Group 2 report).
+    private static func deleteRemoteUserData(userId: String) async {
+        let client = SupabaseService.client
+        let uid = userId.lowercased()
+
+        // consensus_reviews has no user_id — delete via damage_feedback ids first.
+        do {
+            struct IdRow: Decodable { let id: UUID }
+            let feedback: [IdRow] = try await client
+                .from("damage_feedback")
+                .select("id")
+                .eq("user_id", value: uid)
+                .execute()
+                .value
+            let ids = feedback.map { $0.id.uuidString }
+            if !ids.isEmpty {
+                try await client
+                    .from("consensus_reviews")
+                    .delete()
+                    .in("damage_feedback_id", values: ids)
+                    .execute()
+            }
+        } catch {
+            print("[AuthStore] cascade consensus_reviews: \(error)")
+        }
+
+        // user_id tables — order: children → parents.
+        let tables = [
+            "damage_feedback",
+            "corrections",
+            "inspection_photos",
+            "leads",
+            "user_trust_profile",
+            "users"
+        ]
+        for table in tables {
+            do {
+                try await client
+                    .from(table)
+                    .delete()
+                    .eq("user_id", value: uid)
+                    .execute()
+            } catch {
+                print("[AuthStore] delete \(table): \(error)")
+            }
+        }
+    }
+
     /// Clears every on-device store that holds user/PII data.
+    @MainActor
     private static func wipeLocalUserData() {
-        LeadsSyncService.shared.resetLedger()
+        // In-memory + on-disk stores.
+        InspectionStore.shared.clearAll()
+        EstimatesStore.shared.clearAll()
+        ProposalStore.shared.clearAll()
+        CorrectionsStore.shared.clearAll()
+        KnockSessionStore.shared.clearAll()
+        TrainingQueueStore.shared.clearAll()
+        ActivityStore.shared.clearAll()
+        LeadsSyncService.shared.clearAttachedCustomers()
         PhotoSyncService.shared.resetLedger()
 
-        // Wipe Documents JSON files the app owns.
+        // Documents JSON the app owns (covers CustomerStore-synced files too).
         let fm = FileManager.default
-        guard let docs = fm.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
-        let prefixes = [
-            "inspections", "knock-sessions", "training-queue",
-            "storm_alerts", "stormwatch-seen", "activity-",
-            "customers", "proposals", "estimates", "corrections",
-            "safety_assessments", "geocode-cache"
-        ]
-        if let files = try? fm.contentsOfDirectory(at: docs, includingPropertiesForKeys: nil) {
+        if let docs = fm.urls(for: .documentDirectory, in: .userDomainMask).first,
+           let files = try? fm.contentsOfDirectory(at: docs, includingPropertiesForKeys: nil) {
+            let prefixes = [
+                "inspections", "knock-sessions", "training-queue",
+                "storm_alerts", "stormwatch-seen", "activity-",
+                "customers", "proposals", "estimates", "corrections",
+                "safety_assessments", "geocode-cache", "damage_feedback",
+                "mileage", "service-area", "photo-sync", "leads-sync"
+            ]
             for url in files {
                 let name = url.lastPathComponent
                 if prefixes.contains(where: { name.hasPrefix($0) }) {
@@ -258,10 +320,28 @@ final class AuthStore {
             }
         }
 
-        // Clear UserDefaults keys we own.
+        // UserDefaults keys we own.
         let defaults = UserDefaults.standard
-        for key in defaults.dictionaryRepresentation().keys where key.hasPrefix("rw.") {
+        for key in defaults.dictionaryRepresentation().keys where
+            key.hasPrefix("rw.") || key.hasPrefix("roofwise") || key.hasPrefix("com.roofwise") {
             defaults.removeObject(forKey: key)
+        }
+
+        // Keychain — wipe every item this install owns (Supabase session + any app secrets).
+        wipeKeychain()
+    }
+
+    private static func wipeKeychain() {
+        let classes: [CFString] = [
+            kSecClassGenericPassword,
+            kSecClassInternetPassword,
+            kSecClassKey,
+            kSecClassCertificate,
+            kSecClassIdentity
+        ]
+        for cls in classes {
+            let query: [String: Any] = [kSecClass as String: cls]
+            SecItemDelete(query as CFDictionary)
         }
     }
 

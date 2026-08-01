@@ -404,15 +404,21 @@ struct WelcomeView: View {
                 .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(.white.opacity(0.55))
             HStack(spacing: 6) {
-                Link("Terms of Use", destination: LegalLinks.termsOfUse)
-                    .font(.system(size: 11, weight: .heavy))
-                    .foregroundStyle(.white.opacity(0.9))
+                LegalSafariLink(
+                    title: "Terms of Service",
+                    url: LegalLinks.termsOfUse,
+                    style: .inline
+                )
+                .foregroundStyle(.white.opacity(0.9))
                 Text("·")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.white.opacity(0.45))
-                Link("Privacy Policy", destination: LegalLinks.privacyPolicy)
-                    .font(.system(size: 11, weight: .heavy))
-                    .foregroundStyle(.white.opacity(0.9))
+                LegalSafariLink(
+                    title: "Privacy Policy",
+                    url: LegalLinks.privacyPolicy,
+                    style: .inline
+                )
+                .foregroundStyle(.white.opacity(0.9))
             }
         }
         .multilineTextAlignment(.center)

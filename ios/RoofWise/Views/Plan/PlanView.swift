@@ -24,26 +24,12 @@ struct PlanView: View {
     }
 
     private var items: [ScheduleItem] {
-        // Reuse the live schedule builder; for non-today days, filter inspections.
-        let all = HomeLiveData.todaySchedule(customers: store.customers)
         let cal = Calendar.current
-        if cal.isDateInToday(selectedDate) { return all }
-        // For other days, show scheduled customers only (no invented times).
-        return store.customers
-            .filter { $0.stage == .inspectionScheduled || $0.stage == .adjusterMeeting }
-            .prefix(6)
-            .enumerated()
-            .map { idx, c in
-                ScheduleItem(
-                    time: String(format: "%02d:00", min(8 + idx * 2, 17)),
-                    kind: c.stage == .adjusterMeeting ? .followUp : .inspection,
-                    title: c.ownerName.isEmpty ? "Scheduled stop" : c.ownerName,
-                    address: c.address.isEmpty ? "Address pending" : c.address,
-                    assignee: HomeLiveData.displayName(),
-                    assigneeColor: Theme.sky,
-                    priority: c.stormTagged ? .storm : .normal
-                )
-            }
+        if cal.isDateInToday(selectedDate) {
+            return HomeLiveData.todaySchedule(customers: store.customers)
+        }
+        // Non-today: show scheduled customers without inventing clock times.
+        return HomeLiveData.untimedScheduledStops(customers: store.customers)
     }
 
     private var monthLabel: String {

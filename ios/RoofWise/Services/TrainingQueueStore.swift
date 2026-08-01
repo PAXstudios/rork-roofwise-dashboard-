@@ -186,6 +186,12 @@ final class TrainingQueueStore {
 
     // MARK: Mutations
 
+    /// Wipes the training queue (account deletion).
+    func clearAll() {
+        items = []
+        persist()
+    }
+
     func accept(_ item: TrainingItem) {
         update(item.id) { $0.status = .accepted }
     }

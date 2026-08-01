@@ -51,7 +51,7 @@ struct PipelineCard: View {
                 Text("No pipeline yet")
                     .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(Theme.ink)
-                Text("New leads and jobs will fill these stages automatically.")
+                Text("No jobs yet — start your first inspection and stages fill automatically.")
                     .font(.system(size: 12))
                     .foregroundStyle(Theme.inkFaint)
             }

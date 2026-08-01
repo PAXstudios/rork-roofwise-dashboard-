@@ -61,6 +61,12 @@ final class KnockSessionStore {
         save()
     }
 
+    /// Wipes every knock session (account deletion).
+    func clearAll() {
+        sessions = []
+        save()
+    }
+
     func session(with id: UUID) -> KnockSession? {
         sessions.first { $0.id == id }
     }

@@ -10,7 +10,6 @@ struct AddressPickerSheet: View {
 
     @State private var query: String = ""
     @State private var results: [AddressSuggestion] = []
-    @State private var speech = SpeechDictationService()
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -63,17 +62,7 @@ struct AddressPickerSheet: View {
                 }
                 .buttonStyle(.plain)
             }
-            Button {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                speech.toggle()
-            } label: {
-                Image(systemName: speech.isListening ? "mic.fill" : "mic")
-                    .font(.system(size: Theme.TypeRamp.subhead, weight: .heavy))
-                    .foregroundStyle(.white)
-                    .frame(width: 44, height: 44)
-                    .background(speech.isListening ? Theme.ember : Theme.ink, in: .rect(cornerRadius: 12))
-            }
-            .buttonStyle(.plain)
+            VoiceInputButton(text: $query, style: .icon)
         }
         .padding(14)
         .background(Theme.card, in: .rect(cornerRadius: 16))
@@ -81,10 +70,6 @@ struct AddressPickerSheet: View {
         .padding(.horizontal, 20)
         .padding(.bottom, 16)
         .onAppear { focused = true }
-        .onChange(of: speech.transcript) { _, value in
-            guard !value.isEmpty else { return }
-            query = value
-        }
     }
 
     @ViewBuilder

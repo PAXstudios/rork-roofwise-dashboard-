@@ -68,11 +68,36 @@ final class ActivityStore {
         log(.uiTap, summary: target, reportId: "ui-tap")
     }
 
+    /// Newest events across a set of report ids (loads each bucket once).
+    /// Used by the home Activity tab — never invents events.
+    func recentAcross(reportIds: [String], limit: Int = 12) -> [ActivityEvent] {
+        var all: [ActivityEvent] = []
+        var seen = Set<String>()
+        for id in reportIds where !seen.contains(id) {
+            seen.insert(id)
+            all.append(contentsOf: events(for: id))
+        }
+        return Array(all.sorted { $0.timestamp > $1.timestamp }.prefix(limit))
+    }
+
     /// Wipes log for a single inspection (used when the inspection itself is
     /// deleted; not currently auto-called).
     func clear(reportId: String) {
         cache[reportId] = []
         if let url = fileURL(reportId: reportId) {
+            try? FileManager.default.removeItem(at: url)
+        }
+    }
+
+    /// Clears every cached / on-disk activity bucket (account deletion).
+    func clearAll() {
+        let ids = Array(cache.keys)
+        for id in ids { clear(reportId: id) }
+        cache.removeAll()
+        // Also sweep leftover activity-*.json files in Documents.
+        guard let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first,
+              let files = try? FileManager.default.contentsOfDirectory(at: docs, includingPropertiesForKeys: nil) else { return }
+        for url in files where url.lastPathComponent.hasPrefix("activity-") && url.pathExtension == "json" {
             try? FileManager.default.removeItem(at: url)
         }
     }
