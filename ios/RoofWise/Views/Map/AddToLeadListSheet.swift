@@ -17,6 +17,7 @@ struct AddToLeadListSheet: View {
     @State private var query: String = ""
     @State private var results: [AddressSuggestion] = []
     @State private var pending: [AddressSuggestion] = []
+    @State private var speech = SpeechDictationService()
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -87,15 +88,14 @@ struct AddToLeadListSheet: View {
                 .buttonStyle(.plain)
             }
             Button {
-                // Focus the field so the keyboard's built-in dictation (mic key)
-                // is available for hands-free address entry.
-                focused = true
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                speech.toggle()
             } label: {
-                Image(systemName: "mic.fill")
+                Image(systemName: speech.isListening ? "mic.fill" : "mic")
                     .font(.system(size: Theme.TypeRamp.subhead, weight: .heavy))
                     .foregroundStyle(.white)
                     .frame(width: 44, height: 44)
-                    .background(Theme.ink, in: .rect(cornerRadius: 12))
+                    .background(speech.isListening ? Theme.ember : Theme.ink, in: .rect(cornerRadius: 12))
             }
             .buttonStyle(.plain)
         }
@@ -104,6 +104,10 @@ struct AddToLeadListSheet: View {
         .overlay(RoundedRectangle(cornerRadius: 16).stroke(Theme.hairline, lineWidth: 0.6))
         .padding(.horizontal, 20)
         .padding(.bottom, 14)
+        .onChange(of: speech.transcript) { _, value in
+            guard !value.isEmpty else { return }
+            query = value
+        }
     }
 
     // MARK: Pending

@@ -399,12 +399,25 @@ struct WelcomeView: View {
     }
 
     private var footnote: some View {
-        Text("By continuing you agree to our Terms & Privacy.")
-            .font(.system(size: 11, weight: .medium))
-            .foregroundStyle(.white.opacity(0.55))
-            .multilineTextAlignment(.center)
-            .frame(maxWidth: .infinity)
-            .padding(.top, 2)
+        VStack(spacing: 6) {
+            Text("By continuing you agree to our")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.white.opacity(0.55))
+            HStack(spacing: 6) {
+                Link("Terms of Use", destination: LegalLinks.termsOfUse)
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(.white.opacity(0.9))
+                Text("·")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.45))
+                Link("Privacy Policy", destination: LegalLinks.privacyPolicy)
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(.white.opacity(0.9))
+            }
+        }
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: .infinity)
+        .padding(.top, 2)
     }
 
     // MARK: - Logic

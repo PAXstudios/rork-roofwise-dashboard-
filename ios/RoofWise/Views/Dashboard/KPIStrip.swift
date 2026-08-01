@@ -1,8 +1,14 @@
 import SwiftUI
 
 struct KPIStrip: View {
+    @Environment(CustomerStore.self) private var store
     @State private var showNewJob = false
     @State private var showCostEstimator = false
+    @State private var alertStore = StormAlertStore.shared
+
+    private var metrics: [KPIMetric] {
+        HomeLiveData.kpis(customers: store.customers, alerts: alertStore.alerts)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -11,14 +17,6 @@ struct KPIStrip: View {
                     .font(.system(size: 18, weight: .bold))
                     .foregroundStyle(Theme.ink)
                 Spacer()
-                Button {} label: {
-                    HStack(spacing: 4) {
-                        Text("View Report")
-                        Image(systemName: "arrow.up.right")
-                    }
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Theme.ember)
-                }
             }
             .padding(.horizontal, 20)
 
@@ -34,7 +32,7 @@ struct KPIStrip: View {
                                     icon: "dollarsign.circle.fill",
                                     tint: Theme.mint,
                                     action: { showCostEstimator = true })
-                    ForEach(MockData.kpis) { metric in
+                    ForEach(metrics) { metric in
                         KPICard(metric: metric)
                     }
                 }

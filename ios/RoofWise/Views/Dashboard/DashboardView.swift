@@ -240,7 +240,7 @@ struct DashboardHeader: View {
             ZStack {
                 Circle().fill(LinearGradient(colors: [Theme.ink, Color(red: 0.18, green: 0.25, blue: 0.45)],
                                              startPoint: .top, endPoint: .bottom))
-                Text("AC")
+                Text(HomeLiveData.displayInitials())
                     .font(.system(size: 16, weight: .heavy))
                     .foregroundStyle(.white)
                 Circle().fill(Theme.mint)
@@ -254,9 +254,10 @@ struct DashboardHeader: View {
                 Text("Welcome back")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(Theme.inkFaint)
-                Text("Alex Coleman")
+                Text(HomeLiveData.displayName())
                     .font(.system(size: 19, weight: .bold))
                     .foregroundStyle(Theme.ink)
+                    .lineLimit(1)
             }
             #if DEBUG
             .contentShape(.rect)

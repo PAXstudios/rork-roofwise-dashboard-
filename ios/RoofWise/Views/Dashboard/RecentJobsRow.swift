@@ -4,6 +4,10 @@ struct RecentJobsRow: View {
     @Environment(CustomerStore.self) private var store
     var onOpenCustomer: (UUID) -> Void = { _ in }
 
+    private var jobs: [RecentJob] {
+        HomeLiveData.recentJobs(customers: store.customers)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -11,41 +15,59 @@ struct RecentJobsRow: View {
                     Text("Recent Jobs")
                         .font(.system(size: 18, weight: .bold))
                         .foregroundStyle(Theme.ink)
-                    Text("Inspection captures from the field")
+                    Text(jobs.isEmpty
+                         ? "Jobs you create will land here"
+                         : "Inspection captures from the field")
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.inkFaint)
                 }
                 Spacer()
-                Button {} label: {
-                    HStack(spacing: 4) {
-                        Text("View All")
-                            .font(.system(size: 13, weight: .semibold))
-                        Image(systemName: "arrow.right")
-                            .font(.system(size: 11, weight: .bold))
-                    }
-                    .foregroundStyle(Theme.ember)
-                }
             }
             .padding(.horizontal, 20)
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
-                    ForEach(MockData.recentJobs) { job in
-                        Button {
-                            let id = store.resolveCustomer(for: job)
-                            store.setActive(id)
-                            let g = UIImpactFeedbackGenerator(style: .soft)
-                            g.impactOccurred()
-                            onOpenCustomer(id)
-                        } label: {
-                            RecentJobCard(job: job)
+            if jobs.isEmpty {
+                emptyState
+                    .padding(.horizontal, 20)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(jobs) { job in
+                            Button {
+                                let id = store.resolveCustomer(for: job)
+                                store.setActive(id)
+                                let g = UIImpactFeedbackGenerator(style: .soft)
+                                g.impactOccurred()
+                                onOpenCustomer(id)
+                            } label: {
+                                RecentJobCard(job: job)
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
                     }
+                    .padding(.horizontal, 20)
                 }
-                .padding(.horizontal, 20)
             }
         }
+    }
+
+    private var emptyState: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "house")
+                .font(.system(size: 18, weight: .bold))
+                .foregroundStyle(Theme.inkFaint)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("No jobs yet")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(Theme.ink)
+                Text("Create a New Lead or finish an inspection to populate this row.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.inkFaint)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(16)
+        .background(Theme.card, in: .rect(cornerRadius: 18))
+        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Theme.hairline, lineWidth: 0.6))
     }
 }
 
@@ -54,29 +76,25 @@ struct RecentJobCard: View {
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
-            // Image anchor
             Color(.secondarySystemBackground)
                 .frame(width: 240, height: 240)
                 .overlay {
-                    AsyncImage(url: URL(string: job.imageURL)) { phase in
-                        switch phase {
-                        case .success(let img):
-                            img.resizable().aspectRatio(contentMode: .fill)
-                        default:
-                            ZStack {
-                                LinearGradient(colors: [Theme.ink.opacity(0.7), Theme.inkSoft],
-                                               startPoint: .top, endPoint: .bottom)
-                                Image(systemName: "house.fill")
-                                    .font(.system(size: 50))
-                                    .foregroundStyle(.white.opacity(0.4))
+                    if let url = URL(string: job.imageURL), !job.imageURL.isEmpty {
+                        AsyncImage(url: url) { phase in
+                            switch phase {
+                            case .success(let img):
+                                img.resizable().aspectRatio(contentMode: .fill)
+                            default:
+                                placeholder
                             }
                         }
+                        .allowsHitTesting(false)
+                    } else {
+                        placeholder
                     }
-                    .allowsHitTesting(false)
                 }
                 .clipShape(.rect(cornerRadius: 20))
                 .overlay {
-                    // gradient scrim
                     LinearGradient(
                         colors: [.clear, .black.opacity(0.15), .black.opacity(0.75)],
                         startPoint: .top, endPoint: .bottom
@@ -85,7 +103,6 @@ struct RecentJobCard: View {
                     .allowsHitTesting(false)
                 }
 
-            // Status pill
             HStack {
                 Spacer()
                 StatusPill(status: job.status)
@@ -94,7 +111,6 @@ struct RecentJobCard: View {
             .frame(width: 240, alignment: .topTrailing)
             .frame(maxHeight: .infinity, alignment: .top)
 
-            // Address overlay
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 5) {
                     Image(systemName: "mappin.circle.fill")
@@ -118,6 +134,16 @@ struct RecentJobCard: View {
         }
         .frame(width: 240, height: 240)
         .shadow(color: Theme.ink.opacity(0.12), radius: 14, x: 0, y: 6)
+    }
+
+    private var placeholder: some View {
+        ZStack {
+            LinearGradient(colors: [Theme.ink.opacity(0.7), Theme.inkSoft],
+                           startPoint: .top, endPoint: .bottom)
+            Image(systemName: "house.fill")
+                .font(.system(size: 50))
+                .foregroundStyle(.white.opacity(0.4))
+        }
     }
 }
 

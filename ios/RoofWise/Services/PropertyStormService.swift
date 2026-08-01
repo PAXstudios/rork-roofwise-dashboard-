@@ -1,9 +1,10 @@
 import SwiftUI
 import Foundation
+import CoreLocation
 
-/// Computes a deterministic storm history for a given property based on a
-/// stable hash of its address. Until real geolookup is wired up, this gives
-/// each customer a believable, repeatable storm fingerprint.
+/// Resolves real storm history near a property from cached `StormAlertStore`
+/// alerts (and optionally NOAA via `fetchHits`). Never invents storms — returns
+/// empty when nothing has been observed near the property yet.
 enum PropertyStormService {
 
     struct PropertyHit: Identifiable {
@@ -30,54 +31,96 @@ enum PropertyStormService {
         }
     }
 
+    /// Synchronous snapshot from already-cached alerts near the customer.
     static func hits(for customer: Customer) -> [PropertyHit] {
-        let seed = stableHash(customer.address.isEmpty ? customer.ownerName : customer.address)
-        var rng = SeededRNG(seed: seed)
-
-        // Filter the storms this property "saw" — pick 2-4 deterministically
-        var pool = MockData.storms
-        // Always favor severe + recent
-        pool.sort { $0.year > $1.year }
-
-        let count = 2 + Int(rng.next() % 3) // 2..4
-        var picks: [PropertyHit] = []
-        var available = pool
-        for _ in 0..<min(count, available.count) {
-            let idx = Int(rng.next() % UInt64(available.count))
-            let storm = available.remove(at: idx)
-            // Coverage roll, biased by storm intensity
-            let bias = storm.intensity
-            let roll = Double(rng.next() % 1000) / 1000.0
-            let coverage = min(1.0, max(0.1, (roll * 0.7) + bias * 0.5))
-            picks.append(PropertyHit(storm: storm, coverage: coverage))
-        }
-        // Sort newest first
-        return picks.sorted { $0.storm.year > $1.storm.year }
+        guard let coord = customer.coordinate else { return [] }
+        let origin = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
+        return StormAlertStore.shared.alerts
+            .map { alert -> (StormAlert, Double) in
+                let d = origin.distance(from: CLLocation(latitude: alert.latitude,
+                                                         longitude: alert.longitude)) / 1609.34
+                return (alert, d)
+            }
+            .filter { $0.1 <= 25 }
+            .sorted { $0.1 < $1.1 }
+            .prefix(6)
+            .map { pair in
+                let coverage = max(0.1, min(1.0, 1.0 - (pair.1 / 25.0)))
+                return PropertyHit(storm: makeStormEvent(from: pair.0), coverage: coverage)
+            }
     }
 
     static func mostRecentSevereHit(for customer: Customer) -> PropertyHit? {
-        hits(for: customer).first { $0.storm.band == .severe || $0.coverage >= 0.6 }
-    }
-
-    // MARK: - Deterministic helpers
-
-    private static func stableHash(_ s: String) -> UInt64 {
-        var h: UInt64 = 1469598103934665603
-        for b in s.utf8 {
-            h ^= UInt64(b)
-            h &*= 1099511628211
+        hits(for: customer).first {
+            ($0.storm.sizeInches ?? 0) >= 1.0 ||
+            ($0.storm.windMPH ?? 0) >= 58 ||
+            $0.coverage >= 0.6 ||
+            $0.storm.band == .severe
         }
-        return h
     }
-}
 
-private struct SeededRNG {
-    var state: UInt64
-    init(seed: UInt64) { self.state = seed == 0 ? 0xdeadbeef : seed }
-    mutating func next() -> UInt64 {
-        state ^= state << 13
-        state ^= state >> 7
-        state ^= state << 17
-        return state
+    /// Async fetch of NOAA history within 25 mi of the property (last 3 years).
+    static func fetchHits(for customer: Customer) async -> [PropertyHit] {
+        guard let coord = customer.coordinate else { return hits(for: customer) }
+        do {
+            let events = try await StormEventsServiceFactory.shared.events(
+                near: coord,
+                radiusMi: 25,
+                sinceMonthsBack: 37
+            )
+            let origin = CLLocation(latitude: coord.latitude, longitude: coord.longitude)
+            return events.prefix(8).map { e in
+                let d = origin.distance(from: CLLocation(latitude: e.latitude,
+                                                         longitude: e.longitude)) / 1609.34
+                let coverage = max(0.1, min(1.0, 1.0 - (d / 25.0)))
+                return PropertyHit(storm: makeStormEvent(from: e), coverage: coverage)
+            }
+        } catch {
+            return hits(for: customer)
+        }
+    }
+
+    // MARK: - Bridges
+
+    private static func makeStormEvent(from alert: StormAlert) -> StormEvent {
+        let type: StormType = alert.eventType == .wind || alert.eventType == .tornado ? .wind : .hail
+        let year = Calendar.current.component(.year, from: alert.eventDate)
+        let df = DateFormatter(); df.dateFormat = "MMM d, yyyy"
+        let intensity: Double = {
+            if let h = alert.magnitudeIn { return min(1, h / 2.5) }
+            if let w = alert.windMph { return min(1, Double(w) / 100) }
+            return 0.4
+        }()
+        return StormEvent(
+            type: type,
+            year: year,
+            date: df.string(from: alert.eventDate),
+            intensity: intensity,
+            sizeInches: alert.magnitudeIn,
+            windMPH: alert.windMph,
+            x: 0.5, y: 0.5, radius: 0.2,
+            propertiesAffected: alert.propertyCount
+        )
+    }
+
+    private static func makeStormEvent(from e: NoaaStormEvent) -> StormEvent {
+        let type: StormType = e.eventType == .wind || e.eventType == .tornado ? .wind : .hail
+        let year = Calendar.current.component(.year, from: e.eventDate)
+        let df = DateFormatter(); df.dateFormat = "MMM d, yyyy"
+        let intensity: Double = {
+            if let h = e.magnitudeIn { return min(1, h / 2.5) }
+            if let w = e.windMph { return min(1, Double(w) / 100) }
+            return 0.4
+        }()
+        return StormEvent(
+            type: type,
+            year: year,
+            date: df.string(from: e.eventDate),
+            intensity: intensity,
+            sizeInches: e.magnitudeIn,
+            windMPH: e.windMph,
+            x: 0.5, y: 0.5, radius: 0.2,
+            propertiesAffected: 0
+        )
     }
 }

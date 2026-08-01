@@ -1,7 +1,16 @@
 import SwiftUI
 
 struct ScheduleCard: View {
+    @Environment(CustomerStore.self) private var store
     @State private var view: String = "List"
+
+    private var items: [ScheduleItem] {
+        HomeLiveData.todaySchedule(customers: store.customers)
+    }
+
+    private var subtitle: String {
+        HomeLiveData.scheduleSubtitle(items: items)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -10,7 +19,7 @@ struct ScheduleCard: View {
                     Text("Today's Schedule")
                         .font(.system(size: 18, weight: .bold))
                         .foregroundStyle(Theme.ink)
-                    Text("Thu, May 1 · 4 stops · 38 mi route")
+                    Text(subtitle)
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.inkFaint)
                 }
@@ -18,14 +27,36 @@ struct ScheduleCard: View {
                 segmented
             }
 
-            VStack(spacing: 0) {
-                ForEach(Array(MockData.schedule.enumerated()), id: \.element.id) { idx, item in
-                    ScheduleRow(item: item, isFirst: idx == 0, isLast: idx == MockData.schedule.count - 1)
+            if items.isEmpty {
+                emptyState
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(items.enumerated()), id: \.element.id) { idx, item in
+                        ScheduleRow(item: item, isFirst: idx == 0, isLast: idx == items.count - 1)
+                    }
                 }
             }
         }
         .cardStyle(padding: 18, radius: 22)
         .padding(.horizontal, 20)
+    }
+
+    private var emptyState: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Image(systemName: "calendar.badge.clock")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(Theme.inkFaint)
+                Text("Nothing on the books today")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(Theme.ink)
+            }
+            Text("Schedule an inspection from a lead profile and it will show up here.")
+                .font(.system(size: 12))
+                .foregroundStyle(Theme.inkFaint)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 8)
     }
 
     private var segmented: some View {
@@ -103,6 +134,7 @@ private struct ScheduleRow: View {
                     Text(item.address)
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.inkSoft)
+                        .lineLimit(1)
                 }
 
                 HStack(spacing: 8) {
@@ -113,24 +145,9 @@ private struct ScheduleRow: View {
                         Text(item.assignee)
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(Theme.ink)
+                            .lineLimit(1)
                     }
                     Spacer()
-                    Button {} label: {
-                        Image(systemName: "phone.fill")
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(Theme.mint)
-                            .frame(width: 28, height: 28)
-                            .background(Theme.mintSoft, in: .circle)
-                    }
-                    .buttonStyle(.plain)
-                    Button {} label: {
-                        Image(systemName: "arrow.triangle.turn.up.right.diamond.fill")
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(Theme.sky)
-                            .frame(width: 28, height: 28)
-                            .background(Theme.skySoft, in: .circle)
-                    }
-                    .buttonStyle(.plain)
                 }
             }
             .padding(14)
@@ -143,7 +160,10 @@ private struct ScheduleRow: View {
         }
     }
 
-    private var timePeriod: String { Int(item.time.prefix(2)) ?? 0 < 12 ? "AM" : "PM" }
+    private var timePeriod: String {
+        let hour = Int(item.time.prefix(2)) ?? 0
+        return hour < 12 ? "AM" : "PM"
+    }
 
     private func initials(_ name: String) -> String {
         name.split(separator: " ").compactMap { $0.first }.prefix(2).map(String.init).joined()

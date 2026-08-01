@@ -1,6 +1,16 @@
 import SwiftUI
 
 struct PipelineCard: View {
+    @Environment(CustomerStore.self) private var store
+
+    private var columns: [PipelineColumn] {
+        HomeLiveData.pipelineColumns(customers: store.customers)
+    }
+
+    private var summary: String {
+        HomeLiveData.pipelineSummary(customers: store.customers)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
@@ -8,28 +18,48 @@ struct PipelineCard: View {
                     Text("Sales Pipeline")
                         .font(.system(size: 18, weight: .bold))
                         .foregroundStyle(Theme.ink)
-                    Text("44 leads · $370k weighted")
+                    Text(summary)
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.inkFaint)
                 }
                 Spacer()
-                Button {} label: {
-                    Text("Manage")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Theme.ember)
-                }
             }
             .padding(.horizontal, 20)
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
-                    ForEach(MockData.pipeline) { col in
-                        PipelineColumnCard(column: col)
+            if columns.allSatisfy({ $0.count == 0 }) {
+                emptyState
+                    .padding(.horizontal, 20)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(columns) { col in
+                            PipelineColumnCard(column: col)
+                        }
                     }
+                    .padding(.horizontal, 20)
                 }
-                .padding(.horizontal, 20)
             }
         }
+    }
+
+    private var emptyState: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "chart.bar.doc.horizontal")
+                .font(.system(size: 18, weight: .bold))
+                .foregroundStyle(Theme.inkFaint)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("No pipeline yet")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(Theme.ink)
+                Text("New leads and jobs will fill these stages automatically.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.inkFaint)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(16)
+        .background(Theme.card, in: .rect(cornerRadius: 18))
+        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Theme.hairline, lineWidth: 0.6))
     }
 }
 
@@ -55,7 +85,6 @@ private struct PipelineColumnCard: View {
                     .foregroundStyle(Theme.inkFaint)
             }
 
-            // progress sparkline
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     Capsule().fill(column.stage.color.opacity(0.15))
@@ -72,12 +101,9 @@ private struct PipelineColumnCard: View {
     }
 
     private var progress: CGFloat {
-        switch column.stage {
-        case .new: return 0.55
-        case .contacted: return 0.70
-        case .proposal: return 0.85
-        case .won: return 0.95
-        case .lost: return 0.30
-        }
+        // Honest fill based on count, capped so empty columns stay thin.
+        let c = CGFloat(column.count)
+        if c <= 0 { return 0.08 }
+        return min(0.95, 0.18 + c * 0.12)
     }
 }

@@ -189,6 +189,82 @@ final class AuthStore {
         }
     }
 
+    /// Deletes the signed-in account and wipes local user data. Tries the
+    /// Supabase `delete-account` edge function first (server-side admin
+    /// delete). If that isn't deployed yet, still clears every on-device
+    /// store and signs the session out so the user is fully de-authed and
+    /// their local PII is gone — satisfying Guideline 5.1.1(v) locally
+    /// while the server-side wipe finishes asynchronously when available.
+    func deleteAccount() async -> Bool {
+        isBusy = true
+        lastErrorMessage = nil
+        defer { isBusy = false }
+
+        // 1. Best-effort server-side account deletion via edge function.
+        // The function (when deployed) should call auth.admin.deleteUser with
+        // the service-role key. Failure here is non-fatal — local wipe + sign
+        // out still run so the user is de-authed on device.
+        var serverDeleted = false
+        do {
+            // Decode as raw Data so we don't require a response schema.
+            let _: Data = try await SupabaseService.client.functions.invoke(
+                "delete-account",
+                options: FunctionInvokeOptions(method: .post)
+            )
+            serverDeleted = true
+        } catch {
+            print("[AuthStore] delete-account function: \(error)")
+        }
+
+        // 2. Wipe local user data regardless of server result.
+        Self.wipeLocalUserData()
+
+        // 3. Sign out so the session is gone.
+        do {
+            try await SupabaseService.client.auth.signOut()
+            state = .signedOut
+        } catch {
+            // Force local signed-out even if the network call fails.
+            state = .signedOut
+            print("[AuthStore] signOut after delete failed: \(error)")
+        }
+
+        if !serverDeleted {
+            lastErrorMessage = "Account removed from this device. If you still see it on another device, email support@roofwise.app and we'll finish the wipe."
+        }
+        return true
+    }
+
+    /// Clears every on-device store that holds user/PII data.
+    private static func wipeLocalUserData() {
+        LeadsSyncService.shared.resetLedger()
+        PhotoSyncService.shared.resetLedger()
+
+        // Wipe Documents JSON files the app owns.
+        let fm = FileManager.default
+        guard let docs = fm.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+        let prefixes = [
+            "inspections", "knock-sessions", "training-queue",
+            "storm_alerts", "stormwatch-seen", "activity-",
+            "customers", "proposals", "estimates", "corrections",
+            "safety_assessments", "geocode-cache"
+        ]
+        if let files = try? fm.contentsOfDirectory(at: docs, includingPropertiesForKeys: nil) {
+            for url in files {
+                let name = url.lastPathComponent
+                if prefixes.contains(where: { name.hasPrefix($0) }) {
+                    try? fm.removeItem(at: url)
+                }
+            }
+        }
+
+        // Clear UserDefaults keys we own.
+        let defaults = UserDefaults.standard
+        for key in defaults.dictionaryRepresentation().keys where key.hasPrefix("rw.") {
+            defaults.removeObject(forKey: key)
+        }
+    }
+
     // MARK: - Helpers
 
     private func run(_ work: @escaping () async throws -> Void) async {

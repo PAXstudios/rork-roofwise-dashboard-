@@ -20,20 +20,11 @@ private extension View {
 // MARK: 1. Today's Goals
 
 struct TodaysGoalsCard: View {
-    private struct Goal: Identifiable {
-        let id = UUID()
-        let label: String
-        let icon: String
-        let value: Int
-        let target: Int
-        var fraction: Double { min(1.0, Double(value) / Double(max(1, target))) }
-    }
+    @Environment(CustomerStore.self) private var store
 
-    private let goals: [Goal] = [
-        .init(label: "Doors Knocked", icon: "hand.tap.fill", value: 42, target: 60),
-        .init(label: "Inspections", icon: "camera.viewfinder", value: 3, target: 5),
-        .init(label: "Leads Booked", icon: "calendar.badge.plus", value: 2, target: 4)
-    ]
+    private var goals: [HomeLiveData.Goal] {
+        HomeLiveData.todaysGoals(customers: store.customers)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -74,11 +65,12 @@ struct TodaysGoalsCard: View {
     }
 
     private var overallPercent: Int {
+        guard !goals.isEmpty else { return 0 }
         let avg = goals.map(\.fraction).reduce(0, +) / Double(goals.count)
         return Int((avg * 100).rounded())
     }
 
-    private func goalRow(_ goal: Goal) -> some View {
+    private func goalRow(_ goal: HomeLiveData.Goal) -> some View {
         HStack(spacing: 12) {
             ZStack {
                 RoundedRectangle(cornerRadius: 8)
@@ -115,23 +107,37 @@ struct TodaysGoalsCard: View {
     }
 }
 
-// MARK: 2. Live Leaderboard
+// MARK: 2. Live Leaderboard (solo — no fake teammates)
 
 struct LeaderboardCard: View {
-    private struct Rep: Identifiable {
-        let id = UUID()
-        let initials: String
-        let name: String
-        let signed: Int
-        let revenue: String
-        let trend: Int
+    @Environment(CustomerStore.self) private var store
+
+    private var signedCount: Int {
+        store.customers.filter {
+            $0.stage == .approved || $0.stage == .paid || $0.stage == .jobComplete
+        }.count
     }
 
-    private let reps: [Rep] = [
-        .init(initials: "MR", name: "Mia Rivera", signed: 7, revenue: "$84.2k", trend: 18),
-        .init(initials: "AC", name: "Alex Coleman", signed: 5, revenue: "$61.0k", trend: 9),
-        .init(initials: "JT", name: "Jordan Tate", signed: 4, revenue: "$48.7k", trend: -3)
-    ]
+    private var revenueLabel: String {
+        let total = store.customers
+            .filter { $0.stage == .approved || $0.stage == .paid || $0.stage == .jobComplete }
+            .compactMap { c -> Double? in
+                let raw = c.estimatedValue
+                    .replacingOccurrences(of: "$", with: "")
+                    .replacingOccurrences(of: ",", with: "")
+                    .replacingOccurrences(of: "k", with: "000", options: .caseInsensitive)
+                if raw.contains("-") {
+                    let parts = raw.split(separator: "-").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+                    guard parts.count == 2 else { return parts.first }
+                    return (parts[0] + parts[1]) / 2
+                }
+                return Double(raw)
+            }
+            .reduce(0, +)
+        if total >= 1000 { return String(format: "$%.0fk", total / 1000) }
+        if total > 0 { return String(format: "$%.0f", total) }
+        return "—"
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -146,101 +152,53 @@ struct LeaderboardCard: View {
                 }
                 .frame(width: 34, height: 34)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Team Leaderboard")
+                    Text("Your Scoreboard")
                         .font(.system(size: 15, weight: .heavy))
                         .foregroundStyle(Theme.ink)
-                    Text("This week · contracts signed")
+                    Text("This period · your contracts only")
                         .font(.system(size: 11))
                         .foregroundStyle(Theme.inkFaint)
                 }
                 Spacer()
-                Button {} label: {
-                    Text("View all")
-                        .font(.system(size: 12, weight: .heavy))
-                        .foregroundStyle(Theme.ember)
-                }
             }
 
-            VStack(spacing: 8) {
-                ForEach(Array(reps.enumerated()), id: \.element.id) { index, rep in
-                    repRow(rank: index + 1, rep: rep)
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle().fill(Theme.ink.opacity(0.08))
+                    Text(HomeLiveData.displayInitials())
+                        .font(.system(size: 11, weight: .heavy))
+                        .foregroundStyle(Theme.ink)
                 }
+                .frame(width: 32, height: 32)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(HomeLiveData.displayName())
+                        .font(.system(size: 13, weight: .heavy))
+                        .foregroundStyle(Theme.ink)
+                    Text("\(signedCount) signed · \(revenueLabel)")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.inkFaint)
+                }
+                Spacer()
+                Text(signedCount == 0 ? "Get started" : "You")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(Theme.mint)
+                    .padding(.horizontal, 8).padding(.vertical, 4)
+                    .background(Theme.mintSoft, in: .capsule)
             }
         }
         .homeSectionCard()
     }
-
-    private func repRow(rank: Int, rep: Rep) -> some View {
-        HStack(spacing: 12) {
-            Text("\(rank)")
-                .font(.system(size: 12, weight: .heavy))
-                .foregroundStyle(rankColor(rank))
-                .frame(width: 18, height: 18)
-                .background(rankColor(rank).opacity(0.14), in: .rect(cornerRadius: 5))
-
-            ZStack {
-                Circle().fill(Theme.ink.opacity(0.08))
-                Text(rep.initials)
-                    .font(.system(size: 11, weight: .heavy))
-                    .foregroundStyle(Theme.ink)
-            }
-            .frame(width: 32, height: 32)
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text(rep.name)
-                    .font(.system(size: 13, weight: .heavy))
-                    .foregroundStyle(Theme.ink)
-                Text("\(rep.signed) signed · \(rep.revenue)")
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.inkFaint)
-            }
-            Spacer()
-            HStack(spacing: 3) {
-                Image(systemName: rep.trend >= 0 ? "arrow.up.right" : "arrow.down.right")
-                    .font(.system(size: 9, weight: .bold))
-                Text("\(abs(rep.trend))%")
-                    .font(.system(size: 11, weight: .heavy))
-                    .monospacedDigit()
-            }
-            .foregroundStyle(rep.trend >= 0 ? Theme.mint : Theme.crimson)
-            .padding(.horizontal, 8).padding(.vertical, 4)
-            .background((rep.trend >= 0 ? Theme.mintSoft : Theme.emberSoft), in: .capsule)
-        }
-    }
-
-    private func rankColor(_ rank: Int) -> Color {
-        switch rank {
-        case 1: return Theme.amber
-        case 2: return Theme.inkSoft
-        default: return Theme.ember
-        }
-    }
 }
 
-// MARK: 3. Recent Wins feed
+// MARK: 3. Recent Wins feed (real paid/approved customers only)
 
 struct RecentWinsCard: View {
-    private struct Win: Identifiable {
-        let id = UUID()
-        let initials: String
-        let name: String
-        let amount: String
-        let address: String
-        let minutesAgo: Int
-        let tint: Color
-    }
+    @Environment(CustomerStore.self) private var store
 
-    private let wins: [Win] = [
-        .init(initials: "MR", name: "Mia Rivera",
-              amount: "$18,450", address: "412 Chestnut St",
-              minutesAgo: 22, tint: Theme.ember),
-        .init(initials: "AC", name: "You",
-              amount: "$12,800", address: "88 Ridgeview Dr",
-              minutesAgo: 96, tint: Theme.sky),
-        .init(initials: "JT", name: "Jordan Tate",
-              amount: "$9,200", address: "1207 Maple Ln",
-              minutesAgo: 184, tint: Theme.mint)
-    ]
+    private var wins: [HomeLiveData.Win] {
+        HomeLiveData.recentWins(customers: store.customers)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -258,32 +216,36 @@ struct RecentWinsCard: View {
                     Text("Recent Wins")
                         .font(.system(size: 15, weight: .heavy))
                         .foregroundStyle(Theme.ink)
-                    Text("Live feed · contracts signed today")
+                    Text(wins.isEmpty
+                         ? "Approved and paid jobs land here"
+                         : "Your approved & paid jobs")
                         .font(.system(size: 11))
                         .foregroundStyle(Theme.inkFaint)
                 }
                 Spacer()
-                HStack(spacing: 5) {
-                    Circle().fill(Theme.mint).frame(width: 7, height: 7)
-                    Text("LIVE")
-                        .font(.system(size: 9, weight: .heavy))
-                        .tracking(1.0)
-                        .foregroundStyle(Theme.mint)
-                }
-                .padding(.horizontal, 8).padding(.vertical, 4)
-                .background(Theme.mintSoft, in: .capsule)
             }
 
-            VStack(spacing: 10) {
-                ForEach(wins) { win in
-                    winRow(win)
+            if wins.isEmpty {
+                HStack(spacing: 10) {
+                    Image(systemName: "flag")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(Theme.inkFaint)
+                    Text("No wins yet — close your first job to celebrate here.")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Theme.inkSoft)
+                }
+            } else {
+                VStack(spacing: 10) {
+                    ForEach(wins) { win in
+                        winRow(win)
+                    }
                 }
             }
         }
         .homeSectionCard()
     }
 
-    private func winRow(_ win: Win) -> some View {
+    private func winRow(_ win: HomeLiveData.Win) -> some View {
         HStack(spacing: 12) {
             ZStack {
                 Circle().fill(win.tint.opacity(0.16))
@@ -294,17 +256,9 @@ struct RecentWinsCard: View {
             .frame(width: 34, height: 34)
 
             VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(win.name)
-                        .font(.system(size: 13, weight: .heavy))
-                        .foregroundStyle(Theme.ink)
-                    Text("·")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.inkFaint)
-                    Text(timeLabel(win.minutesAgo))
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.inkFaint)
-                }
+                Text(win.name)
+                    .font(.system(size: 13, weight: .heavy))
+                    .foregroundStyle(Theme.ink)
                 Text(win.address)
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.inkSoft)
@@ -316,12 +270,6 @@ struct RecentWinsCard: View {
                 .foregroundStyle(Theme.ink)
                 .monospacedDigit()
         }
-    }
-
-    private func timeLabel(_ minutes: Int) -> String {
-        if minutes < 60 { return "\(minutes)m ago" }
-        let h = minutes / 60
-        return "\(h)h ago"
     }
 }
 
@@ -335,4 +283,5 @@ struct RecentWinsCard: View {
         .padding(.vertical, 20)
     }
     .background(Theme.canvas)
+    .environment(CustomerStore())
 }

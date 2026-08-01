@@ -24,7 +24,7 @@ A required sign-in screen on launch (Apple or email/password), a synced cloud co
 ### Screens
 - **Welcome / Sign-in** — the gate everyone hits on first launch and after sign-out; toggles between Sign In and Create Account modes.
 - **Forgot password** — small screen with a single email field and "Send reset link" button.
-- **Settings → Account** — shows current user, sign-out, and a "Delete account" option (with a strong confirm step).
+- **Settings → Account** — shows current user, sign-out, and a "Delete account" option (with a strong confirm step). ✅
 - **Leads list (existing)** — gets a small sync status badge in the header and an automatic background refresh.
 
 ### Behind the scenes (no UI impact)

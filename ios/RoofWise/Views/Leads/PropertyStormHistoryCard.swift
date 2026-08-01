@@ -26,13 +26,25 @@ struct PropertyStormHistoryCard: View {
                     .background(Theme.canvas, in: .capsule)
             }
 
-            if let top = hits.first {
-                topHero(top)
-            }
+            if hits.isEmpty {
+                HStack(spacing: 10) {
+                    Image(systemName: "cloud.slash")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(Theme.inkFaint)
+                    Text("No storms on record near this property yet. Storm alerts in your service area will appear here.")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Theme.inkSoft)
+                }
+                .padding(.vertical, 4)
+            } else {
+                if let top = hits.first {
+                    topHero(top)
+                }
 
-            VStack(spacing: 8) {
-                ForEach(hits) { hit in
-                    row(hit)
+                VStack(spacing: 8) {
+                    ForEach(hits) { hit in
+                        row(hit)
+                    }
                 }
             }
 
@@ -40,7 +52,9 @@ struct PropertyStormHistoryCard: View {
                 Image(systemName: "info.circle.fill")
                     .font(.system(size: 10, weight: .bold))
                     .foregroundStyle(Theme.inkFaint)
-                Text("Sourced from regional NEXRAD + carrier loss data")
+                Text(hits.isEmpty
+                     ? "Live NOAA history · no mock data"
+                     : "Sourced from live NOAA storm history")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(Theme.inkFaint)
                 Spacer()

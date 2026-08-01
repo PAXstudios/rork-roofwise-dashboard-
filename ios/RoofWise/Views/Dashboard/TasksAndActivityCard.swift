@@ -2,8 +2,10 @@ import SwiftUI
 
 struct TasksAndActivityCard: View {
     var embedded: Bool = false
-    @State private var tasks: [TaskItem] = MockData.tasks
+    @Environment(CustomerStore.self) private var store
     @State private var tab: String = "Tasks"
+    @State private var tasks: [TaskItem] = []
+    @State private var activity: [ActivityEntry] = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -27,21 +29,59 @@ struct TasksAndActivityCard: View {
             }
 
             if tab == "Tasks" {
-                VStack(spacing: 8) {
-                    ForEach($tasks) { $task in
-                        TaskRow(task: $task)
+                if tasks.isEmpty {
+                    emptyRow(icon: "checklist",
+                             title: "No open tasks",
+                             detail: "Follow-ups and AI reviews show up here automatically.")
+                } else {
+                    VStack(spacing: 8) {
+                        ForEach($tasks) { $task in
+                            TaskRow(task: $task)
+                        }
                     }
                 }
             } else {
-                VStack(spacing: 0) {
-                    ForEach(Array(MockData.activity.enumerated()), id: \.element.id) { idx, entry in
-                        ActivityRow(entry: entry, isLast: idx == MockData.activity.count - 1)
+                if activity.isEmpty {
+                    emptyRow(icon: "clock.arrow.circlepath",
+                             title: "No activity yet",
+                             detail: "Storm alerts, inspections, and wins will appear here.")
+                } else {
+                    VStack(spacing: 0) {
+                        ForEach(Array(activity.enumerated()), id: \.element.id) { idx, entry in
+                            ActivityRow(entry: entry, isLast: idx == activity.count - 1)
+                        }
                     }
                 }
             }
         }
         .cardStyle(padding: 18, radius: 22)
         .padding(.horizontal, embedded ? 0 : 20)
+        .onAppear { reload() }
+        .onChange(of: store.customers.count) { _, _ in reload() }
+    }
+
+    private func reload() {
+        tasks = HomeLiveData.derivedTasks(customers: store.customers)
+        activity = HomeLiveData.recentActivity(customers: store.customers)
+    }
+
+    private func emptyRow(icon: String, title: String, detail: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 16, weight: .bold))
+                .foregroundStyle(Theme.inkFaint)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(Theme.ink)
+                Text(detail)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.inkFaint)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .background(Theme.canvas, in: .rect(cornerRadius: 14))
     }
 }
 
@@ -109,6 +149,7 @@ private struct ActivityRow: View {
                     Text(entry.title)
                         .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(Theme.ink)
+                        .lineLimit(1)
                     Spacer()
                     Text(entry.time)
                         .font(.system(size: 10, weight: .semibold))
@@ -117,6 +158,7 @@ private struct ActivityRow: View {
                 Text(entry.detail)
                     .font(.system(size: 12))
                     .foregroundStyle(Theme.inkSoft)
+                    .lineLimit(2)
             }
             .padding(.bottom, isLast ? 0 : 14)
             .overlay(alignment: .bottom) {

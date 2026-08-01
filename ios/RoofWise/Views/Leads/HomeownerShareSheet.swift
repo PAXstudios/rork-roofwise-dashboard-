@@ -25,9 +25,9 @@ struct HomeownerShareSheet: View {
             photos: customer.photos,
             findings: customer.damageFindings,
             nextStep: nextStep,
-            repName: "Alex Coleman",
-            repPhone: "(214) 555-0142",
-            repCompany: "RoofWise Field Co."
+            repName: HomeLiveData.displayName(),
+            repPhone: "",
+            repCompany: "RoofWise"
         )
     }
 

@@ -10,6 +10,7 @@ struct AddressPickerSheet: View {
 
     @State private var query: String = ""
     @State private var results: [AddressSuggestion] = []
+    @State private var speech = SpeechDictationService()
     @FocusState private var focused: Bool
 
     var body: some View {
@@ -63,14 +64,14 @@ struct AddressPickerSheet: View {
                 .buttonStyle(.plain)
             }
             Button {
-                // Mic affordance — placeholder for future Speech integration.
-                // Kept visual only for now; not a stub the user can mistakenly tap.
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                speech.toggle()
             } label: {
-                Image(systemName: "mic.fill")
+                Image(systemName: speech.isListening ? "mic.fill" : "mic")
                     .font(.system(size: Theme.TypeRamp.subhead, weight: .heavy))
                     .foregroundStyle(.white)
                     .frame(width: 44, height: 44)
-                    .background(Theme.ink, in: .rect(cornerRadius: 12))
+                    .background(speech.isListening ? Theme.ember : Theme.ink, in: .rect(cornerRadius: 12))
             }
             .buttonStyle(.plain)
         }
@@ -80,6 +81,10 @@ struct AddressPickerSheet: View {
         .padding(.horizontal, 20)
         .padding(.bottom, 16)
         .onAppear { focused = true }
+        .onChange(of: speech.transcript) { _, value in
+            guard !value.isEmpty else { return }
+            query = value
+        }
     }
 
     @ViewBuilder

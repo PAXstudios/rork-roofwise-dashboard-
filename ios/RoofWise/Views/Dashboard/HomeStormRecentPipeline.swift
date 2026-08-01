@@ -54,56 +54,15 @@ struct HomePipelineStage: Identifiable {
     let mappedStage: JobPipelineStage?
 }
 
+/// Kept as a namespace so older call sites compile; all data now comes from
+/// `HomeLiveData` (real CustomerStore / InspectionStore counts).
 enum HomeSectionsMock {
-    static let stormAlertActive: Bool = true
+    static func recentJobs(from customers: [Customer]) -> [HomeRecentJob] {
+        HomeLiveData.homeRecentJobs(customers: customers)
+    }
 
-    static let recentJobs: [HomeRecentJob] = [
-        .init(customerName: "Coleman Family",
-              address: "1247 Oakridge Ln · Plano",
-              stageType: .completed,
-              damageScore: 88,
-              imageURL: "https://images.unsplash.com/photo-1568605114967-8130f3a36994?w=900"),
-        .init(customerName: "Mia & Tom Smith",
-              address: "445 Pine Lane · Frisco",
-              stageType: .inProgress,
-              damageScore: 64,
-              imageURL: "https://images.unsplash.com/photo-1564013799919-ab600027ffc6?w=900"),
-        .init(customerName: "Hawthorn Estate",
-              address: "88 Maple Cove · McKinney",
-              stageType: .approved,
-              damageScore: 72,
-              imageURL: "https://images.unsplash.com/photo-1605276374104-dee2a0ed3cd6?w=900"),
-        .init(customerName: "Patel Residence",
-              address: "5501 Stonebriar Pkwy · Frisco",
-              stageType: .estimateSent,
-              damageScore: 54,
-              imageURL: "https://images.unsplash.com/photo-1518780664697-55e3ad937233?w=900"),
-        .init(customerName: "Riverside Townhomes",
-              address: "2210 Custer Pkwy · Plano",
-              stageType: .inProgress,
-              damageScore: 41,
-              imageURL: "https://images.unsplash.com/photo-1597047084897-51e81819a499?w=900"),
-        .init(customerName: "Nguyen Residence",
-              address: "312 Eldorado Pkwy · McKinney",
-              stageType: .inspectionDone,
-              damageScore: 22,
-              imageURL: "https://images.unsplash.com/photo-1564501049412-61c2a3083791?w=900")
-    ]
-
-    static func pipeline() -> [HomePipelineStage] {
-        // Mocked from existing leads/jobs feel; always returns 8 chips even at 0.
-        [
-            .init(label: "NEW LEAD",   color: Theme.inkFaint, count: 18, mappedStage: .knocked),
-            .init(label: "CONTACTED",  color: Theme.sky,       count: 12, mappedStage: .interested),
-            .init(label: "INSP SCHED", color: Theme.amber,     count: 7,  mappedStage: .inspectionScheduled),
-            .init(label: "INSP DONE",  color: Theme.amber,     count: 5,  mappedStage: .inspectionComplete),
-            .init(label: "ESTIMATE",   color: Color(red: 0.55, green: 0.30, blue: 0.85),
-                  count: 6, mappedStage: .recapSent),
-            .init(label: "APPROVED",   color: Theme.mint,      count: 4,  mappedStage: .approved),
-            .init(label: "INSTALL",    color: Theme.ember,     count: 3,  mappedStage: .materialOrdered),
-            .init(label: "PAID",       color: Color(red: 0.10, green: 0.55, blue: 0.35),
-                  count: 9, mappedStage: .paid)
-        ]
+    static func pipeline(from customers: [Customer]) -> [HomePipelineStage] {
+        HomeLiveData.homePipelineStages(customers: customers)
     }
 }
 
@@ -374,12 +333,16 @@ struct StormAlertHero: View {
 // MARK: - 2. Recent Jobs (home variant)
 
 struct RecentJobsHomeSection: View {
+    @Environment(CustomerStore.self) private var store
     var onSeeAll: () -> Void = {}
     var onOpenJob: (HomeRecentJob) -> Void = { _ in }
 
+    private var jobs: [HomeRecentJob] {
+        HomeSectionsMock.recentJobs(from: store.customers)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Header row 56pt
             HStack(spacing: 12) {
                 Text("Recent Jobs")
                     .font(.system(size: 22, weight: .bold))
@@ -403,20 +366,41 @@ struct RecentJobsHomeSection: View {
             .padding(.horizontal, 20)
             .padding(.bottom, 6)
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 16) {
-                    ForEach(HomeSectionsMock.recentJobs) { job in
-                        Button {
-                            UIImpactFeedbackGenerator(style: .soft).impactOccurred()
-                            onOpenJob(job)
-                        } label: {
-                            RecentJobHomeCard(job: job)
-                        }
-                        .buttonStyle(.plain)
+            if jobs.isEmpty {
+                HStack(spacing: 12) {
+                    Image(systemName: "house")
+                        .font(.system(size: 18, weight: .bold))
+                        .foregroundStyle(Theme.inkFaint)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("No jobs yet")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(Theme.ink)
+                        Text("Create a New Lead to populate this row.")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Theme.inkFaint)
                     }
+                    Spacer(minLength: 0)
                 }
+                .padding(16)
+                .background(Theme.card, in: .rect(cornerRadius: 16))
+                .overlay(RoundedRectangle(cornerRadius: 16).stroke(Theme.hairline, lineWidth: 0.6))
                 .padding(.horizontal, 20)
-                .padding(.vertical, 4)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 16) {
+                        ForEach(jobs) { job in
+                            Button {
+                                UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+                                onOpenJob(job)
+                            } label: {
+                                RecentJobHomeCard(job: job)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 4)
+                }
             }
         }
     }
@@ -425,6 +409,16 @@ struct RecentJobsHomeSection: View {
 private struct RecentJobHomeCard: View {
     let job: HomeRecentJob
 
+    private var homeJobPlaceholder: some View {
+        ZStack {
+            LinearGradient(colors: [Theme.ink.opacity(0.65), Theme.inkSoft],
+                           startPoint: .top, endPoint: .bottom)
+            Image(systemName: "house.fill")
+                .font(.system(size: 40))
+                .foregroundStyle(.white.opacity(0.35))
+        }
+    }
+
     // Card 240×220, photo top 60% (132pt), bottom info ~88pt
     var body: some View {
         VStack(spacing: 0) {
@@ -432,21 +426,19 @@ private struct RecentJobHomeCard: View {
             Color(.secondarySystemBackground)
                 .frame(width: 240, height: 132)
                 .overlay {
-                    AsyncImage(url: URL(string: job.imageURL)) { phase in
-                        switch phase {
-                        case .success(let img):
-                            img.resizable().aspectRatio(contentMode: .fill)
-                        default:
-                            ZStack {
-                                LinearGradient(colors: [Theme.ink.opacity(0.65), Theme.inkSoft],
-                                               startPoint: .top, endPoint: .bottom)
-                                Image(systemName: "house.fill")
-                                    .font(.system(size: 40))
-                                    .foregroundStyle(.white.opacity(0.35))
+                    if let url = URL(string: job.imageURL), !job.imageURL.isEmpty {
+                        AsyncImage(url: url) { phase in
+                            switch phase {
+                            case .success(let img):
+                                img.resizable().aspectRatio(contentMode: .fill)
+                            default:
+                                homeJobPlaceholder
                             }
                         }
+                        .allowsHitTesting(false)
+                    } else {
+                        homeJobPlaceholder
                     }
-                    .allowsHitTesting(false)
                 }
                 .clipShape(.rect(topLeadingRadius: 16, topTrailingRadius: 16))
                 .overlay(alignment: .bottom) {
@@ -524,10 +516,13 @@ private struct RecentJobHomeCard: View {
 // MARK: - 3. Pipeline Mini
 
 struct PipelineMiniSection: View {
+    @Environment(CustomerStore.self) private var store
     var onOpenBoard: () -> Void = {}
     var onTapStage: (HomePipelineStage) -> Void = { _ in }
 
-    private let stages = HomeSectionsMock.pipeline()
+    private var stages: [HomePipelineStage] {
+        HomeSectionsMock.pipeline(from: store.customers)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {

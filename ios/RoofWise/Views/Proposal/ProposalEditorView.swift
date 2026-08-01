@@ -483,19 +483,19 @@ struct VoiceTextField: View {
     @Binding var text: String
     let placeholder: String
     var onChange: () -> Void = {}
-    @State private var listening = false
+    @State private var speech = SpeechDictationService()
 
     var body: some View {
         HStack(spacing: 10) {
             Button {
-                listening.toggle()
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                speech.toggle()
             } label: {
-                Image(systemName: listening ? "mic.fill" : "mic")
+                Image(systemName: speech.isListening ? "mic.fill" : "mic")
                     .font(.system(size: Theme.TypeRamp.body, weight: .heavy))
-                    .foregroundStyle(listening ? Theme.ember : Theme.inkSoft)
+                    .foregroundStyle(speech.isListening ? Theme.ember : Theme.inkSoft)
                     .frame(width: 44, height: 44)
-                    .background(listening ? Theme.emberSoft : Theme.canvas, in: .circle)
+                    .background(speech.isListening ? Theme.emberSoft : Theme.canvas, in: .circle)
             }
             .buttonStyle(.plain)
             TextField(placeholder, text: $text)
@@ -507,6 +507,11 @@ struct VoiceTextField: View {
         .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
         .background(Theme.card, in: .rect(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.hairline, lineWidth: 1))
+        .onChange(of: speech.transcript) { _, value in
+            guard !value.isEmpty else { return }
+            text = value
+            onChange()
+        }
     }
 }
 
@@ -515,7 +520,7 @@ struct VoiceTextEditor: View {
     let placeholder: String
     var minHeight: CGFloat = 140
     var onChange: () -> Void = {}
-    @State private var listening = false
+    @State private var speech = SpeechDictationService()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -540,20 +545,31 @@ struct VoiceTextEditor: View {
             .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.hairline, lineWidth: 1))
 
             Button {
-                listening.toggle()
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                speech.toggle()
             } label: {
                 HStack(spacing: 8) {
-                    Image(systemName: listening ? "mic.fill" : "mic")
-                    Text(listening ? "Listening…" : "Voice input")
+                    Image(systemName: speech.isListening ? "mic.fill" : "mic")
+                    Text(speech.isListening ? "Listening…" : "Voice input")
                 }
                 .font(.system(size: Theme.TypeRamp.metaSm, weight: .heavy))
-                .foregroundStyle(listening ? Theme.ember : Theme.inkSoft)
+                .foregroundStyle(speech.isListening ? Theme.ember : Theme.inkSoft)
                 .padding(.horizontal, 14)
                 .frame(minHeight: 44)
-                .background(listening ? Theme.emberSoft : Theme.canvas, in: .capsule)
+                .background(speech.isListening ? Theme.emberSoft : Theme.canvas, in: .capsule)
             }
             .buttonStyle(.plain)
+
+            if case .unavailable(let msg) = speech.state {
+                Text(msg)
+                    .font(.system(size: Theme.TypeRamp.metaSm, weight: .semibold))
+                    .foregroundStyle(Theme.crimson)
+            }
+        }
+        .onChange(of: speech.transcript) { _, value in
+            guard !value.isEmpty else { return }
+            text = value
+            onChange()
         }
     }
 }

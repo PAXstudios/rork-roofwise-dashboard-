@@ -20,7 +20,7 @@ struct LogKnockSheet: View {
     @State private var showCustomPicker: Bool = false
     @State private var address: String? = nil
     @State private var isResolvingAddress: Bool = false
-    @State private var isVoiceListening: Bool = false
+    @State private var speech = SpeechDictationService()
 
     private let geocoder: GeocodingService = GeocodingServiceFactory.shared
 
@@ -57,6 +57,11 @@ struct LogKnockSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .navigationTitle("Log Knock")
             .safeAreaInset(edge: .bottom) { bottomBar }
+            .onChange(of: speech.transcript) { _, value in
+                guard !value.isEmpty else { return }
+                notes = value
+            }
+            .onDisappear { speech.stop() }
             .sheet(isPresented: $showCustomPicker) {
                 NavigationStack {
                     VStack(spacing: 16) {
@@ -187,24 +192,27 @@ struct LogKnockSheet: View {
                 Spacer()
                 Button {
                     let g = UIImpactFeedbackGenerator(style: .light); g.impactOccurred()
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
-                        isVoiceListening.toggle()
-                    }
+                    speech.toggle()
                 } label: {
                     HStack(spacing: 6) {
-                        Image(systemName: isVoiceListening ? "mic.fill" : "mic")
+                        Image(systemName: speech.isListening ? "mic.fill" : "mic")
                             .font(.system(size: Theme.TypeRamp.metaSm, weight: .heavy))
-                        Text(isVoiceListening ? "Listening…" : "Voice")
+                        Text(speech.isListening ? "Listening…" : "Voice")
                             .font(.system(size: Theme.TypeRamp.metaSm, weight: .heavy))
                     }
-                    .foregroundStyle(isVoiceListening ? .white : Theme.ember)
+                    .foregroundStyle(speech.isListening ? .white : Theme.ember)
                     .padding(.horizontal, 12).padding(.vertical, 8)
                     .background(
-                        isVoiceListening ? AnyShapeStyle(Theme.ember) : AnyShapeStyle(Theme.emberSoft),
+                        speech.isListening ? AnyShapeStyle(Theme.ember) : AnyShapeStyle(Theme.emberSoft),
                         in: .capsule
                     )
                 }
                 .buttonStyle(.plain)
+            }
+            if case .unavailable(let msg) = speech.state {
+                Text(msg)
+                    .font(.system(size: Theme.TypeRamp.metaSm, weight: .semibold))
+                    .foregroundStyle(Theme.crimson)
             }
             TextEditor(text: $notes)
                 .font(.system(size: Theme.TypeRamp.body))

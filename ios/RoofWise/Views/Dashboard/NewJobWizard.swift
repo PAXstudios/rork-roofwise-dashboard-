@@ -349,6 +349,7 @@ private struct MicField: View {
     @Binding var text: String
     var placeholder: String = ""
     var keyboard: UIKeyboardType = .default
+    @State private var speech = SpeechDictationService()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
@@ -356,13 +357,13 @@ private struct MicField: View {
             HStack(spacing: 10) {
                 Button {
                     UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                    // Voice-input stub: hooked up when real dictation lands.
+                    speech.toggle()
                 } label: {
-                    Image(systemName: "mic.fill")
+                    Image(systemName: speech.isListening ? "mic.fill" : "mic")
                         .font(.system(size: 15, weight: .bold))
-                        .foregroundStyle(Theme.ember)
+                        .foregroundStyle(speech.isListening ? .white : Theme.ember)
                         .frame(width: 48, height: 50)
-                        .background(Theme.emberSoft, in: .rect(cornerRadius: 12))
+                        .background(speech.isListening ? Theme.ember : Theme.emberSoft, in: .rect(cornerRadius: 12))
                 }
                 .buttonStyle(.plain)
 
@@ -377,6 +378,15 @@ private struct MicField: View {
                     .overlay(RoundedRectangle(cornerRadius: 12)
                         .stroke(Theme.hairline, lineWidth: 0.6))
             }
+            if case .unavailable(let msg) = speech.state {
+                Text(msg)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.crimson)
+            }
+        }
+        .onChange(of: speech.transcript) { _, value in
+            guard !value.isEmpty else { return }
+            text = value
         }
     }
 }

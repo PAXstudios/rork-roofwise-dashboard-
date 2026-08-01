@@ -546,8 +546,10 @@ struct InspectorUser: Hashable, Sendable {
     var name: String
     var company: String
 
+    /// Defaults to a neutral company label. The display name is resolved at
+    /// runtime from the signed-in account (see `HomeLiveData.displayName()`).
     static let current = InspectorUser(
-        name: "Alex Coleman",
-        company: "RoofWise Inspection Services"
+        name: "",
+        company: "RoofWise"
     )
 }
