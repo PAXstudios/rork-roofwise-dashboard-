@@ -35,15 +35,15 @@ private let onboardingPages: [OnboardingPage] = [
         id: 0,
         eyebrow: "ROOFWISE",
         title: "Storm-ready\nroofing, simplified.",
-        body: "The field tool built for inspectors who chase hail, write claims, and close jobs before the next front rolls in.",
+        body: "AI shingle damage detection in your pocket — plus storm maps, door-knock routes, and claim packets built for inspectors who close before the next front rolls in.",
         accent: Theme.ember,
         kind: .brand
     ),
     OnboardingPage(
         id: 1,
-        eyebrow: "AI DAMAGE SCAN",
-        title: "See every hit.\nDocument it once.",
-        body: "Point your camera. RoofWise marks hail, wind, and wear in real time so your report is courtroom-clean before you leave the driveway.",
+        eyebrow: "AI IN YOUR POCKET",
+        title: "AI roof shingle\ndamage detection.",
+        body: "Point your phone at any roof. RoofWise finds hail hits, wind lift, and granule loss on the shingles — marks them live, and builds a claim-ready report before you leave the driveway.",
         accent: Theme.ember,
         kind: .scan
     ),
@@ -619,7 +619,7 @@ private struct ScanHeroArt: View {
                     .overlay(alignment: .bottom) {
                         HStack(spacing: 6) {
                             Circle().fill(Theme.mint).frame(width: 6, height: 6)
-                            Text("4 markers · 92% conf")
+                            Text("AI shingle scan · 4 hits")
                                 .font(.system(size: 9, weight: .bold, design: .rounded))
                                 .foregroundStyle(.white.opacity(0.85))
                         }
@@ -630,8 +630,8 @@ private struct ScanHeroArt: View {
                     }
 
                 // Floating chips
-                floatingChip(icon: "cloud.bolt.fill", label: "Hail 1.75\"", x: -118, y: -70, delay: 0)
-                floatingChip(icon: "wind", label: "Wind 68 mph", x: 118, y: 40, delay: 0.4)
+                floatingChip(icon: "viewfinder", label: "In your pocket", x: -118, y: -70, delay: 0)
+                floatingChip(icon: "checkmark.seal.fill", label: "Shingle hits", x: 118, y: 40, delay: 0.4)
             }
         }
     }
@@ -910,7 +910,7 @@ private struct LaunchHeroArt: View {
 
     private let steps = [
         ("1", "Add your first lead", Theme.sky),
-        ("2", "Run a roof scan", Theme.ember),
+        ("2", "AI-scan the shingles", Theme.ember),
         ("3", "Send the proposal", Theme.ink),
     ]
 
