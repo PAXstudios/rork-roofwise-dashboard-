@@ -60,7 +60,7 @@ private let onboardingPages: [OnboardingPage] = [
         eyebrow: "CLAIMS & CLOSES",
         title: "From photo\nto signed proposal.",
         body: "One flow for leads, inspections, estimates, and homeowner-ready packets. Less paperwork. More roofs won.",
-        accent: Theme.mint,
+        accent: Theme.ember,
         kind: .claim
     ),
     OnboardingPage(
@@ -181,19 +181,22 @@ struct OnboardingView: View {
 
             Spacer()
 
-            if !isLast {
-                Button {
-                    finish()
-                } label: {
-                    Text("Skip")
-                        .font(.system(size: Theme.TypeRamp.meta, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.72))
-                        .frame(minWidth: 56, minHeight: 44)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .opacity(appeared ? 1 : 0)
+            // Always available — jump straight to login / signup.
+            Button {
+                finish()
+            } label: {
+                Text(isLast ? "Sign in" : "Skip")
+                    .font(.system(size: Theme.TypeRamp.meta, weight: .bold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 14)
+                    .frame(minHeight: 36)
+                    .background(.white.opacity(0.14), in: Capsule())
+                    .overlay(Capsule().stroke(.white.opacity(0.28), lineWidth: 0.7))
+                    .contentShape(Capsule())
             }
+            .buttonStyle(PressBounceStyle(scale: 0.96))
+            .accessibilityLabel(isLast ? "Go to sign in" : "Skip onboarding")
+            .opacity(appeared ? 1 : 0)
         }
     }
 
@@ -248,21 +251,21 @@ struct OnboardingView: View {
     // MARK: Bottom chrome
 
     private var bottomChrome: some View {
-        VStack(spacing: 18) {
+        VStack(spacing: 12) {
             // Progress dots
             HStack(spacing: 8) {
                 ForEach(onboardingPages) { p in
                     let selected = p.id == pageIndex
                     Capsule()
                         .fill(selected ? page.accent : .white.opacity(0.22))
-                        .frame(width: selected ? 28 : 8, height: 8)
+                        .frame(width: selected ? 22 : 7, height: 7)
                         .overlay {
                             if selected {
                                 Capsule()
                                     .fill(page.accent)
                                     .matchedGeometryEffect(id: "dot", in: dotNS)
-                                    .blur(radius: 6)
-                                    .opacity(0.55)
+                                    .blur(radius: 5)
+                                    .opacity(0.50)
                             }
                         }
                         .animation(Theme.Motion.snappy, value: pageIndex)
@@ -275,47 +278,49 @@ struct OnboardingView: View {
             }
             .frame(maxWidth: .infinity)
 
-            // Primary CTA
+            // Primary CTA — compact, not full-bleed giant
             Button {
                 advance()
             } label: {
-                ZStack {
+                HStack(spacing: 8) {
+                    Text(isLast ? "Get started" : "Continue")
+                        .font(.system(size: Theme.TypeRamp.bodyTight, weight: .bold, design: .rounded))
+                    Image(systemName: isLast ? "arrow.right" : "arrow.right")
+                        .font(.system(size: 14, weight: .bold))
+                        .symbolEffect(.bounce, value: pageIndex)
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 28)
+                .frame(minHeight: 44)
+                .background(
                     LinearGradient(
-                        colors: [page.accent, page.accent.opacity(0.82)],
+                        colors: [Theme.ember, Theme.emberDeep],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
-                    )
-
-                    HStack(spacing: 10) {
-                        Text(isLast ? "Get started" : "Continue")
-                            .font(.system(size: Theme.TypeRamp.cta, weight: .heavy, design: .rounded))
-                        Image(systemName: isLast ? "arrow.right.circle.fill" : "arrow.right")
-                            .font(.system(size: 18, weight: .bold))
-                            .symbolEffect(.bounce, value: pageIndex)
-                    }
-                    .foregroundStyle(.white)
-                }
-                .frame(maxWidth: .infinity, minHeight: 58)
-                .clipShape(.rect(cornerRadius: 18))
+                    ),
+                    in: Capsule()
+                )
                 .overlay(
-                    RoundedRectangle(cornerRadius: 18)
+                    Capsule()
                         .stroke(.white.opacity(0.28), lineWidth: 0.7)
                 )
-                .shadow(color: page.accent.opacity(0.50), radius: 20, x: 0, y: 12)
+                .shadow(color: Theme.ember.opacity(0.40), radius: 12, x: 0, y: 6)
             }
             .buttonStyle(PressBounceStyle(scale: 0.97))
             .animation(Theme.Motion.standard, value: pageIndex)
 
-            if isLast {
-                Text("Already have an account? Continue to sign in.")
-                    .font(.system(size: Theme.TypeRamp.caption, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.55))
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: .infinity)
-            } else {
-                // Keep height stable
-                Color.clear.frame(height: 16)
+            // Explicit skip path to login / signup on every page
+            Button {
+                finish()
+            } label: {
+                Text(isLast ? "I already have an account" : "Skip to sign in")
+                    .font(.system(size: Theme.TypeRamp.caption, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.70))
+                    .frame(minHeight: 36)
+                    .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Skip onboarding and go to sign in")
         }
         .opacity(appeared ? 1 : 0)
         .offset(y: appeared ? 0 : 24)
@@ -906,7 +911,7 @@ private struct LaunchHeroArt: View {
     private let steps = [
         ("1", "Add your first lead", Theme.sky),
         ("2", "Run a roof scan", Theme.ember),
-        ("3", "Send the proposal", Theme.mint),
+        ("3", "Send the proposal", Theme.ink),
     ]
 
     var body: some View {

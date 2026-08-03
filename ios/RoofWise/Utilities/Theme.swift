@@ -1,24 +1,24 @@
 import SwiftUI
 
 enum Theme {
-    // Brand palette — deep storm navy + warm rooftop ember on ivory canvas.
-    static let ink = Color(red: 0.058, green: 0.106, blue: 0.231)        // #0F1B3B
-    static let inkRaised = Color(red: 0.12, green: 0.20, blue: 0.42)      // gradient companion
-    static let inkSoft = Color(red: 0.27, green: 0.32, blue: 0.43)        // muted slate
-    static let inkFaint = Color(red: 0.55, green: 0.59, blue: 0.67)
+    // Brand palette — royal blue + burnt orange + white (Knicks-inspired).
+    static let ink = Color(red: 0.004, green: 0.290, blue: 0.612)         // royal blue #0075BC
+    static let inkRaised = Color(red: 0.020, green: 0.220, blue: 0.490)   // deep royal #05367D
+    static let inkSoft = Color(red: 0.22, green: 0.36, blue: 0.55)        // muted royal slate
+    static let inkFaint = Color(red: 0.55, green: 0.62, blue: 0.72)
     static let scrim = Color.black.opacity(0.65)                          // photo overlay scrim
-    static let canvas = Color(red: 0.973, green: 0.965, blue: 0.949)      // ivory #F8F6F2
+    static let canvas = Color.white                                       // clean white canvas
     static let card = Color.white
-    static let hairline = Color(red: 0.91, green: 0.90, blue: 0.88)
+    static let hairline = Color(red: 0.90, green: 0.91, blue: 0.93)
 
-    static let ember = Color(red: 1.00, green: 0.42, blue: 0.18)          // #FF6B2E
-    static let emberDeep = Color(red: 0.91, green: 0.32, blue: 0.10)
-    static let emberSoft = Color(red: 1.00, green: 0.93, blue: 0.88)
+    static let ember = Color(red: 0.961, green: 0.518, blue: 0.149)       // burnt orange #F58426
+    static let emberDeep = Color(red: 0.850, green: 0.400, blue: 0.060)   // deeper burnt #D9660F
+    static let emberSoft = Color(red: 1.00, green: 0.94, blue: 0.88)
 
     static let mint = Color(red: 0.18, green: 0.70, blue: 0.50)
     static let mintSoft = Color(red: 0.88, green: 0.97, blue: 0.92)
-    static let sky = Color(red: 0.20, green: 0.50, blue: 0.95)
-    static let skySoft = Color(red: 0.89, green: 0.94, blue: 1.00)
+    static let sky = Color(red: 0.004, green: 0.420, blue: 0.714)         // bright royal #006BB6
+    static let skySoft = Color(red: 0.88, green: 0.93, blue: 0.99)
     static let amber = Color(red: 0.97, green: 0.74, blue: 0.21)
     static let amberSoft = Color(red: 1.00, green: 0.96, blue: 0.86)
     static let crimson = Color(red: 0.86, green: 0.22, blue: 0.31)
@@ -65,9 +65,15 @@ extension View {
 }
 
 extension Theme {
-    /// Primary navy CTA gradient (top-leading -> bottom-trailing).
+    /// Primary royal-blue CTA gradient (top-leading -> bottom-trailing).
     static var inkGradient: LinearGradient {
         LinearGradient(colors: [ink, inkRaised],
+                       startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
+
+    /// Primary burnt-orange accent gradient.
+    static var emberGradient: LinearGradient {
+        LinearGradient(colors: [ember, emberDeep],
                        startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 }
