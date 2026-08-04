@@ -207,8 +207,8 @@ struct AccountView: View {
 /// Hosted legal URLs. Keep these stable — App Review and Sign in with Apple
 /// both require them to resolve.
 enum LegalLinks {
-    static let privacyPolicy = URL(string: "https://paxstudios.github.io/roofwise-legal/privacy.html")!
-    static let termsOfUse = URL(string: "https://paxstudios.github.io/roofwise-legal/terms.html")!
+    static let privacyPolicy = URL(string: "https://legal.getroofwise.com/privacy")!
+    static let termsOfUse = URL(string: "https://legal.getroofwise.com/terms")!
     static let support = URL(string: "https://roofwise.app/support")!
 }
 
