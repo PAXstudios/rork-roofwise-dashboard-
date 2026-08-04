@@ -31,7 +31,7 @@ struct VoiceInputButton: View {
 
     var body: some View {
         Button {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            // Start/stop/denied haptics live in SpeechDictationService.toggle().
             speech.toggle()
         } label: {
             labelContent

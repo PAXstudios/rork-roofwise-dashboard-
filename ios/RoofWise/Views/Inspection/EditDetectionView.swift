@@ -1011,8 +1011,8 @@ private struct MarkerDetailSheet: View {
 
     private var voiceButton: some View {
         Button {
+            // Start/stop/denied haptics live in SpeechDictationService.toggle().
             speech.toggle()
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: speech.isListening ? "stop.circle.fill" : "mic.fill")

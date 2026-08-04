@@ -88,7 +88,7 @@ struct AddToLeadListSheet: View {
                 .buttonStyle(.plain)
             }
             Button {
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                // Start/stop/denied haptics live in SpeechDictationService.toggle().
                 speech.toggle()
             } label: {
                 Image(systemName: speech.isListening ? "mic.fill" : "mic")

@@ -356,7 +356,7 @@ private struct MicField: View {
             FieldLabel(text: label)
             HStack(spacing: 10) {
                 Button {
-                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    // Start/stop/denied haptics live in SpeechDictationService.toggle().
                     speech.toggle()
                 } label: {
                     Image(systemName: speech.isListening ? "mic.fill" : "mic")
