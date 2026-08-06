@@ -47,20 +47,22 @@
 
     body.innerHTML = rows
       .map(function (row) {
-        // A zero must draw nothing — a minimum-width stub would read as "some".
+        // A zero draws no bar element at all. Setting width:0 isn't enough —
+        // .chart__bar carries min-width: 3px so the track would still show a
+        // stub, which reads as "a small amount" rather than "none".
         var width = max && row.count ? Math.max((row.count / max) * 100, 2) : 0;
         var label = options.label ? options.label(row.key) : row.key;
         var barClass = options.barClass ? " " + options.barClass : "";
+        var bar = row.count
+          ? '<div class="chart__bar' + barClass + '" style="width:' + width.toFixed(1) + '%"></div>'
+          : "";
         return (
           '<tr><th scope="row" class="chart__label">' +
           schema.escapeHtml(label) +
           "</th>" +
           '<td class="chart__bar-cell"><div class="chart__track">' +
-          '<div class="chart__bar' +
-          barClass +
-          '" style="width:' +
-          width.toFixed(1) +
-          '%"></div></div></td>' +
+          bar +
+          "</div></td>" +
           '<td class="chart__value">' +
           schema.formatNumber(row.count) +
           '<span class="muted"> · ' +

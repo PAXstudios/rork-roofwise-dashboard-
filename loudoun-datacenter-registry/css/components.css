@@ -1225,14 +1225,18 @@ legend {
   border-bottom: 0;
 }
 
-.chart__label {
+/* These three are scoped under .chart on purpose. `.chart th, .chart td` above
+   is (0,1,1) and sets `padding: var(--space-2) 0`; an unscoped `.chart__label`
+   is only (0,1,0), so its horizontal padding would lose and the longest bar
+   would sit flush against its value. */
+.chart .chart__label {
   width: 36%;
   font-weight: var(--weight-normal);
   color: var(--text);
   padding-right: var(--space-3);
 }
 
-.chart__bar-cell {
+.chart .chart__bar-cell {
   width: 42%;
   padding-right: var(--space-4);
 }
@@ -1257,7 +1261,7 @@ legend {
   background: var(--status-proposed);
 }
 
-.chart__value {
+.chart .chart__value {
   width: 22%;
   text-align: right;
   font-variant-numeric: tabular-nums;
@@ -1270,6 +1274,10 @@ legend {
   background: var(--bg-sunken);
   border-radius: var(--radius-pill);
   overflow: hidden;
+  /* The track takes its height from the bar inside it. A zero row has no bar,
+     so without this the rail would collapse and the row would look broken
+     rather than empty. Matches .chart__bar's height. */
+  min-height: 10px;
 }
 
 /* Vertical timeline bars */
