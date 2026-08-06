@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Statistics — Loudoun Data Center Watch</title>
+    <meta
+      name="description"
+      content="What Loudoun County residents are reporting about data centers, broken down by issue, district and severity — alongside the county's own facility counts."
+    />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+
+    <link rel="stylesheet" href="css/tokens.css" />
+    <link rel="stylesheet" href="css/base.css" />
+    <link rel="stylesheet" href="css/components.css" />
+    <script src="js/theme-init.js"></script>
+  </head>
+
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header id="site-header"></header>
+    <div class="demo-banner" hidden></div>
+
+    <main id="main">
+      <div class="container">
+        <div class="page-header">
+          <h1>Statistics</h1>
+          <p class="lead">
+            Everything on this page is computed from the community reports currently published, and
+            from Loudoun County's own facility data. Nothing is weighted, modelled or estimated.
+          </p>
+        </div>
+
+        <!-- ---- Community reports ------------------------------------- -->
+        <section class="section" style="padding-top: 0">
+          <h2>Community reports</h2>
+          <div class="stat-grid stat-grid--4" style="margin-block: var(--space-4)">
+            <div class="stat">
+              <span class="stat__value" data-stat="total">—</span>
+              <span class="stat__label">Total reports</span>
+              <span class="stat__note">Published, after review</span>
+            </div>
+            <div class="stat">
+              <span class="stat__value" data-stat="localities">—</span>
+              <span class="stat__label">Districts represented</span>
+              <span class="stat__note">Of 8 in the county</span>
+            </div>
+            <div class="stat">
+              <span class="stat__value" data-stat="zips">—</span>
+              <span class="stat__label">Distinct ZIP codes</span>
+              <span class="stat__note">Where reports came from</span>
+            </div>
+            <div class="stat">
+              <span class="stat__value" data-stat="recent">—</span>
+              <span class="stat__label">Last 30 days</span>
+              <span class="stat__note">New reports</span>
+            </div>
+          </div>
+
+          <div class="grid grid-2">
+            <div class="card">
+              <div class="table-scroll">
+                <table class="chart" id="chart-categories">
+                  <caption>By kind of issue</caption>
+                  <tbody></tbody>
+                </table>
+              </div>
+              <p class="tiny muted" style="margin-top: var(--space-3)">
+                Reports usually name more than one issue, so these add up to more than the report
+                count.
+              </p>
+            </div>
+
+            <div class="card">
+              <div class="table-scroll">
+                <table class="chart" id="chart-localities">
+                  <caption>By district</caption>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="table-scroll">
+                <table class="chart" id="chart-severity">
+                  <caption>By reported impact</caption>
+                  <tbody></tbody>
+                </table>
+              </div>
+              <p class="tiny muted" style="margin-top: var(--space-3)">
+                Self-rated by the person reporting, from 1 (barely noticeable) to 5 (severe).
+                Average: <strong data-stat="avg-severity">—</strong>
+              </p>
+            </div>
+
+            <div class="card">
+              <div class="table-scroll">
+                <table class="chart" id="chart-zips">
+                  <caption>Top ZIP codes</caption>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div class="card" style="margin-top: var(--space-4)">
+            <h3 style="font-size: var(--text-base)">Reports over the last 12 months</h3>
+            <div class="timeline-chart" id="chart-timeline" role="img" aria-labelledby="timeline-desc"></div>
+            <p class="visually-hidden" id="timeline-desc"></p>
+          </div>
+        </section>
+
+        <!-- ---- County facility data ---------------------------------- -->
+        <section class="section section-sunken" style="margin-inline: calc(-1 * var(--space-4)); padding-inline: var(--space-4); border-radius: var(--radius-lg)">
+          <h2>Data centers in Loudoun County</h2>
+          <p class="muted" style="max-width: 65ch">
+            These figures come from Loudoun County GIS, not from this site's reports. They are here
+            so the community accounts above can be read against the scale of what is built and
+            what is coming.
+          </p>
+
+          <div class="stat-grid stat-grid--4" style="margin-block: var(--space-4)">
+            <div class="stat stat--operational">
+              <span class="stat__value" data-stat="fac-operational">—</span>
+              <span class="stat__label">Operational parcels</span>
+            </div>
+            <div class="stat stat--construction">
+              <span class="stat__value" data-stat="fac-construction">—</span>
+              <span class="stat__label">Under construction</span>
+            </div>
+            <div class="stat stat--proposed">
+              <span class="stat__value" data-stat="fac-proposed">—</span>
+              <span class="stat__label">In the pipeline</span>
+            </div>
+            <div class="stat">
+              <span class="stat__value" data-stat="fac-sqft">—</span>
+              <span class="stat__label">Total floor area</span>
+              <span class="stat__note">Built plus approved</span>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="table-scroll">
+              <table class="data-table" id="table-districts">
+                <caption class="visually-hidden">
+                  Data center parcels and community reports by district
+                </caption>
+                <thead>
+                  <tr>
+                    <th scope="col">District</th>
+                    <th scope="col">Population (2020)</th>
+                    <th scope="col">Operational</th>
+                    <th scope="col">Under construction</th>
+                    <th scope="col">Proposed</th>
+                    <th scope="col">Community reports</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- ---- Export ------------------------------------------------- -->
+        <section class="section">
+          <div class="card">
+            <h2 style="font-size: var(--text-lg)">Use this data</h2>
+            <p class="muted">
+              The published reports are downloadable as CSV — the same columns the site shows, with
+              nothing private in them. If you're a journalist, researcher or county staffer and you
+              need something else, get in touch via the <a href="about.html">About</a> page.
+            </p>
+            <button class="btn btn--secondary" type="button" id="download-csv">
+              Download reports as CSV
+            </button>
+            <p class="tiny muted" style="margin-top: var(--space-3)">
+              Generated <span data-stat="generated">—</span> · Facility data © Loudoun County GIS ·
+              Reports are unverified resident accounts
+            </p>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <footer id="site-footer"></footer>
+
+    <script src="js/config.js"></script>
+    <script src="js/schema.js"></script>
+    <script src="js/local-store.js"></script>
+    <script src="js/supabase-store.js"></script>
+    <script src="js/store.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/layout.js"></script>
+    <script src="js/stats.js"></script>
+  </body>
+</html>

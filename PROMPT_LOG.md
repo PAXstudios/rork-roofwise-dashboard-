@@ -335,3 +335,38 @@ A field-ready CRM and AI inspection tool that helps roofing pros:
 **Open questions / Follow-ups:**
 - After entry #12, refresh the Context Summary section.
 - Consider a CI check that fails if a PR doesn't add a new entry to `PROMPT_LOG.md`.
+
+---
+
+## [2026-08-06] #08 — Added a separate project: Loudoun Data Center Watch
+
+**Prompt (summarized):**
+> Create a self-reporting data registration website for issues with data centers, for people who live in Loudoun County. Include a map. Model it after Erin Brockovich's data center map and self-reporting website.
+
+**Intent / Goal:**
+- Give Loudoun County residents one place to record how nearby data centers affect them, next to the county's own facility data.
+- Turn scattered accounts (board meetings, neighbourhood groups, local news) into something citable.
+
+**Decisions made:**
+- **This is a sibling project, not a RoofWise change.** It lives entirely in `loudoun-datacenter-registry/` and shares no code, tooling or dependencies with the iOS app. Nothing under `ios/` or `backend/` was touched, and none of the RoofWise constraints in the Drift Warning are affected (damage taxonomy, HAAG grades, claim-worthiness badges, Dashboard CTAs and the Quick Inspection flow are all untouched).
+- Note for future agents: `CONTRIBUTING.md:90` states the stack is "Expo + React Native + TypeScript". That was already inaccurate before this change — RoofWise is native SwiftUI, and there is no JavaScript anywhere in `ios/`. It is left as-is here rather than edited as a side effect; worth correcting in a dedicated change.
+- Stack for the new project: plain static HTML/CSS/JS, no build step, no framework, Leaflet + OpenStreetMap (no API key), Supabase for storage. Chosen so it is cheap to host and maintainable by non-developers.
+- Facility data pulled from Loudoun County's public ArcGIS services rather than hand-compiled: 224 parcels (103 operational, 36 under construction, 85 pipeline) plus 271 building footprints and 8 election districts. `scripts/refresh-facilities.py` re-pulls it; `data/PROVENANCE.md` records every transformation.
+- Privacy is enforced in three independent places: a `public_reports` view that omits the private columns, RLS granting anon no SELECT on the base table at all, and a BEFORE INSERT trigger that derives a 100–200 m coordinate offset server-side and forces `status = 'pending'`. Photos are re-encoded via canvas in the browser to strip EXIF GPS.
+- Ships in demo mode (localStorage + clearly-labelled sample reports) so the site is fully explorable before any Supabase project exists; one config file switches it to live.
+- Positioning is explicitly independent: every page disclaims affiliation with Loudoun County government, Erin Brockovich, and any data center operator, and reports are labelled unverified resident accounts throughout.
+
+**Files touched:**
+- `loudoun-datacenter-registry/` — new, self-contained. 10 pages, 12 JS modules, 3 stylesheets, 4 SQL migrations, a data-refresh script, vendored Leaflet/markercluster/supabase-js, and generated GeoJSON.
+- `rork.json` — registered the new app alongside RoofWise and Backend.
+- `PROMPT_LOG.md` — this entry.
+
+**Verification:**
+- 21/21 browser checks (link integrity, moderation round trip, filter agreement between map and list, 320 px layout, dark mode, keyboard focus, CSV export, stats/list agreement).
+- 13/13 form checks (validation, honeypot, timing guard, rate limit, jitter, pending-by-default).
+- SQL applied against a real PostgreSQL 16 instance with a Supabase-shaped shim: anon cannot read the base table, cannot self-approve, cannot write outside `pending/` in storage; every CHECK constraint rejects its bad input; measured jitter across 500 inserts was 100.1–199.9 m with zero identical pins.
+
+**Open questions / Follow-ups:**
+- `CONTACT_EMAIL` in `js/config.js` is empty; the privacy, terms and about pages say so plainly rather than showing a dead address. Set it before publishing.
+- No Supabase project is connected yet — the site runs in demo mode until one is.
+- `CONTRIBUTING.md`'s stack line should be corrected to Swift/SwiftUI in a change of its own.

@@ -10,6 +10,11 @@
       "name": "Backend",
       "path": "backend",
       "framework": "supabase"
+    },
+    {
+      "name": "Loudoun Data Center Watch",
+      "path": "loudoun-datacenter-registry",
+      "framework": "static"
     }
   ]
 }

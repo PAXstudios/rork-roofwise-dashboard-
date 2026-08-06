@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>About — Loudoun Data Center Watch</title>
+    <meta
+      name="description"
+      content="Who runs this project, where the data comes from, what it is and is not, and how to run your own copy."
+    />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+
+    <link rel="stylesheet" href="css/tokens.css" />
+    <link rel="stylesheet" href="css/base.css" />
+    <link rel="stylesheet" href="css/components.css" />
+    <script src="js/theme-init.js"></script>
+  </head>
+
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header id="site-header"></header>
+    <div class="demo-banner" hidden></div>
+
+    <main id="main">
+      <div class="container">
+        <div class="page-header">
+          <h1>About this project</h1>
+          <p class="lead">
+            An independent, volunteer-run record of how data center development in Loudoun County
+            is affecting the people who live next to it.
+          </p>
+        </div>
+
+        <div class="prose">
+          <h2>Why this exists</h2>
+          <p>
+            Loudoun County has the largest concentration of data centers in the world. The county
+            publishes exactly where they are, how big they are and what is coming next — that data
+            is genuinely good and genuinely open.
+          </p>
+          <p>
+            What nobody publishes is the other half. Residents describing generator noise, diesel
+            smells, well pressure, night lighting and stalled house sales are doing it three
+            minutes at a time at Board meetings, in neighbourhood Facebook groups, and to local
+            reporters. Each account is easy to wave away on its own. Together they are a pattern,
+            and there was nowhere that pattern could be seen.
+          </p>
+          <p>
+            This site puts the county's facility data and residents' accounts on the same map, and
+            turns the accounts into numbers on the
+            <a href="stats.html">statistics page</a> that a supervisor, a journalist or a neighbour
+            can point at.
+          </p>
+
+          <h2>What this is not</h2>
+          <p>
+            It is worth being blunt about the limits, because a project like this is only useful if
+            people trust it.
+          </p>
+          <ul>
+            <li>
+              <strong>Not affiliated with Loudoun County.</strong> The county publishes the facility
+              data used here, but does not operate, review or monitor this site. Filing a report
+              here files nothing with the county —
+              <a href="resources.html#official">do that separately</a>.
+            </li>
+            <li>
+              <strong>Not affiliated with Erin Brockovich.</strong> This project is modelled on the
+              approach taken by
+              <a href="https://www.brockovichdatacenter.com/" rel="noopener"
+                >brockovichdatacenter.com</a
+              >, which collects data center reports across the United States. It is not run by,
+              endorsed by or connected to that project. This one is Loudoun County only.
+            </li>
+            <li>
+              <strong>Not a survey.</strong> People who are unaffected rarely file a report. The
+              data here is self-selected and should never be described as representative of the
+              county.
+            </li>
+            <li>
+              <strong>Not an investigation.</strong> Reports are unverified first-hand accounts.
+              They are not corroborated, not measured, and not findings of fact. They do not
+              establish that any company caused any condition described.
+            </li>
+            <li>
+              <strong>Not legal advice</strong>, and not a channel for emergencies.
+            </li>
+          </ul>
+
+          <h2 id="data">Where the data comes from</h2>
+          <p>
+            Every data center on the map comes from Loudoun County GIS, pulled directly from the
+            county's public ArcGIS services. Nothing is hand-entered or scraped from commercial
+            directories.
+          </p>
+
+          <div class="table-scroll">
+            <table class="data-table">
+              <caption class="visually-hidden">
+                Facility data sources
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">Layer</th>
+                  <th scope="col">Shown as</th>
+                  <th scope="col">Source</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <th scope="row">Existing data center parcels</th>
+                  <td>Operational · Under construction</td>
+                  <td>
+                    <a
+                      href="https://services1.arcgis.com/MxjRokvPm7bjslyR/arcgis/rest/services/Existing_Data_Center_Parcel/FeatureServer/1"
+                      rel="noopener"
+                      >Loudoun County GIS</a
+                    >
+                  </td>
+                </tr>
+                <tr>
+                  <th scope="row">Pipeline data center areas</th>
+                  <td>Proposed</td>
+                  <td>
+                    <a
+                      href="https://services1.arcgis.com/MxjRokvPm7bjslyR/arcgis/rest/services/Pipeline_Data_Center_Areas/FeatureServer/1"
+                      rel="noopener"
+                      >Loudoun County GIS</a
+                    >
+                  </td>
+                </tr>
+                <tr>
+                  <th scope="row">Building outlines</th>
+                  <td>Optional overlay</td>
+                  <td>
+                    <a
+                      href="https://services1.arcgis.com/MxjRokvPm7bjslyR/arcgis/rest/services/Data_Center_Building_Outlines/FeatureServer/0"
+                      rel="noopener"
+                      >Loudoun County GIS</a
+                    >
+                  </td>
+                </tr>
+                <tr>
+                  <th scope="row">Election districts</th>
+                  <td>District filter &amp; boundaries</td>
+                  <td>
+                    <a
+                      href="https://logis.loudoun.gov/gis/rest/services/COL/ElectionDistricts/MapServer/8"
+                      rel="noopener"
+                      >Loudoun County GIS</a
+                    >
+                  </td>
+                </tr>
+                <tr>
+                  <th scope="row">Basemap tiles</th>
+                  <td>The map itself</td>
+                  <td>
+                    <a href="https://www.openstreetmap.org/copyright" rel="noopener"
+                      >OpenStreetMap</a
+                    >
+                    contributors
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <p>
+            The county refreshes the parcel layers roughly every six months. Exactly what was
+            fetched, when, and every transformation applied to it is recorded in
+            <code>data/PROVENANCE.md</code> in the repository — including the fact that one county
+            record contains a typo in its status field, which is why status matching is
+            substring-based rather than exact.
+          </p>
+
+          <h3>A note on facility ownership</h3>
+          <p>
+            Owner names on facility pins are the property owner recorded in Loudoun County land
+            records. That is very often a holding company rather than the brand operating the
+            building, it can be out of date, and it says nothing about who is responsible for any
+            condition a resident reports. Treat it as a starting point for research, not as an
+            accusation.
+          </p>
+
+          <h2>How reports are handled</h2>
+          <p>
+            Every submission goes into a moderation queue and is read by a person before it appears
+            anywhere public. Contact details are never published. Map pins are offset 100–200&nbsp;m
+            from the reported location, and photos have their metadata — including the GPS tags
+            phones write — stripped in your browser before they are ever uploaded.
+          </p>
+          <p>
+            The <a href="privacy.html">privacy policy</a> covers this in full, and the
+            <a href="resources.html">FAQ</a> explains what does and doesn't get published.
+          </p>
+
+          <h2 id="demo-mode">Demo mode</h2>
+          <p>
+            If the yellow banner is showing, this copy of the site has no database connected. In
+            that state the reports you see are illustrative samples rather than real submissions,
+            and anything you submit is saved only in your own browser. It exists so the project can
+            be cloned and explored without any setup.
+          </p>
+          <p>
+            To connect a real database, create a free Supabase project, run the four SQL files in
+            <code>sql/</code>, and paste the project URL and anon key into
+            <code>js/config.js</code>. The <code>README.md</code> walks through it. Nothing else in
+            the site needs to change — every page talks to a single storage adapter.
+          </p>
+
+          <h2>Built with</h2>
+          <p>
+            Plain HTML, CSS and JavaScript, with no build step and no framework, so it stays cheap
+            to host and easy for anyone to pick up and maintain.
+            <a href="https://leafletjs.com/" rel="noopener">Leaflet</a> draws the map,
+            <a href="https://www.openstreetmap.org/" rel="noopener">OpenStreetMap</a> provides the
+            tiles, and <a href="https://supabase.com/" rel="noopener">Supabase</a> stores the
+            reports. All three libraries are vendored into the repository, so the site keeps working
+            if a CDN doesn't.
+          </p>
+
+          <h2 id="contact">Contact</h2>
+          <p>
+            For corrections, takedown requests, data enquiries, or to help run this:
+          </p>
+          <p id="contact-block" class="muted">
+            <em
+              >No contact address has been configured for this deployment yet. Set
+              <code>CONTACT_EMAIL</code> in <code>js/config.js</code>.</em
+            >
+          </p>
+
+          <h2>Credits</h2>
+          <ul>
+            <li>Facility and district data: Loudoun County GIS.</li>
+            <li>Basemap: OpenStreetMap contributors, under the Open Database License.</li>
+            <li>
+              Concept: <a href="https://www.brockovichdatacenter.com/" rel="noopener">Brockovich
+              Data Center Reporting</a>, which showed that a self-reporting map is a workable way to
+              gather this kind of account at scale.
+            </li>
+            <li>
+              Most of all: the residents who take the time to write down what is happening where
+              they live.
+            </li>
+          </ul>
+        </div>
+      </div>
+    </main>
+
+    <footer id="site-footer"></footer>
+
+    <script src="js/config.js"></script>
+    <script src="js/schema.js"></script>
+    <script src="js/local-store.js"></script>
+    <script src="js/supabase-store.js"></script>
+    <script src="js/store.js"></script>
+    <script src="js/layout.js"></script>
+    <script src="js/contact.js"></script>
+  </body>
+</html>

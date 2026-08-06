@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Loudoun Data Center Watch — community map &amp; issue reporting</title>
+    <meta
+      name="description"
+      content="An independent map of every data center in Loudoun County, Virginia, overlaid with reports from the residents living next to them. Add yours."
+    />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+
+    <link rel="stylesheet" href="vendor/leaflet.css" />
+    <link rel="stylesheet" href="vendor/markercluster.css" />
+    <link rel="stylesheet" href="vendor/markercluster.default.css" />
+    <link rel="stylesheet" href="css/tokens.css" />
+    <link rel="stylesheet" href="css/base.css" />
+    <link rel="stylesheet" href="css/components.css" />
+    <script src="js/theme-init.js"></script>
+  </head>
+
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header id="site-header"></header>
+    <div class="demo-banner" hidden></div>
+
+    <noscript>
+      <div class="container" style="padding-block: 1rem">
+        <p class="banner banner--warning">
+          This site needs JavaScript for the interactive map and report list. You can still
+          read <a href="resources.html">Resources</a>, <a href="about.html">About</a>,
+          <a href="privacy.html">Privacy</a> and <a href="terms.html">Terms</a>.
+        </p>
+      </div>
+    </noscript>
+
+    <main id="main">
+      <!-- ---------------------------------------------------------------- -->
+      <section class="hero">
+        <div class="container">
+          <p class="hero__eyebrow">Loudoun County, Virginia</p>
+          <h1 class="hero__title">The data centers are mapped. The people living beside them are not.</h1>
+          <p class="hero__lead">
+            Loudoun County holds the largest concentration of data centers on earth. The county
+            publishes where every one of them is. Nobody publishes what it is like to live next
+            to one — those accounts are scattered across board meetings, neighbourhood groups and
+            local news. This map puts both on the same screen.
+          </p>
+          <div class="hero__actions">
+            <a class="btn btn--primary btn--lg" href="report.html">Report an issue</a>
+            <a class="btn btn--secondary btn--lg" href="#map-section">See the map</a>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---------------------------------------------------------------- -->
+      <section class="section">
+        <div class="container">
+          <div class="stat-grid stat-grid--4" id="headline-stats">
+            <div class="stat stat--operational">
+              <span class="stat__value" data-stat="operational">—</span>
+              <span class="stat__label">Operational</span>
+              <span class="stat__note">Built and running</span>
+            </div>
+            <div class="stat stat--construction">
+              <span class="stat__value" data-stat="under_construction">—</span>
+              <span class="stat__label">Under construction</span>
+              <span class="stat__note">Approved, being built</span>
+            </div>
+            <div class="stat stat--proposed">
+              <span class="stat__value" data-stat="proposed">—</span>
+              <span class="stat__label">Proposed</span>
+              <span class="stat__note">In the approval pipeline</span>
+            </div>
+            <div class="stat stat--reported">
+              <span class="stat__value" data-stat="reports">—</span>
+              <span class="stat__label">Community reports</span>
+              <span class="stat__note">Submitted by residents</span>
+            </div>
+          </div>
+          <p class="small muted" style="margin-top: var(--space-3)">
+            Facility counts come from Loudoun County GIS
+            (<span data-stat="generated">—</span>). See
+            <a href="about.html#data">where this data comes from</a>.
+          </p>
+        </div>
+      </section>
+
+      <!-- ---------------------------------------------------------------- -->
+      <section class="section section-sunken" id="map-section">
+        <div class="container">
+          <h2>Data centers and community reports</h2>
+          <p class="muted" style="max-width: 65ch">
+            Toggle any layer off to see the rest more clearly. Community report pins are placed
+            near — deliberately not on — the address given, so a pin can never identify a
+            household.
+          </p>
+
+          <div class="filter-bar" role="group" aria-label="Filter the map">
+            <div class="filter-bar__field">
+              <label for="filter-locality">District</label>
+              <select class="select" id="filter-locality">
+                <option value="">All districts</option>
+              </select>
+            </div>
+            <div class="filter-bar__field">
+              <label for="filter-category">Issue reported</label>
+              <select class="select" id="filter-category">
+                <option value="">All issues</option>
+              </select>
+            </div>
+            <div class="filter-bar__field">
+              <label for="filter-search">Search</label>
+              <input
+                class="input"
+                type="search"
+                id="filter-search"
+                placeholder="Owner, project, keyword…"
+              />
+            </div>
+            <button class="btn btn--secondary" type="button" id="filter-reset">Reset</button>
+          </div>
+
+          <div class="map-shell">
+            <div id="layer-toggles"></div>
+            <div class="map" id="map"></div>
+            <div class="legend">
+              <span class="legend__item"
+                ><span class="legend__swatch legend__swatch--operational" aria-hidden="true"></span
+                >Operational — circle</span
+              >
+              <span class="legend__item"
+                ><span
+                  class="legend__swatch legend__swatch--under_construction"
+                  aria-hidden="true"
+                ></span
+                >Under construction — square</span
+              >
+              <span class="legend__item"
+                ><span class="legend__swatch legend__swatch--proposed" aria-hidden="true"></span
+                >Proposed — diamond</span
+              >
+              <span class="legend__item"
+                ><span class="legend__swatch legend__swatch--report" aria-hidden="true"></span
+                >Community report — teardrop</span
+              >
+            </div>
+          </div>
+
+          <p class="small muted" style="margin-top: var(--space-3)">
+            Every facility on this map is also listed in text on the
+            <a href="stats.html">statistics page</a>, and every community report on the
+            <a href="reports.html">reports page</a> — the map is never the only way to reach the
+            data.
+          </p>
+        </div>
+      </section>
+
+      <!-- ---------------------------------------------------------------- -->
+      <section class="section">
+        <div class="container">
+          <h2>What people are reporting</h2>
+          <p class="muted">
+            These are the categories residents can log. Pick whichever ones fit — most reports
+            name more than one.
+          </p>
+          <div class="grid grid-3" id="concern-cards" style="margin-top: var(--space-5)"></div>
+        </div>
+      </section>
+
+      <!-- ---------------------------------------------------------------- -->
+      <section class="section section-sunken">
+        <div class="container">
+          <div class="row row-between" style="margin-bottom: var(--space-4)">
+            <h2 style="margin: 0">Recent reports</h2>
+            <a class="btn btn--secondary btn--sm" href="reports.html">See all reports</a>
+          </div>
+          <div id="recent-reports">
+            <div class="loading"><span class="spinner"></span> Loading reports…</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---------------------------------------------------------------- -->
+      <section class="section">
+        <div class="container container-narrow" style="text-align: center">
+          <h2>Something happening where you live?</h2>
+          <p class="lead">
+            It takes about three minutes. Your name, address and contact details are never
+            published — only the district, an approximate location, and what you describe.
+          </p>
+          <p>
+            <a class="btn btn--primary btn--lg" href="report.html">Report an issue</a>
+          </p>
+          <p class="small muted">
+            Reports are reviewed by a person before they appear on the map. Read
+            <a href="privacy.html">how your information is handled</a> first if you'd like to.
+          </p>
+        </div>
+      </section>
+    </main>
+
+    <footer id="site-footer"></footer>
+
+    <script src="vendor/leaflet.js"></script>
+    <script src="vendor/markercluster.js"></script>
+    <script src="js/config.js"></script>
+    <script src="js/schema.js"></script>
+    <script src="js/local-store.js"></script>
+    <script src="js/supabase-store.js"></script>
+    <script src="js/store.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/layout.js"></script>
+    <script src="js/map.js"></script>
+    <script src="js/home.js"></script>
+  </body>
+</html>
