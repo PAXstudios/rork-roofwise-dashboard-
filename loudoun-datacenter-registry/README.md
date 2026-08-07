@@ -129,10 +129,70 @@ js/schema.js        categories, statuses, validation, filter predicate, formatti
 js/store.js         picks a backend, loads facility data, computes statistics
 js/local-store.js   demo backend (localStorage) + sample reports
 js/supabase-store.js live backend; loads vendor/supabase.js on demand
-js/map.js           Leaflet layers, clustering, popups, legend
+js/map.js           Leaflet layers, clustering, popups, legend, marker motion
+js/motion.js        scroll reveal, count-up, parallax, reduced-motion guard
+js/hero-map.js      the animated county figure on the home page
 js/ui.js            report cards, filters, icons, URL state
 js/layout.js        injects the shared header and footer
+
+css/fonts.css       @font-face for the two vendored families
+css/tokens.css      every colour, size and duration
+css/base.css        editorial typography, masthead, layout primitives
+css/components.css  buttons, cards, map, forms, charts
+css/animations.css  keyframes + the reduced-motion master switch
 ```
+
+## Design
+
+A single bright theme — white ground, near-black text, hairline rules instead of cards on a
+grey field. There is deliberately **no dark mode**: a front page is printed on paper, and one
+theme means one set of contrast decisions to get right rather than two.
+
+Typography is a newspaper system: **Source Serif 4** for headlines and body, **Libre Franklin**
+(an open Franklin Gothic) for kickers, labels and UI. Both are vendored as variable woff2 —
+130 KB for the pair, no external requests. The New York Times' own faces (Cheltenham, Imperial,
+Franklin) are proprietary and are *not* used here; this is the same typographic system, not the
+same identity, and the site carries no borrowed masthead or branding.
+
+The county silhouette in the header, the hero figure and the section watermark are all
+generated from the county's own district boundaries:
+
+```bash
+python3 scripts/build-county-svg.py
+```
+
+It derives a true county outline by keeping the boundary edges that appear in exactly one
+district and chaining them into a single ring — drawing all eight district shapes stacked
+instead leaves hairline gaps along the shared seams. Outputs `data/county.json` (district paths
+plus the projection constants, so the hero can place facility points in the same coordinate
+space) and `assets/loudoun-mark.svg` (a 900-byte silhouette for the logo and favicon).
+
+## Motion
+
+Animation carries meaning or it doesn't ship:
+
+- **The hero** draws the county outline, washes in the districts, then lands all 224 facility
+  dots ordered **east to west** — so the viewer watches Data Center Alley fill up while the
+  rural west stays empty. That ordering is the point; a static dot map doesn't say it.
+- **Map markers** cascade in on first paint only (capped at 120, beyond which the tail is
+  imperceptible and the map just feels slow to settle).
+- **Community report pins** carry a slow pulsing ring — they are the live, human part of the
+  data.
+- **Filtering to one district** flies the camera there, because otherwise you have to hunt for
+  the handful of remaining pins.
+- **Hovering a report card** bounces its pin, so the list and the map read as one view.
+- **Charts** grow from zero when scrolled into view; **stat tiles** count up.
+
+Two rules keep this safe. Every effect animates *from* an offset *to* the real resting state,
+so nothing is hidden waiting for a script — the `.reveal` class is applied by `motion.js`, never
+in the HTML, so a visitor without JavaScript gets a complete static page. And
+`prefers-reduced-motion` collapses all of it: `animations.css` uses `animation: none` rather
+than a near-zero duration, because several effects use `both` fill mode and would otherwise
+flash their from-state.
+
+**The report form is deliberately calm.** Someone filling it in is describing losing sleep or
+watching a house sale fall through; flourish there would read as tone-deaf. Motion on that page
+is limited to focus states and the map picker.
 
 Everything that touches data goes through `js/store.js`, so the two backends are
 interchangeable and no page knows which is active. There is no build step anywhere; shared
@@ -200,7 +260,7 @@ the insert — a contained change, because every write already goes through
 - Charts are CSS bars inside real `<table>` markup, so screen readers get the numbers.
 - Full keyboard operation, visible focus rings, a skip link, and errors tied to inputs by
   `aria-describedby` with focus moved to the first invalid field.
-- Light and dark themes, honouring `prefers-color-scheme` with a manual override.
+- All motion respects `prefers-reduced-motion`; the page is complete and correct without it.
 - Mobile-first: 44 px touch targets, single-column forms, no horizontal scroll at 320 px.
 
 ---

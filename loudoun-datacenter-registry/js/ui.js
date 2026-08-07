@@ -100,7 +100,9 @@ window.LDCW = window.LDCW || {};
       : "";
 
     return (
-      '<article class="report-card">' +
+      '<article class="report-card" data-report-id="' +
+      escape(report.id) +
+      '">' +
       '<div class="report-card__head">' +
       '<h3 class="report-card__where">' +
       where +
@@ -193,13 +195,11 @@ window.LDCW = window.LDCW || {};
     })
       .map(function (category) {
         return (
-          '<a class="card card--link" href="reports.html?category=' +
+          '<a class="concern-card" href="reports.html?category=' +
           encodeURIComponent(category.key) +
           '">' +
-          '<span class="card__icon">' +
-          icon(category.icon) +
-          "</span>" +
-          '<h3 class="card__title">' +
+          icon(category.icon, "concern-card__icon") +
+          '<h3 class="concern-card__title">' +
           escape(category.label) +
           "</h3>" +
           '<p class="small muted" style="margin:0">' +

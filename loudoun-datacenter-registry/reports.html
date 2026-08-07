@@ -8,16 +8,17 @@
       name="description"
       content="Browse what Loudoun County residents are reporting about the data centers near them — noise, air quality, water, power, property values and more."
     />
-    <meta name="color-scheme" content="light dark" />
+    <meta name="color-scheme" content="light" />
     <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
 
     <link rel="stylesheet" href="vendor/leaflet.css" />
     <link rel="stylesheet" href="vendor/markercluster.css" />
     <link rel="stylesheet" href="vendor/markercluster.default.css" />
+    <link rel="stylesheet" href="css/fonts.css" />
     <link rel="stylesheet" href="css/tokens.css" />
     <link rel="stylesheet" href="css/base.css" />
     <link rel="stylesheet" href="css/components.css" />
-    <script src="js/theme-init.js"></script>
+    <link rel="stylesheet" href="css/animations.css" />
   </head>
 
   <body>
@@ -28,6 +29,7 @@
     <main id="main">
       <div class="container">
         <div class="page-header">
+          <p class="kicker">From residents</p>
           <h1>Community reports</h1>
           <p class="lead">
             What residents have told us about living beside Loudoun's data centers. Every report
@@ -111,6 +113,7 @@
     <script src="js/supabase-store.js"></script>
     <script src="js/store.js"></script>
     <script src="js/ui.js"></script>
+    <script src="js/motion.js"></script>
     <script src="js/layout.js"></script>
     <script src="js/map.js"></script>
     <script src="js/reports-list.js"></script>

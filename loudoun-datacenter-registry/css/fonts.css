@@ -1,0 +1,39 @@
+/* ==========================================================================
+   Fonts — vendored, no external requests
+
+   Two open families, chosen to give a newspaper front page its voice:
+
+   - Source Serif 4 — transitional serif for headlines and body copy.
+   - Libre Franklin — an open Franklin Gothic, for kickers, labels and UI.
+
+   Both are variable-weight woff2, so one file per family covers the whole
+   range (300–800) instead of five static cuts. 130 KB for the set.
+
+   Note on the New York Times: its actual faces (Cheltenham, Imperial,
+   Franklin) are proprietary and cannot be used here. These are the closest
+   open equivalents — same typographic system, not the same identity.
+   ========================================================================== */
+
+@font-face {
+  font-family: "Source Serif Variable";
+  src: url("../vendor/fonts/source-serif.woff2") format("woff2-variations");
+  font-weight: 200 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Source Serif Variable";
+  src: url("../vendor/fonts/source-serif-italic.woff2") format("woff2-variations");
+  font-weight: 200 900;
+  font-style: italic;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Libre Franklin Variable";
+  src: url("../vendor/fonts/libre-franklin.woff2") format("woff2-variations");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}

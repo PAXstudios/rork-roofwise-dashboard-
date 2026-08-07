@@ -1,36 +1,57 @@
 /* ==========================================================================
    Design tokens — Loudoun Data Center Watch
 
-   Every colour, size and duration used anywhere in the site is declared here.
-   Light is the default; dark is applied by `prefers-color-scheme` and can be
-   forced either way with `data-theme` on <html> (the header toggle sets it).
+   One theme: white, bright, high contrast. There is deliberately no dark mode
+   — a front page is printed on paper, and a single theme is one set of
+   contrast decisions to get right instead of two.
+
+   Every colour, size and duration used anywhere on the site is declared here.
    ========================================================================== */
 
 :root {
-  /* ---- Type ------------------------------------------------------------ */
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-    "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+  color-scheme: light;
+
+  /* ---- Type ------------------------------------------------------------
+     Serif carries the words; sans carries the furniture (kickers, labels,
+     nav, data). The fallback stacks matter — if the woff2 files ever go
+     missing the site should still read as editorial, not as a default
+     browser page. */
+
+  --font-serif: "Source Serif Variable", "Iowan Old Style", "Charter",
+    "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
+  --font-sans: "Libre Franklin Variable", -apple-system, BlinkMacSystemFont,
+    "Segoe UI", "Helvetica Neue", Arial, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
     "Liberation Mono", monospace;
 
-  /* A closed ramp. New components pick from this list — nothing in between. */
-  --text-xs: 0.75rem;    /* 12px — meta, legends, footnotes        */
-  --text-sm: 0.875rem;   /* 14px — secondary text, form help       */
-  --text-base: 1rem;     /* 16px — body                            */
-  --text-lg: 1.125rem;   /* 18px — lead paragraphs                 */
-  --text-xl: 1.375rem;   /* 22px — card and section headings       */
-  --text-2xl: 1.75rem;   /* 28px — page titles                     */
-  --text-3xl: 2.25rem;   /* 36px — hero on small screens           */
-  --text-4xl: 3rem;      /* 48px — hero on large screens           */
+  /* A closed ramp. New components pick from this list — nothing in between.
+     The top three are fluid so a broadsheet headline can be genuinely large
+     on a wide screen without wrapping badly on a phone. */
+  --text-xs: 0.75rem;     /* 12px — bylines, footnotes, legends       */
+  --text-sm: 0.8125rem;   /* 13px — labels, meta, captions            */
+  --text-base: 1.0625rem; /* 17px — body copy                         */
+  --text-lg: 1.25rem;     /* 20px — standfirst, lead paragraphs       */
+  --text-xl: 1.5rem;      /* 24px — card and subsection headings      */
+  --text-2xl: clamp(1.75rem, 1.4rem + 1.6vw, 2.375rem);  /* section heads */
+  --text-3xl: clamp(2.25rem, 1.6rem + 3vw, 3.5rem);      /* page titles   */
+  --text-4xl: clamp(2.75rem, 1.5rem + 5.5vw, 5rem);      /* the headline  */
 
-  --leading-tight: 1.2;
-  --leading-snug: 1.35;
-  --leading-normal: 1.6;
+  --leading-tight: 1.05;
+  --leading-snug: 1.25;
+  --leading-normal: 1.55;
+  --leading-loose: 1.7;
 
   --weight-normal: 400;
   --weight-medium: 500;
   --weight-semibold: 600;
   --weight-bold: 700;
+  --weight-black: 800;
+
+  /* Kickers and labels are set in small caps with wide tracking — the single
+     most recognisable signal of a newspaper's furniture. */
+  --tracking-kicker: 0.09em;
+  --tracking-tight: -0.021em;
+  --tracking-tighter: -0.032em;
 
   /* ---- Space (4px scale) ----------------------------------------------- */
   --space-1: 0.25rem;
@@ -40,213 +61,102 @@
   --space-5: 1.5rem;
   --space-6: 2rem;
   --space-7: 3rem;
-  --space-8: 4rem;
-  --space-9: 6rem;
+  --space-8: 4.5rem;
+  --space-9: 6.5rem;
 
-  /* ---- Shape ----------------------------------------------------------- */
-  --radius-sm: 4px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 18px;
+  /* ---- Shape -----------------------------------------------------------
+     Newsprint has no rounded corners. Radii are kept small and reserved for
+     interactive controls, where roundness signals "clickable". */
+  --radius-sm: 2px;
+  --radius-md: 3px;
+  --radius-lg: 4px;
   --radius-pill: 999px;
 
   --border-width: 1px;
+  --rule-width: 1px;
+  --rule-heavy: 3px;
 
-  /* ---- Layout ---------------------------------------------------------- */
-  --container: 1140px;
-  --container-narrow: 760px;
-  --header-height: 60px;
+  /* ---- Layout ----------------------------------------------------------- */
+  --container: 1240px;
+  --container-wide: 1440px;
+  --container-narrow: 700px;
+  --header-height: 62px;
 
-  /* ---- Motion ---------------------------------------------------------- */
-  --ease: cubic-bezier(0.2, 0, 0.2, 1);
-  --duration-fast: 120ms;
-  --duration-base: 200ms;
+  /* ---- Colour -----------------------------------------------------------
+     Near-black on white, with one warm off-white for section bands so the
+     page has texture without ever going grey. */
 
-  /* ---- Status colours --------------------------------------------------
-     These four carry meaning across the map, the legend, the badges and the
-     charts. They are always paired with a distinct marker shape and a text
-     label so the map never depends on colour alone.                       */
-  --status-operational: #1f6feb;
-  --status-construction: #b45309;
-  --status-proposed: #7c3aed;
-  --status-reported: #dc2626;
-
-  --status-operational-soft: #dbeafe;
-  --status-construction-soft: #fef3c7;
-  --status-proposed-soft: #ede9fe;
-  --status-reported-soft: #fee2e2;
-
-  /* ---- Severity (1 low → 5 severe) ------------------------------------- */
-  --severity-1: #15803d;
-  --severity-2: #65a30d;
-  --severity-3: #ca8a04;
-  --severity-4: #ea580c;
-  --severity-5: #b91c1c;
-}
-
-/* --------------------------------------------------------------------------
-   Light theme (default)
-   -------------------------------------------------------------------------- */
-
-:root,
-:root[data-theme="light"] {
-  color-scheme: light;
-
-  --bg: #f7f8fa;
+  --bg: #ffffff;
   --bg-raised: #ffffff;
-  --bg-sunken: #eef0f4;
-  --bg-inverse: #16202e;
-  --bg-accent-soft: #eef4ff;
+  --bg-sunken: #f7f7f4;      /* warm paper tint */
+  --bg-tint: #fbfbf9;
+  --bg-ink: #121212;
 
-  --text: #16202e;
-  --text-muted: #55637a;
-  /* Clears 4.5:1 against all three light surfaces (raised #fff, page #f7f8fa,
-     sunken #eef0f4). A lighter grey looked better but failed AA on 12px text. */
-  --text-subtle: #616a7b;
-  --text-inverse: #f7f8fa;
+  --text: #121212;
+  --text-muted: #5a5a55;
+  --text-subtle: #6b6b64;    /* 5.3:1 on white — safe for 12px */
+  --text-on-ink: #ffffff;
   --text-on-accent: #ffffff;
 
-  --border: #dfe3ea;
-  --border-strong: #c2c9d6;
+  --rule: #dcdcd5;           /* hairline between sections */
+  --rule-strong: #121212;    /* the heavy rule under the masthead */
+  --border: #e4e4de;
+  --border-strong: #c3c3ba;
 
-  --accent: #14508c;
-  --accent-hover: #0f3d6d;
-  --accent-soft: #dceafc;
+  --accent: #1c4f8f;         /* 7.6:1 on white */
+  --accent-hover: #14395f;
+  --accent-soft: #eaf1fa;
 
-  --danger: #b91c1c;
-  --danger-soft: #fee2e2;
-  --success: #15803d;
-  --success-soft: #dcfce7;
-  --warning: #b45309;
-  --warning-soft: #fef3c7;
+  --danger: #a8231c;
+  --danger-soft: #fdeceb;
+  --success: #1b6b3a;
+  --success-soft: #e8f5ec;
+  --warning: #8a5000;
+  --warning-soft: #fdf3e2;
 
-  --focus-ring: #14508c;
+  --focus-ring: #1c4f8f;
 
-  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06);
-  --shadow-md: 0 2px 8px rgba(16, 24, 40, 0.08);
-  --shadow-lg: 0 12px 32px rgba(16, 24, 40, 0.12);
+  /* Shadows are almost absent by design — newsprint doesn't float. What's
+     left is used only for genuinely layered things: popups and the sticky
+     header once it detaches. */
+  --shadow-sm: 0 1px 2px rgba(18, 18, 18, 0.05);
+  --shadow-md: 0 2px 10px rgba(18, 18, 18, 0.08);
+  --shadow-lg: 0 16px 40px rgba(18, 18, 18, 0.14);
 
-  --map-tile-filter: none;
-}
+  /* ---- Status colours ---------------------------------------------------
+     These four carry meaning across the map, legend, badges and charts. Each
+     is always paired with a distinct marker shape and a text label, so the
+     map never depends on colour alone. All clear 4.5:1 on white. */
+  --status-operational: #1a56b0;
+  --status-construction: #8a5000;
+  --status-proposed: #6b28c9;
+  --status-reported: #b3231b;
 
-/* --------------------------------------------------------------------------
-   Dark theme
-   -------------------------------------------------------------------------- */
+  --status-operational-soft: #e7effb;
+  --status-construction-soft: #fdf3e2;
+  --status-proposed-soft: #f2eafc;
+  --status-reported-soft: #fdecea;
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    color-scheme: dark;
+  /* ---- Severity (1 low → 5 severe) ------------------------------------- */
+  --severity-1: #1b6b3a;
+  --severity-2: #4d7c0f;
+  --severity-3: #9a6700;
+  --severity-4: #b45309;
+  --severity-5: #a8231c;
 
-    --bg: #0e141d;
-    --bg-raised: #161e29;
-    --bg-sunken: #0a0f16;
-    --bg-inverse: #eef0f4;
-    --bg-accent-soft: #14243a;
+  /* ---- Motion -----------------------------------------------------------
+     One easing curve for entrances (decelerate), one for movement. Durations
+     are deliberately short: this is a news page, not a product tour. */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
 
-    --text: #e8ecf3;
-    --text-muted: #a3aec1;
-    --text-subtle: #7f8b9f;
-    --text-inverse: #16202e;
-    /* Dark mode's accent is a LIGHT blue (it has to read as a link on a dark
-       page), so button text on it must be dark. White here is only ~2.3:1. */
-    --text-on-accent: #0b1622;
+  --duration-fast: 140ms;
+  --duration-base: 320ms;
+  --duration-slow: 620ms;
+  --duration-hero: 1100ms;
 
-    --border: #27313f;
-    --border-strong: #3b4757;
-
-    --accent: #66a6f0;
-    --accent-hover: #8dbdf5;
-    --accent-soft: #16304f;
-
-    --danger: #f87171;
-    --danger-soft: #3b1a1a;
-    --success: #4ade80;
-    --success-soft: #14321f;
-    --warning: #fbbf24;
-    --warning-soft: #362708;
-
-    --focus-ring: #8dbdf5;
-
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-    --shadow-md: 0 2px 10px rgba(0, 0, 0, 0.45);
-    --shadow-lg: 0 14px 36px rgba(0, 0, 0, 0.55);
-
-    /* Tone the OSM raster down so it doesn't glare against a dark page. */
-    --map-tile-filter: invert(1) hue-rotate(180deg) brightness(0.92) contrast(0.9)
-      saturate(0.7);
-
-    --status-operational: #6ea8ff;
-    --status-construction: #f0a94a;
-    --status-proposed: #b18cf5;
-    --status-reported: #f87171;
-
-    --status-operational-soft: #16304f;
-    --status-construction-soft: #3a2a0e;
-    --status-proposed-soft: #2c1f4d;
-    --status-reported-soft: #3b1a1a;
-
-    --severity-1: #4ade80;
-    --severity-2: #a3e635;
-    --severity-3: #facc15;
-    --severity-4: #fb923c;
-    --severity-5: #f87171;
-  }
-}
-
-/* Explicit dark, chosen by the header toggle. Kept in sync with the block
-   above — any change there needs the same change here. */
-:root[data-theme="dark"] {
-  color-scheme: dark;
-
-  --bg: #0e141d;
-  --bg-raised: #161e29;
-  --bg-sunken: #0a0f16;
-  --bg-inverse: #eef0f4;
-  --bg-accent-soft: #14243a;
-
-  --text: #e8ecf3;
-  --text-muted: #a3aec1;
-  --text-subtle: #7f8b9f;
-  --text-inverse: #16202e;
-  /* See the note in the prefers-color-scheme block above. */
-  --text-on-accent: #0b1622;
-
-  --border: #27313f;
-  --border-strong: #3b4757;
-
-  --accent: #66a6f0;
-  --accent-hover: #8dbdf5;
-  --accent-soft: #16304f;
-
-  --danger: #f87171;
-  --danger-soft: #3b1a1a;
-  --success: #4ade80;
-  --success-soft: #14321f;
-  --warning: #fbbf24;
-  --warning-soft: #362708;
-
-  --focus-ring: #8dbdf5;
-
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 2px 10px rgba(0, 0, 0, 0.45);
-  --shadow-lg: 0 14px 36px rgba(0, 0, 0, 0.55);
-
-  --map-tile-filter: invert(1) hue-rotate(180deg) brightness(0.92) contrast(0.9)
-    saturate(0.7);
-
-  --status-operational: #6ea8ff;
-  --status-construction: #f0a94a;
-  --status-proposed: #b18cf5;
-  --status-reported: #f87171;
-
-  --status-operational-soft: #16304f;
-  --status-construction-soft: #3a2a0e;
-  --status-proposed-soft: #2c1f4d;
-  --status-reported-soft: #3b1a1a;
-
-  --severity-1: #4ade80;
-  --severity-2: #a3e635;
-  --severity-3: #facc15;
-  --severity-4: #fb923c;
-  --severity-5: #f87171;
+  /* Cascades read the index off a custom property so one keyframe can serve
+     any number of children. */
+  --stagger-step: 45ms;
 }

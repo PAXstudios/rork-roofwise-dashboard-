@@ -658,7 +658,7 @@
     panel.hidden = false;
     panel.innerHTML =
       '<div class="card" style="text-align:center">' +
-      '<span class="card__icon" style="margin-inline:auto;background:var(--success-soft);color:var(--success)">' +
+      '<span class="card__icon" style="margin-inline:auto;border-color:var(--success);color:var(--success)">' +
       ui.icon("check") +
       "</span>" +
       "<h2>Thank you — your report has been received</h2>" +

@@ -6,23 +6,28 @@
   var Store = LDCW.Store;
   var ui = LDCW.ui;
   var schema = LDCW.schema;
+  var motion = LDCW.motion;
 
   var mapController = null;
   var filter = ui.readFilterFromUrl();
 
   /* ---- Headline counts ---------------------------------------------------- */
 
-  function setStat(name, value) {
-    var node = document.querySelector('[data-stat="' + name + '"]');
-    if (node) node.textContent = value;
+  function statNode(name) {
+    return document.querySelector('[data-stat="' + name + '"]');
   }
 
   function renderSummary(summary) {
     if (!summary) return;
-    setStat("operational", schema.formatNumber(summary.counts.operational));
-    setStat("under_construction", schema.formatNumber(summary.counts.under_construction));
-    setStat("proposed", schema.formatNumber(summary.counts.proposed));
-    setStat("generated", "updated " + schema.formatDate(summary.generated));
+
+    // Count up rather than snapping — these are the numbers the page exists to
+    // make felt, and watching 103 climb reads differently from seeing it sit.
+    motion.countUpOnView(statNode("operational"), summary.counts.operational);
+    motion.countUpOnView(statNode("under_construction"), summary.counts.under_construction);
+    motion.countUpOnView(statNode("proposed"), summary.counts.proposed);
+
+    var generated = statNode("generated");
+    if (generated) generated.textContent = "updated " + schema.formatDate(summary.generated);
   }
 
   /* ---- Filters ------------------------------------------------------------ */
@@ -106,7 +111,7 @@
           warning.className = "banner banner--warning";
           warning.style.margin = "var(--space-3)";
           warning.innerHTML =
-            LDCW.ui.icon("warning") +
+            ui.icon("warning") +
             "<div>The facility layer didn't load. If you opened this file directly, " +
             "serve the folder over HTTP instead — see the README.</div>";
           shell.appendChild(warning);
@@ -122,15 +127,19 @@
     return Store.listApproved({})
       .then(function (reports) {
         if (mapController) mapController.setReports(reports);
-        setStat("reports", schema.formatNumber(reports.length));
+        motion.countUpOnView(statNode("reports"), reports.length);
+
         ui.renderReportList(container, reports.slice(0, 6), {
           emptyTitle: "No community reports yet",
           emptyBody:
             "Nobody has filed a report here yet. If something is affecting you, yours can be the first.",
         });
+
+        motion.reveal("#recent-reports .report-list", { group: true });
       })
       .catch(function (error) {
-        setStat("reports", "—");
+        var node = statNode("reports");
+        if (node) node.textContent = "—";
         ui.showError(container, error);
       });
   }
@@ -142,9 +151,16 @@
     bindFilters();
     initMap();
 
-    Store.loadSummary().then(renderSummary).catch(function (error) {
-      console.error("Summary failed to load", error);
-    });
+    // Sections arrive as the reader scrolls to them.
+    motion.reveal("#headline-stats", { group: true });
+    motion.reveal("#concern-cards", { group: true });
+    motion.parallax(".watermark svg", 0.18);
+
+    Store.loadSummary()
+      .then(renderSummary)
+      .catch(function (error) {
+        console.error("Summary failed to load", error);
+      });
 
     loadReports();
   }

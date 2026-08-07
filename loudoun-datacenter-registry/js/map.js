@@ -8,6 +8,11 @@
  *
  * The map is never the only route to the data — every page that embeds one also
  * renders the same records as text below it.
+ *
+ * Motion: markers cascade in on first render, filtering to a single district
+ * flies the camera there, and community-report pins carry a slow pulse because
+ * they are the live, human part of the data. All of it defers to
+ * prefers-reduced-motion via LDCW.motion.
  */
 
 window.LDCW = window.LDCW || {};
@@ -21,22 +26,34 @@ window.LDCW = window.LDCW || {};
     return window.LDCW_CONFIG || {};
   }
 
+  function reduced() {
+    return LDCW.motion ? LDCW.motion.prefersReducedMotion() : false;
+  }
+
   /* ---- Markers ------------------------------------------------------------ */
 
-  function facilityIcon(status) {
+  /* `enterIndex` drives the staggered drop-in. Passing null skips it, which is
+     what re-renders (a filter change) do — only the first paint cascades. */
+  function facilityIcon(status, enterIndex) {
     var size = status === "operational" ? 12 : 11;
+    var classes = "pin pin--" + status + (enterIndex == null ? "" : " pin--enter");
+    var style = enterIndex == null ? "" : ' style="--stagger-index:' + enterIndex + '"';
+
     return L.divIcon({
       className: "",
-      html: '<span class="pin pin--' + status + '"></span>',
+      html: '<span class="' + classes + '"' + style + "></span>",
       iconSize: [size, size],
       iconAnchor: [size / 2, size / 2],
     });
   }
 
-  function reportIcon() {
+  function reportIcon(enterIndex) {
+    var classes = "pin pin--report" + (enterIndex == null ? "" : " pin--enter");
+    var style = enterIndex == null ? "" : ' style="--stagger-index:' + enterIndex + '"';
+
     return L.divIcon({
       className: "",
-      html: '<span class="pin pin--report"></span>',
+      html: '<span class="' + classes + '"' + style + "></span>",
       iconSize: [18, 18],
       iconAnchor: [9, 18],
       popupAnchor: [0, -14],
@@ -63,31 +80,16 @@ window.LDCW = window.LDCW || {};
     var escape = schema.escapeHtml;
     var rows = [];
 
-    if (facility.operator) {
-      rows.push(["Property owner", escape(facility.operator)]);
-    }
-    if (facility.district) {
-      rows.push(["District", escape(facility.district)]);
-    }
+    if (facility.operator) rows.push(["Property owner", escape(facility.operator)]);
+    if (facility.district) rows.push(["District", escape(facility.district)]);
+
     var sqft = schema.formatSqft(facility.sqft);
-    if (sqft) {
-      rows.push(["Floor area", escape(sqft)]);
-    }
-    if (facility.acres) {
-      rows.push(["Parcel", escape(facility.acres + " acres")]);
-    }
-    if (facility.zoning) {
-      rows.push(["Zoning", escape(facility.zoning)]);
-    }
-    if (facility.zoning_case) {
-      rows.push(["Case", escape(facility.zoning_case)]);
-    }
-    if (facility.application) {
-      rows.push(["Application", escape(facility.application)]);
-    }
-    if (facility.status_raw) {
-      rows.push(["County status", escape(facility.status_raw)]);
-    }
+    if (sqft) rows.push(["Floor area", escape(sqft)]);
+    if (facility.acres) rows.push(["Parcel", escape(facility.acres + " acres")]);
+    if (facility.zoning) rows.push(["Zoning", escape(facility.zoning)]);
+    if (facility.zoning_case) rows.push(["Case", escape(facility.zoning_case)]);
+    if (facility.application) rows.push(["Application", escape(facility.application)]);
+    if (facility.status_raw) rows.push(["County status", escape(facility.status_raw)]);
 
     var meta = rows.length
       ? '<dl class="popup__meta">' +
@@ -153,12 +155,6 @@ window.LDCW = window.LDCW || {};
 
   /* ---- Map construction --------------------------------------------------- */
 
-  /**
-   * @param {string} elementId    id of the map container
-   * @param {object} options
-   *   - interactiveReports {boolean} render the community report layer
-   *   - onReady {function}          called with the controller once tiles exist
-   */
   function createMap(elementId, options) {
     options = options || {};
     var settings = config();
@@ -172,10 +168,12 @@ window.LDCW = window.LDCW || {};
       maxBounds: L.latLngBounds(settings.MAP_BOUNDS).pad(0.25),
       scrollWheelZoom: options.scrollWheelZoom !== false,
       zoomControl: true,
+      // Leaflet's own easing for programmatic camera moves.
+      zoomAnimation: !reduced(),
+      fadeAnimation: !reduced(),
+      markerZoomAnimation: !reduced(),
     });
 
-    // Screen readers announce the container; the sighted-user equivalent is the
-    // list rendered underneath every map on the site.
     element.setAttribute("role", "application");
     element.setAttribute(
       "aria-label",
@@ -193,21 +191,25 @@ window.LDCW = window.LDCW || {};
         iconCreateFunction: clusterIconFactory("facilities"),
         maxClusterRadius: 45,
         showCoverageOnHover: false,
+        animate: !reduced(),
       }),
       under_construction: L.markerClusterGroup({
         iconCreateFunction: clusterIconFactory("facilities"),
         maxClusterRadius: 45,
         showCoverageOnHover: false,
+        animate: !reduced(),
       }),
       proposed: L.markerClusterGroup({
         iconCreateFunction: clusterIconFactory("facilities"),
         maxClusterRadius: 45,
         showCoverageOnHover: false,
+        animate: !reduced(),
       }),
       reports: L.markerClusterGroup({
         iconCreateFunction: clusterIconFactory("reports"),
         maxClusterRadius: 35,
         showCoverageOnHover: false,
+        animate: !reduced(),
       }),
     };
 
@@ -227,18 +229,25 @@ window.LDCW = window.LDCW || {};
         reports: true,
       },
       counts: { operational: 0, under_construction: 0, proposed: 0, reports: 0 },
+      // Only the very first paint cascades; later renders would look like a
+      // glitch rather than an arrival.
+      hasEntered: false,
+      markersById: {},
     };
 
     function clearAll() {
       Object.keys(layers).forEach(function (key) {
         layers[key].clearLayers();
       });
+      state.markersById = {};
     }
 
     function render() {
       clearAll();
 
+      var animateEntry = !state.hasEntered && !reduced();
       var counts = { operational: 0, under_construction: 0, proposed: 0, reports: 0 };
+      var entered = 0;
 
       state.facilities.forEach(function (facility) {
         if (!isFinite(facility.lat) || !isFinite(facility.lng)) return;
@@ -249,8 +258,13 @@ window.LDCW = window.LDCW || {};
         counts[status] += 1;
         if (!state.visible[status]) return;
 
+        // Cap the cascade — beyond ~120 the tail is imperceptible and the
+        // delay just makes the map feel slow to settle.
+        var enterIndex = animateEntry && entered < 120 ? entered : null;
+        entered += 1;
+
         var marker = L.marker([facility.lat, facility.lng], {
-          icon: facilityIcon(status),
+          icon: facilityIcon(status, enterIndex),
           keyboard: true,
           alt: (facility.name || "Data center") + " — " + schema.statusLabel(status),
         });
@@ -258,7 +272,7 @@ window.LDCW = window.LDCW || {};
         layers[status].addLayer(marker);
       });
 
-      state.reports.forEach(function (report) {
+      state.reports.forEach(function (report, index) {
         if (!isFinite(report.lat) || !isFinite(report.lng)) return;
         if (!schema.matchesFilter(report, state.filter)) return;
 
@@ -266,7 +280,7 @@ window.LDCW = window.LDCW || {};
         if (!state.visible.reports) return;
 
         var marker = L.marker([report.lat, report.lng], {
-          icon: reportIcon(),
+          icon: reportIcon(animateEntry ? index : null),
           keyboard: true,
           alt:
             "Community report in " +
@@ -277,13 +291,14 @@ window.LDCW = window.LDCW || {};
         });
         marker.bindPopup(reportPopup(report), { maxWidth: 320 });
         layers.reports.addLayer(marker);
+        state.markersById[report.id] = marker;
       });
+
+      if (animateEntry && (entered > 0 || counts.reports > 0)) state.hasEntered = true;
 
       state.counts = counts;
       updateToggleCounts();
-      element.dispatchEvent(
-        new CustomEvent("ldcw:mapcounts", { detail: counts, bubbles: true })
-      );
+      element.dispatchEvent(new CustomEvent("ldcw:mapcounts", { detail: counts, bubbles: true }));
     }
 
     function updateToggleCounts() {
@@ -291,6 +306,35 @@ window.LDCW = window.LDCW || {};
         var node = document.querySelector('[data-layer-count="' + key + '"]');
         if (node) node.textContent = schema.formatNumber(state.counts[key]);
       });
+    }
+
+    /* ---- Camera ----------------------------------------------------------- */
+
+    /* When a filter narrows to one district, fly there — otherwise the user has
+       to hunt for the handful of remaining pins. Returning to "all" flies back
+       to the county view. */
+    function frameFilter(previousLocality) {
+      var locality = state.filter.locality;
+      if (locality === previousLocality) return;
+
+      var points = [];
+      state.facilities.forEach(function (facility) {
+        if (!schema.matchesFacilityFilter(facility, state.filter)) return;
+        if (isFinite(facility.lat)) points.push([facility.lat, facility.lng]);
+      });
+      state.reports.forEach(function (report) {
+        if (!schema.matchesFilter(report, state.filter)) return;
+        if (isFinite(report.lat)) points.push([report.lat, report.lng]);
+      });
+
+      if (!points.length) return;
+
+      var bounds = L.latLngBounds(points).pad(0.2);
+      if (reduced()) {
+        map.fitBounds(bounds, { animate: false });
+      } else {
+        map.flyToBounds(bounds, { duration: 0.9, easeLinearity: 0.22 });
+      }
     }
 
     /* ---- Layer toggles ---------------------------------------------------- */
@@ -331,8 +375,10 @@ window.LDCW = window.LDCW || {};
       },
 
       setFilter: function (filter) {
+        var previousLocality = state.filter ? state.filter.locality : undefined;
         state.filter = filter || {};
         render();
+        frameFilter(previousLocality);
         return controller;
       },
 
@@ -342,8 +388,25 @@ window.LDCW = window.LDCW || {};
 
       bindToggles: bindToggles,
 
+      /* Bounce a report's pin — used when the reader hovers its card in the
+         list, so the two views feel like one thing. */
+      highlightReport: function (id) {
+        var marker = state.markersById[id];
+        if (!marker || reduced()) return;
+        var icon = marker.getElement();
+        var pin = icon && icon.querySelector(".pin");
+        if (!pin) return;
+        pin.classList.remove("pin--bounce");
+        void pin.offsetWidth; // restart the animation
+        pin.classList.add("pin--bounce");
+      },
+
       focus: function (lat, lng, zoom) {
-        map.setView([lat, lng], zoom || 15);
+        if (reduced()) {
+          map.setView([lat, lng], zoom || 15, { animate: false });
+        } else {
+          map.flyTo([lat, lng], zoom || 15, { duration: 0.8 });
+        }
         return controller;
       },
 
@@ -355,9 +418,7 @@ window.LDCW = window.LDCW || {};
           .map(function (report) {
             return [report.lat, report.lng];
           });
-        if (points.length) {
-          map.fitBounds(L.latLngBounds(points).pad(0.15));
-        }
+        if (points.length) map.fitBounds(L.latLngBounds(points).pad(0.15));
         return controller;
       },
 

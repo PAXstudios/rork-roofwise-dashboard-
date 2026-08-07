@@ -15,9 +15,22 @@
 
   var latestReports = [];
 
+  var motion = LDCW.motion;
+
   function setStat(name, value) {
     var node = document.querySelector('[data-stat="' + name + '"]');
     if (node) node.textContent = value;
+  }
+
+  /* Animate a numeric stat up from zero; anything non-numeric is set directly. */
+  function setStatNumber(name, value, format) {
+    var node = document.querySelector('[data-stat="' + name + '"]');
+    if (!node) return;
+    if (!isFinite(Number(value))) {
+      node.textContent = "—";
+      return;
+    }
+    motion.countUpOnView(node, Number(value), format ? { format: format } : undefined);
   }
 
   /* ---- Bar chart ---------------------------------------------------------- */
@@ -46,15 +59,23 @@
     );
 
     body.innerHTML = rows
-      .map(function (row) {
+      .map(function (row, rowIndex) {
         // A zero draws no bar element at all. Setting width:0 isn't enough —
         // .chart__bar carries min-width: 3px so the track would still show a
         // stub, which reads as "a small amount" rather than "none".
         var width = max && row.count ? Math.max((row.count / max) * 100, 2) : 0;
         var label = options.label ? options.label(row.key) : row.key;
         var barClass = options.barClass ? " " + options.barClass : "";
+        // --stagger-index makes the bars grow in sequence when the chart
+        // scrolls into view (see .is-visible .chart__bar in animations.css).
         var bar = row.count
-          ? '<div class="chart__bar' + barClass + '" style="width:' + width.toFixed(1) + '%"></div>'
+          ? '<div class="chart__bar' +
+            barClass +
+            '" style="width:' +
+            width.toFixed(1) +
+            "%;--stagger-index:" +
+            rowIndex +
+            '"></div>'
           : "";
         return (
           '<tr><th scope="row" class="chart__label">' +
@@ -87,7 +108,7 @@
     );
 
     container.innerHTML = buckets
-      .map(function (bucket) {
+      .map(function (bucket, index) {
         var height = max ? Math.max((bucket.count / max) * 100, 1) : 1;
         return (
           '<div class="timeline-chart__col">' +
@@ -96,7 +117,9 @@
           "</span>" +
           '<div class="timeline-chart__bar" style="height:' +
           height.toFixed(1) +
-          '%"></div>' +
+          "%;--stagger-index:" +
+          index +
+          '"></div>' +
           '<span class="timeline-chart__label">' +
           schema.escapeHtml(bucket.label) +
           "</span>" +
@@ -228,10 +251,10 @@
   /* ---- Boot --------------------------------------------------------------- */
 
   function render(stats, localities) {
-    setStat("total", schema.formatNumber(stats.total));
-    setStat("localities", schema.formatNumber(stats.localityCount));
-    setStat("zips", schema.formatNumber(stats.zipCount));
-    setStat("recent", schema.formatNumber(stats.last30Days));
+    setStatNumber("total", stats.total);
+    setStatNumber("localities", stats.localityCount);
+    setStatNumber("zips", stats.zipCount);
+    setStatNumber("recent", stats.last30Days);
     setStat("avg-severity", stats.total ? stats.averageSeverity.toFixed(1) + " / 5" : "—");
 
     renderBarChart("chart-categories", stats.byCategory, {
@@ -258,10 +281,14 @@
     renderTimeline(stats.byMonth);
 
     if (stats.facilities) {
-      setStat("fac-operational", schema.formatNumber(stats.facilities.counts.operational));
-      setStat("fac-construction", schema.formatNumber(stats.facilities.counts.under_construction));
-      setStat("fac-proposed", schema.formatNumber(stats.facilities.counts.proposed));
-      setStat("fac-sqft", schema.formatSqft(stats.facilities.total_sqft) || "—");
+      setStatNumber("fac-operational", stats.facilities.counts.operational);
+      setStatNumber("fac-construction", stats.facilities.counts.under_construction);
+      setStatNumber("fac-proposed", stats.facilities.counts.proposed);
+      // formatSqft returns null for 0, and countUp's first frame IS 0 — without
+      // the fallback the tile would flash the string "null".
+      setStatNumber("fac-sqft", stats.facilities.total_sqft, function (value) {
+        return schema.formatSqft(value) || "0 sq ft";
+      });
       setStat("generated", schema.formatDate(stats.facilities.generated));
     }
 
@@ -272,6 +299,13 @@
       });
       renderDistrictTable(localities.districts || [], reportsByDistrict);
     }
+
+    // Charts grow from zero as each scrolls into view. Observed after render so
+    // the bars exist; .is-visible is what animations.css keys off.
+    motion.reveal(".chart", { stagger: false });
+    motion.reveal("#chart-timeline", { stagger: false });
+    motion.reveal(".stat-grid", { group: true });
+    motion.reveal("#table-districts", { stagger: false });
   }
 
   function init() {

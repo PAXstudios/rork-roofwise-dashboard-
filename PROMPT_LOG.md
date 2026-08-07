@@ -370,3 +370,37 @@ A field-ready CRM and AI inspection tool that helps roofing pros:
 - `CONTACT_EMAIL` in `js/config.js` is empty; the privacy, terms and about pages say so plainly rather than showing a dead address. Set it before publishing.
 - No Supabase project is connected yet — the site runs in demo mode until one is.
 - `CONTRIBUTING.md`'s stack line should be corrected to Swift/SwiftUI in a change of its own.
+
+---
+
+## [2026-08-06] #09 — Loudoun Data Center Watch: editorial redesign
+
+**Prompt (summarized):**
+> Add animations, especially to the map. Make it white and bright. Include a map of Loudoun County in the branding. Make it very modern, NYTimes front page.
+
+**Intent / Goal:**
+- The site worked but read like an admin dashboard. For a project whose purpose is to make residents' accounts carry weight with supervisors and reporters, it should read like a front page.
+
+**Decisions made:**
+- **Dark mode removed entirely.** One bright white theme — a front page is printed on paper, and one theme is one set of contrast decisions rather than two. Deleted `js/theme-init.js`, both dark token blocks, and the header toggle.
+- **NYT typefaces cannot be shipped** — Cheltenham, Imperial and Franklin are proprietary. Adopted the same *system* from open fonts instead: Source Serif 4 for headlines and body, Libre Franklin (an open Franklin Gothic) for kickers and UI. Vendored as variable woff2, 130 KB, no external requests. No borrowed masthead or branding: a civic site must not look like it is published by a newspaper it has nothing to do with.
+- **The county map graphic is generated from data we already ship**, not a stock image. `scripts/build-county-svg.py` derives a true county outline by keeping boundary edges that appear in exactly one district and chaining them — verified the districts share exact vertices (853 boundary vs 438 interior edges). Stacking the eight district shapes instead leaves hairline seams. Used in the header mark, the favicon, the hero, and as a section watermark.
+- **The hero animation orders the 224 facility dots east-to-west**, so the viewer watches Data Center Alley fill while the rural west stays empty. A static dot map doesn't say that.
+- **The report form stays calm.** Someone filling it in is describing losing sleep or a house sale falling through; flourish there reads as tone-deaf. Motion on that page is limited to focus states and the map picker.
+- **Reveal uses a scroll + rect check, not IntersectionObserver.** IO's callback is async and gets coalesced during a fast scroll; when that happened the concern cards were stranded at `opacity: 0` permanently. Content silently lost is far worse than an animation not playing. There is also a 4-second failsafe and a `beforeprint` handler.
+
+**Files touched:**
+- New: `css/fonts.css`, `css/animations.css`, `js/motion.js`, `js/hero-map.js`, `scripts/build-county-svg.py`, `data/county.json`, `assets/loudoun-mark.svg`, `vendor/fonts/*.woff2`
+- Rewritten: `css/tokens.css`, `css/base.css`, `css/components.css`, `js/layout.js`, `js/map.js`, `js/home.js`, `index.html`
+- Modified: `js/stats.js`, `js/ui.js`, `js/reports-list.js`, `js/report-form.js`, all 10 HTML pages, `assets/favicon.svg`, `README.md`
+- Deleted: `js/theme-init.js`
+
+**Verification:**
+- 22/22 browser checks (link integrity, moderation round trip, filter agreement, 320px layout, single-theme enforcement, keyboard focus, CSV export).
+- 13/13 form checks — the form's behaviour is unchanged.
+- 12/12 new motion checks: nothing stranded invisible after scrolling any page; reduced motion yields zero running animations, nothing hidden, all 224 hero dots present and the outline fully drawn; count-ups land on exact values; no external requests.
+- 31/31 contrast samples pass AA on the new white palette.
+
+**Open questions / Follow-ups:**
+- `CONTACT_EMAIL` is still unset; the privacy, terms and about pages say so plainly.
+- Two real bugs fixed along the way that were latent before this change: `.chart th, .chart td` at specificity (0,1,1) was overriding the chart cells' horizontal padding, and a zero-count chart row still drew a 3px stub because `.chart__bar` carries `min-width`.

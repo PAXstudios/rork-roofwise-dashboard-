@@ -8,13 +8,14 @@
       name="description"
       content="Who runs this project, where the data comes from, what it is and is not, and how to run your own copy."
     />
-    <meta name="color-scheme" content="light dark" />
+    <meta name="color-scheme" content="light" />
     <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
 
+    <link rel="stylesheet" href="css/fonts.css" />
     <link rel="stylesheet" href="css/tokens.css" />
     <link rel="stylesheet" href="css/base.css" />
     <link rel="stylesheet" href="css/components.css" />
-    <script src="js/theme-init.js"></script>
+    <link rel="stylesheet" href="css/animations.css" />
   </head>
 
   <body>
@@ -25,6 +26,7 @@
     <main id="main">
       <div class="container">
         <div class="page-header">
+          <p class="kicker">About</p>
           <h1>About this project</h1>
           <p class="lead">
             An independent, volunteer-run record of how data center development in Loudoun County
@@ -34,7 +36,7 @@
 
         <div class="prose">
           <h2>Why this exists</h2>
-          <p>
+          <p class="dropcap">
             Loudoun County has the largest concentration of data centers in the world. The county
             publishes exactly where they are, how big they are and what is coming next — that data
             is genuinely good and genuinely open.
@@ -256,6 +258,7 @@
     <script src="js/local-store.js"></script>
     <script src="js/supabase-store.js"></script>
     <script src="js/store.js"></script>
+    <script src="js/motion.js"></script>
     <script src="js/layout.js"></script>
     <script src="js/contact.js"></script>
   </body>

@@ -8,14 +8,15 @@
       name="description"
       content="Tell us what living near a Loudoun County data center is actually like. Your name and address are never published."
     />
-    <meta name="color-scheme" content="light dark" />
+    <meta name="color-scheme" content="light" />
     <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
 
     <link rel="stylesheet" href="vendor/leaflet.css" />
+    <link rel="stylesheet" href="css/fonts.css" />
     <link rel="stylesheet" href="css/tokens.css" />
     <link rel="stylesheet" href="css/base.css" />
     <link rel="stylesheet" href="css/components.css" />
-    <script src="js/theme-init.js"></script>
+    <link rel="stylesheet" href="css/animations.css" />
   </head>
 
   <body>
@@ -26,6 +27,7 @@
     <main id="main">
       <div class="container container-narrow">
         <div class="page-header">
+          <p class="kicker">Add your account</p>
           <h1>Report an issue</h1>
           <p class="lead">
             If a data center is affecting your household, put it on the record. It takes about
@@ -427,6 +429,7 @@
     <script src="js/supabase-store.js"></script>
     <script src="js/store.js"></script>
     <script src="js/ui.js"></script>
+    <script src="js/motion.js"></script>
     <script src="js/layout.js"></script>
     <script src="js/report-form.js"></script>
   </body>

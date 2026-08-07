@@ -8,13 +8,14 @@
       name="description"
       content="What Loudoun County residents are reporting about data centers, broken down by issue, district and severity — alongside the county's own facility counts."
     />
-    <meta name="color-scheme" content="light dark" />
+    <meta name="color-scheme" content="light" />
     <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
 
+    <link rel="stylesheet" href="css/fonts.css" />
     <link rel="stylesheet" href="css/tokens.css" />
     <link rel="stylesheet" href="css/base.css" />
     <link rel="stylesheet" href="css/components.css" />
-    <script src="js/theme-init.js"></script>
+    <link rel="stylesheet" href="css/animations.css" />
   </head>
 
   <body>
@@ -25,6 +26,7 @@
     <main id="main">
       <div class="container">
         <div class="page-header">
+          <p class="kicker">The numbers</p>
           <h1>Statistics</h1>
           <p class="lead">
             Everything on this page is computed from the community reports currently published, and
@@ -112,7 +114,7 @@
         </section>
 
         <!-- ---- County facility data ---------------------------------- -->
-        <section class="section section-sunken" style="margin-inline: calc(-1 * var(--space-4)); padding-inline: var(--space-4); border-radius: var(--radius-lg)">
+        <section class="section section--tinted" style="margin-inline: calc(-1 * var(--space-4)); padding-inline: var(--space-4)">
           <h2>Data centers in Loudoun County</h2>
           <p class="muted" style="max-width: 65ch">
             These figures come from Loudoun County GIS, not from this site's reports. They are here
@@ -191,6 +193,7 @@
     <script src="js/supabase-store.js"></script>
     <script src="js/store.js"></script>
     <script src="js/ui.js"></script>
+    <script src="js/motion.js"></script>
     <script src="js/layout.js"></script>
     <script src="js/stats.js"></script>
   </body>

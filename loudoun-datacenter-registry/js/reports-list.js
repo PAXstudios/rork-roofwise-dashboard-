@@ -56,10 +56,28 @@
             " reports";
     }
 
-    ui.renderReportList(document.getElementById("report-results"), sortReports(visible));
+    var results = document.getElementById("report-results");
+    ui.renderReportList(results, sortReports(visible));
+    bindCardHover(results);
 
     if (mapController) mapController.setFilter(filter);
     ui.writeFilterToUrl(filter);
+  }
+
+  /* Hovering a card bounces its pin on the map, so the list and the map read as
+     one view of the same thing rather than two parallel ones. */
+  function bindCardHover(container) {
+    if (!container || !mapController) return;
+
+    container.querySelectorAll("[data-report-id]").forEach(function (card) {
+      var id = card.getAttribute("data-report-id");
+      var highlight = function () {
+        mapController.highlightReport(id);
+      };
+      card.addEventListener("mouseenter", highlight);
+      // Keyboard users get the same cue when the card's link takes focus.
+      card.addEventListener("focusin", highlight);
+    });
   }
 
   function bindFilters() {
