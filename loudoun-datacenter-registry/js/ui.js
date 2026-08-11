@@ -203,16 +203,21 @@ window.LDCW = window.LDCW || {};
     })
       .map(function (category) {
         return (
-          '<a class="concern-card" href="reports.html?category=' +
+          '<a class="concern-card concern-card--' +
+          escape(category.key) +
+          '" href="reports.html?category=' +
           encodeURIComponent(category.key) +
           '">' +
+          '<span class="concern-card__chip">' +
           icon(category.icon, "concern-card__icon") +
+          "</span>" +
           '<h3 class="concern-card__title">' +
           escape(category.label) +
           "</h3>" +
           '<p class="small muted" style="margin:0">' +
           escape(category.note) +
           "</p>" +
+          '<span class="concern-card__go" aria-hidden="true">See reports &rarr;</span>' +
           "</a>"
         );
       })

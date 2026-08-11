@@ -192,6 +192,7 @@
 
     if (window.LDCW && window.LDCW.motion) {
       window.LDCW.motion.stickyHeader(".site-header");
+      window.LDCW.motion.readingProgress();
     }
   }
 

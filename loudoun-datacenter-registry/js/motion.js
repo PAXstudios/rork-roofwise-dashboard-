@@ -276,8 +276,58 @@ window.LDCW = window.LDCW || {};
     update();
   }
 
+  /* ---- Reading progress ---------------------------------------------------
+     A hairline across the top showing how far through the page you are.
+
+     Deliberately driven by a transform on a fixed element rather than by
+     animating `width`: width forces layout on every scroll frame, a transform
+     does not, and this runs on every scroll event on every page.
+
+     It still runs under prefers-reduced-motion. The bar is an indicator of
+     where you are, not an animation for its own sake, and removing it would
+     take away orientation rather than restraint — the reduced-motion rule
+     drops the easing instead. */
+
+  function readingProgress() {
+    if (document.querySelector(".progress-rail")) return;
+
+    var rail = document.createElement("div");
+    rail.className = "progress-rail";
+    rail.setAttribute("aria-hidden", "true");
+    var fill = document.createElement("div");
+    fill.className = "progress-rail__fill";
+    rail.appendChild(fill);
+    document.body.appendChild(rail);
+
+    var ticking = false;
+
+    function update() {
+      ticking = false;
+      var doc = document.documentElement;
+      var scrollable = doc.scrollHeight - window.innerHeight;
+      // A page shorter than the viewport has nothing to track; showing a full
+      // bar there would say "you have read everything" on arrival.
+      if (scrollable <= 40) {
+        fill.style.transform = "scaleX(0)";
+        return;
+      }
+      var ratio = Math.min(1, Math.max(0, window.scrollY / scrollable));
+      fill.style.transform = "scaleX(" + ratio.toFixed(4) + ")";
+    }
+
+    window.addEventListener("scroll", function () {
+      if (ticking) return;
+      ticking = true;
+      window.requestAnimationFrame(update);
+    }, { passive: true });
+
+    window.addEventListener("resize", update, { passive: true });
+    update();
+  }
+
   LDCW.motion = {
     prefersReducedMotion: prefersReducedMotion,
+    readingProgress: readingProgress,
     reveal: reveal,
     revealAll: revealAll,
     whenVisible: whenVisible,
