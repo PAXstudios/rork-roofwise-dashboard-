@@ -1,9 +1,14 @@
 # Building Loudoun Data Center Watch in Lovable
 
-A complete handoff for rebuilding this site inside an AI website builder.
+A complete handoff for rebuilding this site inside an AI website builder — the community
+reporting map in Part One, and the watchdog hub built on top of it in Part Two.
 
 Written for **Lovable** (React + Vite + Tailwind + shadcn/ui + its native Supabase
 integration). Appendix C covers what changes for v0, Bolt or Replit.
+
+Every external data source named in this document was fetched while writing it, and the SQL was
+run against PostgreSQL 16 before it was written down. Appendix G records what came back from
+each source, including which ones a browser cannot reach.
 
 ---
 
@@ -12,11 +17,27 @@ integration). Appendix C covers what changes for v0, Bolt or Replit.
 **Do not paste the whole thing.** Lovable produces much better results from a sequence of
 focused prompts than from one wall of text — it builds, you look, you correct, then you move on.
 
-Work through Prompts 1 → 9 in order. After each one, check it did what you asked before
-continuing. Appendices A and B are things you paste when a prompt tells you to.
+The document is in two parts.
 
-Rough timing: Prompts 1–4 get you a working map, which is about an hour. The whole sequence
-including Supabase is half a day.
+**Part One (Prompts 1–9) is the site.** The map, the report form, the moderation pipeline, the
+statistics. It is a pure browser app plus Supabase, and at the end of it you have something
+worth publishing. Work through it in order and check each prompt did what you asked before
+continuing.
+
+**Part Two (Prompts 10–18) is the watchdog hub.** Satellite mapping, full report records, a
+watchlist ticker, an automated local news feed, a facts-and-myths library, profiles of every
+elected official who votes on these applications, an AI letter writer, and the county meetings
+calendar. Part Two adds a small server — four Supabase Edge Functions — for reasons explained at
+the top of it. Build Part One first; every prompt in Part Two assumes it exists.
+
+Appendices are things you paste when a prompt tells you to. A and B belong to Part One, E and F
+to Part Two. **Appendix G lists every data source with its verified CORS status** and is the one
+to check first when a fetch fails. **Appendix H is the build order** if you cannot build
+everything.
+
+Rough timing: Prompts 1–4 get you a working map, which is about an hour. Part One including
+Supabase is half a day. Part Two is as long as you want it to be — Appendix H orders it so that
+stopping anywhere still leaves you with a coherent site.
 
 ### The one thing that matters most
 
@@ -422,6 +443,625 @@ not let it guess.
 > content silently lost. Either use a throttled scroll handler with `getBoundingClientRect`, or
 > keep the observer but add a timeout that reveals everything after a few seconds regardless.
 > Test it by scrolling fast to the bottom and back, then checking nothing is still transparent.
+
+---
+
+---
+
+# PART TWO — The watchdog hub
+
+Part One builds the map and the reporting loop. Part Two turns it into somewhere people come
+back to: a proper investigation map, full report records, a watchlist that surfaces clusters,
+an automated local news feed, an evidence library, profiles of the officials who decide these
+applications, and tools for acting on all of it.
+
+**Build Part One first and confirm it works.** Every prompt below assumes it exists.
+
+## Read this before you start Part Two
+
+Part One is a pure browser app. Part Two is not, and there are exactly three reasons:
+
+1. **News and calendar feeds do not send CORS headers.** I tested every feed in this document.
+   Loudoun County's calendar, Google News, Cardinal News, Virginia Mercury, WTOP — none of them
+   send `access-control-allow-origin`. A browser `fetch()` to any of them fails, and no amount
+   of prompting fixes it, because the restriction is on the far end. These have to be fetched
+   server-side.
+2. **The Anthropic API key must never reach the browser.** Anything with an API key in client
+   JavaScript is a key you have published.
+3. **The watchlist needs data the browser is not allowed to see.** Counting *distinct
+   households* near a cluster requires reading reporter email addresses, which is exactly what
+   the privacy model forbids the browser from doing.
+
+All three are solved the same way: **Supabase Edge Functions**. Appendix F has the four
+functions and their deployment commands. Several prompts below tell you to deploy one — do it
+when the prompt says to, not at the end.
+
+Everything else in Part Two still runs in the browser.
+
+---
+
+## Prompt 10 — Map upgrades: satellite and real tools
+
+> Upgrade the map. Right now it has one basemap and four marker layers; it needs to be a proper
+> investigation tool.
+>
+> **Basemap switcher.** Add a control to switch between these. I have tested every one of these
+> tile URLs — they all return real imagery with **no API key and no billing account**:
+>
+> | Basemap | Tile URL template | Why it's here |
+> |---|---|---|
+> | Streets | `https://tile.openstreetmap.org/{z}/{x}/{y}.png` | Default. Street names and context. |
+> | **Satellite** | `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}` | See the actual buildings, parking, substations, tree loss. |
+> | Topographic | `https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}` | Terrain and watersheds. |
+> | Hillshade | `https://server.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}` | Ridgelines — relevant to how noise carries. |
+> | Light canvas | `https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}` | Muted, so data overlays read clearly. |
+> | USGS imagery | `https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}` | US government aerial, independent of Esri. |
+>
+> **Note the axis order.** The Esri and USGS ArcGIS tile services use `{z}/{y}/{x}`, while OSM
+> and CARTO use `{z}/{x}/{y}`. Getting this wrong gives you a map of the wrong hemisphere, and
+> it is the single most common mistake with these services.
+>
+> **Attribution is a licence condition, not decoration.** Show the right one for whichever
+> basemap is active:
+> - Esri layers: `Tiles © Esri — Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community`
+> - USGS: `Tiles courtesy of the U.S. Geological Survey`
+> - OSM: `© OpenStreetMap contributors`
+>
+> **Overlays**, each independently toggleable:
+> - Data center **parcel boundaries** as polygons, not just centroid pins. You already fetch the
+>   full polygon geometry in Prompt 2 and throw it away after computing the centroid — keep it.
+>   On satellite this shows the real footprint against the neighbourhood, which is the single
+>   most persuasive thing the map can do.
+> - **Election district** boundaries with labels.
+> - A **heat layer** of community reports, so clusters are visible at county scale.
+> - **Data center building outlines** — you already load these for the statistics page.
+>
+> **Tools:**
+> - **Measure distance** — click points, get feet and metres. "How far is that from my house" is
+>   the question people actually arrive with.
+> - **Radius rings** — drop a point, draw 0.25 / 0.5 / 1 / 2 mile rings, and list every facility
+>   inside each.
+> - **Address search** — find my address on the map. Use Nominatim
+>   (`https://nominatim.openstreetmap.org/search?format=json&countrycodes=us&q=...`), on button
+>   press only, at most one request per second, with a descriptive `User-Agent`. Their usage
+>   policy requires all three; ignoring it gets the whole site blocked, not just one user.
+> - **Use my location**, **fullscreen**, and a **scale bar**.
+> - **Split / swipe compare** between satellite and streets if it is not much extra work — it
+>   makes the scale of a campus obvious in a way a single view does not.
+>
+> Keep the four data layers and their shape-plus-colour encoding exactly as they are. The
+> basemap switcher must not change what the markers mean, and markers must stay legible on
+> satellite — dark imagery needs a light stroke around each marker.
+>
+> On mobile, collapse the controls into a single sheet. Do not stack six buttons over the map.
+
+---
+
+## Prompt 11 — Full report detail with photos
+
+> Right now clicking a community report gives a small popup. Make each report a real record.
+>
+> **Clicking a report pin** opens a detail panel — a side sheet on desktop, a bottom sheet on
+> mobile — showing everything published about that report:
+> - District and ZIP as the heading, with the date submitted and how long ago
+> - Every issue category as a badge, and the severity with its label ("4 — Hard to live with")
+> - The **full description**, not truncated
+> - Any "anything else" notes
+> - The facility the reporter named, if they named one, and its status
+> - **All photos**, in a gallery — click to open full-size in a lightbox with keyboard
+>   navigation, swipe on touch, and Escape to close
+> - A note that the location shown is approximate
+> - A **permalink** and a copy-link button
+>
+> **Every report also gets its own page** at `/reports/:id` with its own title and description
+> meta tags, so a link previews properly when shared. The detail panel and the page render from
+> the same component.
+>
+> From the detail view, offer:
+> - "Show nearby reports" — other reports within half a mile
+> - "Show nearby facilities" — what is actually around that pin
+> - "I'm experiencing this too" → the report form, pre-filled with the same district and
+>   categories. **Do not** let this submit a duplicate silently; it goes through the normal form
+>   and normal moderation like everything else.
+> - A quiet "Report a problem with this report" link for factual disputes and takedown requests
+>
+> **Keep the privacy rules exactly as they are.** The detail view shows more of what the reporter
+> *wrote*. It must never show anything about *who they are*. No name, no contact, no street
+> address, no exact coordinates — not in the DOM, not in the API response, not in the page
+> source. The `public_reports` view is still the only thing the browser reads.
+>
+> Photos are served through short-lived signed URLs. Add `loading="lazy"` and real alt text.
+
+---
+
+## Prompt 12 — The watchlist and the ticker
+
+This is the feature that makes the site feel alive, and it is also the one with the most
+editorial risk. Read the framing note after the prompt before you build it.
+
+> Add a **watchlist**: locations where enough independent residents have reported problems that
+> the cluster is worth flagging.
+>
+> **The rule.** A location goes on the watchlist when **five or more approved reports from five
+> or more distinct households** fall within a **2-mile radius** of it. Both halves matter — five
+> reports from one angry household is not a cluster, it is one household.
+>
+> Cluster around two kinds of anchor:
+> - **A named facility.** Count approved reports within 2 miles of a data center from the county
+>   layer. This is the common case and the one people expect.
+> - **An emergent location** with no facility at its centre. Grid the county into roughly
+>   half-mile cells, count reports within 2 miles of each cell centre, keep cells over the
+>   threshold, and merge overlapping ones into a single entry named for the nearest place. These
+>   are the interesting ones — a cluster with no obvious cause is exactly what a watchdog site
+>   exists to surface.
+>
+> **Compute this in the database, not the browser.** Distinct-household counting requires reading
+> reporter email addresses, which the browser must never receive. Appendix E has the SQL: a
+> `SECURITY DEFINER` function that reads the base table, counts
+> `count(distinct lower(reporter_email))`, and writes to a `watchlist` table exposing only
+> aggregate numbers. Refresh it on a schedule and whenever a moderator approves a report.
+>
+> **The ticker.** Put a single-line ticker directly under the site header on **every page**.
+> - Each item reads like: **`⚠ Sterling — 14 reports within 2 miles · noise, vibration`**
+> - Items scroll horizontally, continuously, right to left
+> - **Pause on hover and on keyboard focus**, and give it a visible pause/play button
+> - **Honour `prefers-reduced-motion`**: if set, do not scroll at all — render a static
+>   horizontally scrollable strip instead
+> - Each item is a real link to `/watchlist/:id`
+> - Do **not** use `<marquee>`. It is deprecated, it is not keyboard accessible, and screen
+>   readers handle it badly. Use a CSS `transform: translateX()` animation on a duplicated track,
+>   inside a container with `aria-label="Community report watchlist"`.
+> - If the watchlist is empty, hide the ticker entirely. Never show an empty or placeholder bar.
+> - Dismissible, remembered for the session — but it comes back when a **new** entry appears,
+>   which you detect by storing the highest watchlist entry ID the visitor has dismissed.
+> - Cap it at the top 10 entries by report count so it does not become noise.
+>
+> **A `/watchlist` page** listing every entry, sortable by report count, most recent report, or
+> district. Each entry gets a detail page showing the cluster on the map with its 2-mile radius
+> drawn, the count over time, the category breakdown, every report in the cluster, the facilities
+> inside the radius, and the supervisor for that district with a link to write to them.
+>
+> **Wording — this part is not optional.** A watchlist entry is a statement about *reports*, never
+> about a company. Write it as "**14 residents have reported problems within 2 miles of this
+> location**", never as "this facility is causing problems". Put this line on every watchlist
+> page:
+>
+> > Watchlist entries reflect the number and proximity of resident reports. They are not findings
+> > of fact and do not establish that any facility caused any condition.
+>
+> Do not let the AI features generate watchlist prose. Template it.
+
+**Why the rule is shaped that way.** Three details in it are load-bearing:
+
+- **Only approved reports count.** If pending reports counted, anyone could manufacture a
+  watchlist entry — and therefore a public accusation against a named company — by filling in the
+  form five times. Moderation is what stands between the ticker and defamation.
+- **Distinct households, not distinct reports.** Same reason, one step subtler.
+- **2 miles is safely larger than the coordinate jitter.** Published pins are offset 100–200 m
+  from the real address. A 2-mile radius is 3,218 m — sixteen to thirty-two times the jitter — so
+  clustering on published coordinates gives the same answer as clustering on real ones, and never
+  requires exposing a real one. If you ever shrink the radius below about half a mile, that stops
+  being true and you would be trading residents' privacy for map precision. Don't.
+
+---
+
+## Prompt 13 — Local news, pulled automatically
+
+> Add a **News** section that pulls recent local coverage of data centers and AI infrastructure
+> and lists it as **headline → source → date → link**.
+>
+> **This cannot be done from the browser.** I tested every feed below and **none** of them send
+> `access-control-allow-origin`. A client-side `fetch()` gets a CORS error every time. Build it as
+> a Supabase Edge Function that fetches and parses the feeds server-side, writes into a
+> `news_items` table, and let the browser read that table. Appendix F has the function.
+>
+> **Primary source — Google News RSS.** No key, no quota, and it aggregates outlets that have no
+> usable feed of their own. Query by URL:
+>
+> ```
+> https://news.google.com/rss/search?q=<QUERY>&hl=en-US&gl=US&ceid=US:en
+> ```
+>
+> Run these queries and tag each result with the topic:
+>
+> | Topic | Query (URL-encode it) |
+> |---|---|
+> | Loudoun | `"data center" Loudoun` |
+> | Virginia | `"data center" Virginia when:30d` |
+> | Power and the grid | `data center electricity Dominion Virginia` |
+> | Water | `data center water usage Virginia` |
+> | AI buildout | `AI data center construction Virginia` |
+> | Loudoun Now | `site:loudounnow.com "data center"` |
+> | Loudoun Times-Mirror | `site:loudountimes.com "data center"` |
+>
+> Also poll these outlets' own feeds directly, which are current and reliable:
+> `https://virginiamercury.com/feed/` · `https://cardinalnews.org/feed/` · `https://wtop.com/feed/`
+> — then keep only items whose title or description matches `data cent|datacent|AI infrastructure|hyperscale`.
+>
+> **Parsing Google News, precisely.** Three quirks, all of which will bite:
+> - `<title>` is `Headline - Publication`. Split on the **last** `" - "` to separate them, and use
+>   the `<source>` element when it is present, which is more reliable.
+> - `<link>` is a `news.google.com/rss/articles/...` redirect, not the publisher's URL. Store it
+>   as-is and let the click resolve. Do not try to unwrap it; the encoding is undocumented and
+>   changes.
+> - `<description>` is an HTML fragment, not a summary. Do not render it.
+>
+> **What to display.** Headline, publication, relative date, and a link. **That is all.** Do not
+> store or display article body text, and do not summarise the article with AI — you have not
+> read the article, only its headline. Headline-plus-link is both the copyright-safe pattern and
+> the honest one.
+>
+> **Behaviour:**
+> - Refresh hourly. Cache in `news_items`; never fetch a feed on page load.
+> - De-duplicate on a normalised title — lower-cased, punctuation stripped, publication suffix
+>   removed. The same wire story appears under many mastheads.
+> - Drop anything older than 90 days.
+> - Links open in a new tab with `rel="noopener noreferrer nofollow"`.
+> - Filter chips by topic; a search box over headlines.
+> - Show the **five most recent Loudoun items on the home page**, under the map, with a "More
+>   news" link.
+> - If the last refresh failed, show the cached items with a quiet "last updated <time>" note.
+>   Never show an error page because a third-party feed was down.
+>
+> **Label it honestly.** Put this under the section heading:
+>
+> > Headlines are collected automatically from public news feeds. Inclusion is not endorsement,
+> > and this project has no relationship with any outlet listed.
+>
+> Give moderators a hide button per item, because automated feeds occasionally surface press
+> releases and SEO spam dressed as news.
+
+---
+
+## Prompt 14 — Facts and myths, by topic
+
+> Build a **Facts** section: the claims people actually meet about data centers, sorted into what
+> the evidence supports and what it does not, organised by topic.
+>
+> Ten topics, each its own page at `/facts/:topic` with a landing page at `/facts`:
+>
+> | Topic | What it covers |
+> |---|---|
+> | Electricity | Grid load, who pays for transmission, ratepayer impact |
+> | Water | Cooling water withdrawal and consumption, closed-loop vs evaporative |
+> | Noise | Chillers and generators, low-frequency noise, ordinance limits |
+> | Air quality | Diesel backup generators, permitted testing hours, emissions |
+> | Land and trees | Acreage, tree canopy loss, stormwater, buffers |
+> | Property values | What the research does and does not show |
+> | Taxes and jobs | Computer-equipment tax revenue, permanent employment numbers |
+> | Health | What is documented, what is claimed, what is unstudied |
+> | Zoning and process | By-right vs special exception, where the public gets a say |
+> | AI and the buildout | What AI demand actually changes about siting and load |
+>
+> **The format for every card.** Each entry is a claim, a verdict, and a source:
+>
+> - **The claim**, worded the way people actually say it
+> - **A verdict badge**: `Supported` · `Mostly true` · `Mixed` · `Misleading` · `Unsupported` ·
+>   `Unresolved`
+> - **What the evidence shows**, in two or three sentences of plain English
+> - **Sources** — at least one, each a link to a primary document: a state report, a utility
+>   filing, a county staff report, a peer-reviewed paper. Show the publisher and the year on the
+>   face of the card, not hidden in a footnote.
+> - **Last checked**, as a date
+>
+> **`Unresolved` is a real verdict and you should expect to use it often.** Several of the most
+> emotionally charged questions here — long-term health effects of chronic low-frequency noise
+> near residential areas is the clearest example — do not have a good answer in the literature
+> yet. Saying so is more credible than picking a side, and a site that only ever finds against
+> data centers will be dismissed as advocacy by exactly the audience it needs to persuade.
+>
+> **Include claims that cut against this site's angle.** If a common criticism is overstated, say
+> so and show the source. That is the entire currency of a project like this.
+>
+> **Do not generate this content with AI.** Every card needs a real citation to a real document
+> that a real person has opened. An AI-written fact-check with hallucinated sources is worse than
+> no fact-check, because it is confidently wrong and it discredits everything else on the site.
+> Build the UI now and let a human fill the cards. Ship with eight well-sourced cards rather than
+> sixty unsourced ones.
+>
+> Each card is individually linkable and individually shareable, with its own Open Graph image
+> showing the claim and the verdict. Add a "suggest a correction" link on every card that opens a
+> form pre-filled with the card ID.
+
+---
+
+## Prompt 15 — The elected officials hub
+
+This is the largest feature in Part Two and the one most likely to draw a complaint from
+someone's office. Everything in it must be sourced to a primary document. Read the note on
+scoring after the prompt.
+
+> Build an **Officials** section covering everyone who votes on, funds or regulates data center
+> development affecting Loudoun County — from county supervisors up to the US Senate.
+>
+> **Where the data comes from.** Loudoun County publishes an authoritative elected
+> representatives layer, and I have verified it sends `access-control-allow-origin: *`, so the
+> browser can fetch it directly:
+>
+> ```
+> https://services1.arcgis.com/MxjRokvPm7bjslyR/arcgis/rest/services/ElectedReps_Data/FeatureServer/{layer}/query
+>   ?where=1%3D1&outFields=*&outSR=4326&f=geojson
+> ```
+>
+> | Layer | Contents |
+> |---|---|
+> | `0` — `ELREP_LOUDOUN` | Eight district polygons carrying supervisor name, party, first election year, official page URL and photo URL; plus the at-large Board Chair, School Board member and at-large member, Sheriff, Commonwealth's Attorney, Commissioner of the Revenue, Treasurer and Clerk of Court |
+> | `1` — `ELREP_VAHOUSE` | Five Virginia House districts (26, 27, 28, 29, 30) with delegate name, party, email, Richmond and district office addresses and phones, official URL, photo |
+> | `2` — `ELREP_VASENATE` | Two Virginia Senate districts (31, 32) with the same fields |
+>
+> Because these are polygons, an address lookup is a point-in-polygon test against all three
+> layers at once — that is how "who represents me" works, and it needs no third-party service.
+>
+> For Congress use `https://unitedstates.github.io/congress-legislators/legislators-current.json`
+> (also CORS-open). Loudoun County is covered by **VA-10** and **VA-11** in the House, plus both
+> Virginia senators. Filter that file rather than hard-coding names — members change.
+>
+> **Never hard-code the roster.** Names, parties and photos all come from the live layers. A
+> hard-coded list is wrong the day after an election and nobody notices for a year.
+>
+> **Each official gets a profile page** at `/officials/:slug`:
+> - Photo, name, office, party, district, first elected, term end
+> - Every published contact route: office email, Richmond and district phone, mailing address,
+>   web contact form, official site
+> - **Which of this site's watchlist clusters and community reports fall in their district**, with
+>   counts — this is the link that makes the hub matter rather than being a phone book
+> - The data center facilities in their district: operational, under construction, proposed
+> - **Voting record** on data center and related matters (below)
+> - **Campaign finance** (below)
+> - "Write to this official" → the letter writer in Prompt 16
+> - A "correct this profile" link on every page, above the fold, not buried in a footer
+>
+> **Voting record.** Be straight about what is available:
+> - **Loudoun Board of Supervisors votes have no API.** They exist in meeting minutes published
+>   through the county's Granicus portal as PDFs and video. There is no feed to parse. Build the
+>   UI as a hand-curated table — motion, date, vote, link to the minutes PDF and the video
+>   timestamp — and enter the data-center-relevant votes by hand. Twenty accurate hand-entered
+>   votes beat two hundred scraped ones with an error rate.
+> - **Virginia General Assembly** bills and votes are published by the Legislative Information
+>   System at `https://lis.virginia.gov` and are far more tractable, though also not CORS-open.
+> - **Congress** — use `https://api.congress.gov` (free key from `api.congress.gov/sign-up`) or
+>   the roll-call XML the House and Senate publish per vote.
+> - Every vote row links to the primary record. A vote with no link does not get displayed.
+>
+> **Campaign finance.** Virginia publishes itemised contributions as bulk CSV — no key, no
+> scraping, no third-party aggregator:
+>
+> ```
+> https://apps.elections.virginia.gov/SBE_CSV/CF/{YYYY_MM}/Report.csv       ~2 MB   committees and candidates
+> https://apps.elections.virginia.gov/SBE_CSV/CF/{YYYY_MM}/ScheduleA.csv    ~41 MB  itemised contributions
+> https://apps.elections.virginia.gov/SBE_CSV/CF/{YYYY_MM}/ScheduleD.csv    ~8 MB   expenditures
+> ```
+>
+> `ScheduleA` gives contributor name, employer, occupation or type of business, city, state, ZIP,
+> an `IsIndividual` flag, date and amount, joined to `Report.csv` on `ReportId` to get the
+> committee and candidate. Ingest it server-side into Supabase on a monthly schedule; it is far
+> too large to fetch in a browser. For federal candidates use the FEC's OpenFEC API
+> (`https://api.open.fec.gov/v1/`, free key from `api.data.gov`). Link out to VPAP for context but
+> do **not** scrape it — it blocks automated requests, and it is a small non-profit whose work
+> deserves traffic rather than extraction.
+>
+> **Two matching problems you must handle explicitly, because both produce libel if you get them
+> wrong:**
+>
+> 1. **Matching committees to candidates.** Name matching fails badly. In the January 2026 file
+>    there is a "Kelly L Glass" committee that has nothing to do with Supervisor Sylvia Glass, and
+>    a "Kelvin E Turner for Portsmouth City Council" that has nothing to do with Supervisor
+>    Michael Turner. Match once, by hand, on `CommitteeCode`, store the mapping, and never match
+>    by name at runtime.
+> 2. **Deciding what counts as "data center money".** Substring matching is worse than useless
+>    here. That same file contains "Dominion Energy PAC" — a genuine utility PAC — and "Dominion
+>    Floor Covering, Inc" of Yorktown, a flooring company. Maintain an explicit, versioned list of
+>    donor entities with a category each (`operator`, `utility`, `developer`, `construction`,
+>    `land`, `law firm`, `trade association`), match on exact normalised entity name, and
+>    **publish the list on the site** so a reader can see precisely why a donor was counted.
+>
+> Display finance as: total raised in the cycle · total from listed data-center-related entities ·
+> that as a percentage · the top ten such contributions itemised with dates and amounts · a link
+> to the filing each came from. Every number traceable to a document.
+>
+> **The scorecard.** Give each official a **Data Center Accountability Score** built from
+> published, checkable components — not from a language model's opinion:
+>
+> | Component | Weight | Source |
+> |---|---|---|
+> | Votes on data center applications and related ordinances | 40% | Meeting minutes, roll calls |
+> | Positions taken in public statements and hearings | 20% | Video, minutes, press releases |
+> | Share of funding from listed data-center-related entities | 20% | The finance data above |
+> | Support for disclosure, setbacks, noise limits, ratepayer protection | 20% | Bill sponsorship, motions |
+>
+> Show the component scores, not just the total. Make every component expandable to the evidence
+> behind it. Give officials with insufficient public record an **Insufficient data** badge rather
+> than a low score — absence of evidence is not evidence.
+>
+> **The AI button is a summariser, not a judge.** "Explain this record" sends *only the sourced
+> rows already on the page* to the model and asks for a neutral two-paragraph summary of what
+> those rows show. It must not browse, must not recall anything about the person from training,
+> must not produce a rating, and must not add a fact that is not in the rows it was given. Label
+> the output "AI summary of the sourced record on this page" and put the model name next to it.
+> Details in Prompt 16 and Appendix F.
+>
+> **Methodology page.** One page at `/officials/methodology` giving the full scoring formula, the
+> donor classification list, the update schedule, the corrections process, and a plain statement
+> of what the score does and does not mean. Link it from every profile. If you cannot write that
+> page honestly, do not ship the score — ship the underlying facts without a number on top.
+
+**On the ranking you asked for.** You asked for a button that runs an AI analysis and ranks each
+official good or bad on data centers. I have built the ranking, and I have deliberately not built
+it that way, for reasons that are practical rather than squeamish:
+
+A language model asked to rate a named living person will produce a confident answer whether or
+not it knows anything. It will attribute votes to the wrong supervisor, invent a quote, or repeat
+a training-data claim that was never true — and it will do it in a sentence that reads perfectly.
+You cannot cite it, you cannot defend it, and one demonstrably invented vote is enough for an
+opposing press office to discredit the entire site, including the resident reports, which are the
+part that actually matters.
+
+The scorecard above gets you the same thing and survives contact with a hostile reader. When
+someone objects to a score, you open the page and show them the roll call. The AI still does the
+work it is genuinely good at — turning twelve rows of votes and donations into two readable
+paragraphs — but the verdict comes from the record, and the record is on the page.
+
+---
+
+## Prompt 16 — The AI letter writer
+
+> Add a tool that helps a resident write to their elected officials — and make it produce a
+> letter that sounds like the person who sent it, because a hundred identical AI letters are
+> worth less to a supervisor's office than five real ones.
+>
+> **Flow:**
+> 1. Enter an address (or pick a district). Point-in-polygon against the three `ElectedReps_Data`
+>    layers to find the supervisor, delegate and state senator, plus the congressional district.
+> 2. Choose who to write to — one, several, or all — with each official's actual contact route
+>    shown.
+> 3. Pick a topic: noise, water, electricity rates, tree loss, traffic, an application at a
+>    specific address, a scheduled hearing, or something else.
+> 4. Say what is happening in your own words. Two sentences is fine. **Prefill this from the
+>    person's own community report if they have one** — that is the highest-value shortcut in the
+>    whole feature.
+> 5. Choose a tone: measured · concerned · formal · brief.
+> 6. Generate. Show the draft in an editable box, never send it automatically.
+> 7. Copy, download as `.txt`, or open a `mailto:` link with subject and body pre-filled.
+>
+> **What the model is given:** the resident's own words, the official's name, office and district,
+> the facility and report counts near that address from data already on the site, and any relevant
+> upcoming meeting. Nothing else.
+>
+> **What the model is told:** write in first person as this resident; use only the facts supplied;
+> invent nothing; do not attribute intent or blame to any company; do not state legal conclusions;
+> keep it under 350 words; open with the writer's connection to the district; make one specific,
+> actionable ask. The full system prompt is in Appendix F.
+>
+> **What must be true of the output:**
+> - The resident sees and can edit every word before it goes anywhere.
+> - Nothing is sent from this site. A `mailto:` link or a copy button — the message leaves from
+>   the resident's own mail client, from their own address, as their own words.
+> - A note under the box: "Officials' offices can tell form letters from real ones. Edit this so
+>   it sounds like you — a specific detail about your street is worth more than a page of
+>   argument."
+> - Rate-limited per session. This must not become a mass-mail tool; that is how a site like this
+>   gets its mail filtered to junk county-wide.
+>
+> **The key stays server-side.** The Anthropic API key lives in a Supabase Edge Function secret
+> and never appears in client code, in a `VITE_`-prefixed variable, or in the network tab.
+> Anything prefixed `VITE_` is compiled into the bundle and is public. Appendix F has the
+> function, the exact request shape, and the deployment commands.
+>
+> **Also build the two smaller AI features**, through the same function with different system
+> prompts:
+> - **Explain this application** — turn a zoning case (`ZMAP-2018-0015`, 1.2 M sq ft, SPEX,
+>   approved 2019) into two plain sentences. Input is the county record only.
+> - **Explain this record** — the officials summariser from Prompt 15. Input is the sourced rows
+>   on the page only.
+>
+> Every AI-generated block on the site carries a visible label naming the model, and every one of
+> them is editable or dismissible by the person reading it.
+
+---
+
+## Prompt 17 — Meetings, deadlines and the resources library
+
+> Build a **Meetings** section so residents know when decisions are actually made, and expand
+> Resources into a real library.
+>
+> **The calendar.** Loudoun County publishes an events RSS feed:
+>
+> ```
+> https://www.loudoun.gov/RSSFeed.aspx?ModID=58&CID=All-calendar.xml
+> ```
+>
+> It returns real, current entries — board and commission meetings, each linking to
+> `loudoun.gov/Calendar.aspx?EID=<id>` for agenda and location. **It does not send CORS headers**,
+> so fetch it in the same Edge Function as the news feed and cache it in a `meetings` table.
+>
+> Show meetings for the bodies that decide these applications — Board of Supervisors, Planning
+> Commission, Board of Zoning Appeals, and the relevant standing committees — and mark any whose
+> title or agenda mentions a data center, a zoning case number, or a rezoning.
+>
+> Each meeting shows date and time, body, location with a map link, agenda link, live-stream and
+> archive links, and **whether public comment is taken and how to sign up**, which is the single
+> most useful thing on the page and the thing residents most often miss. Add "Add to calendar"
+> generating a proper `.ics` file.
+>
+> Put the **next three meetings on the home page**. Add a countdown for any public-comment
+> deadline inside 14 days.
+>
+> **Resources, expanded** — one page per group, not one long list:
+> - **Report a problem now** — the county's own channels, with the direct numbers already in
+>   Appendix B. This stays first. This site is not a complaint channel and must never be mistaken
+>   for one.
+> - **Understand your rights** — noise ordinance, zoning process, how special exceptions work,
+>   what by-right development means and why it matters, how to speak at a hearing, how to request
+>   records under Virginia FOIA.
+> - **Document library** — county staff reports, state studies (JLARC's data center report is the
+>   obvious anchor), utility filings, ordinances, peer-reviewed papers. Each with publisher, date,
+>   a plain-English note on what it actually found, and a link to the original. Include documents
+>   that cut against this site's angle.
+> - **Organisations** — local and state groups working on this, each described neutrally, each
+>   linked. Say plainly that listing is not affiliation.
+> - **Doing your own research** — how to look up a parcel in county GIS, find a zoning case, read
+>   a staff report, and check who owns a property. Teaching this is more valuable than any single
+>   fact the site can publish.
+> - **For journalists** — the data exports, the methodology pages, the corrections policy, and a
+>   contact route.
+
+---
+
+## Prompt 18 — The rest of the watchdog toolkit
+
+> These are the things that turn a map into something people return to. Build as many as you can;
+> they are roughly in order of value.
+>
+> **1. "What's near me"** — the question everyone arrives with. Enter an address and get: every
+> facility within 0.5, 1 and 2 miles split by status; how many are proposed rather than built;
+> every community report nearby; whether the address falls inside a watchlist cluster; and **which
+> officials represent it** — supervisor, delegate, state senator, US representative — each linking
+> to their profile and to the letter writer.
+>
+> **2. Alerts.** Email subscription to: new applications within N miles of an address; new reports
+> in a district; a new watchlist entry nearby; a meeting with a data center item on the agenda; an
+> upcoming public-comment deadline. This is what converts a visitor into a participant. Confirmed
+> opt-in, unsubscribe link in every email, and store the subscriber's location as coordinates plus
+> a radius rather than as a street address.
+>
+> **3. Application tracker.** The county pipeline layer carries real application numbers
+> (`EPLAN-2023-0083`) and zoning case numbers (`ZMAP-2018-0015`), and a separate county layer
+> lists approved applications with their type (`SPEX`, `ZMAP`, `ZCPA`, `ZMOD`, `ZRTD`, `SPMI`) and
+> approval date. Give each case a page: where it is, how big, current status, district,
+> supervisor, nearby reports, and status changes over time.
+>
+> **4. Change detection.** The county refreshes its parcel data every few months. Snapshot each
+> pull and show the diff: "**12 new applications since March**, 3 approved, 1 withdrawn". A diff
+> is more newsworthy than a total, and it gives people a reason to come back.
+>
+> **5. A structured noise and impact log.** The site already tells people that a log kept over
+> weeks is far more persuasive than one vivid description. Give them the tool: a fast repeat-entry
+> form (date, time, duration, what they observed, optional decibel reading), private to that
+> person, exporting as a formatted PDF they can attach to a county complaint. Be honest in the UI
+> that a phone decibel app is not a calibrated meter — recording that limitation is what makes the
+> rest of the log credible.
+>
+> **6. Open data out.** Public CSV and JSON export of published reports, plus a read-only API.
+> Journalists and researchers are a large part of who this is for, and making their job easy
+> multiplies the site's reach. Same privacy rules as everywhere else: the export is the
+> `public_reports` view, nothing more.
+>
+> **7. An embeddable map widget.** A single `<iframe>` snippet local news sites and community
+> groups can paste. Every embed is a link back.
+>
+> **8. Share cards.** An Open Graph image per report, per watchlist entry and per statistic, so a
+> link posted to social media shows the map and the number rather than a bare URL.
+>
+> **9. Spanish translation.** Sterling and the eastern districts — the areas with by far the
+> heaviest data center concentration — have large Spanish-speaking populations. An English-only
+> site systematically excludes the households most affected. At minimum translate the report form,
+> the privacy promise, the resources page and the ticker.
+>
+> **10. A timeline.** How Loudoun got here: the key rezonings, the votes, the moment "Data Center
+> Alley" became the county's tax base. Anchored to sourced events, not narrative.
+>
+> **11. Archive search.** Reports stay findable — full-text search over report text, date-range
+> filter, pagination rather than truncation.
 
 ---
 
@@ -1015,6 +1655,33 @@ Things that went wrong building this the first time. Each one costs an hour if y
 - Test the security as an anonymous client, not as yourself in the dashboard. The dashboard uses
   the service role and bypasses everything.
 
+**Part Two**
+
+- **`overlaps` is a reserved word in PostgreSQL.** Declaring a plpgsql variable with that name
+  fails with a syntax error pointing at the assignment, several lines away from the declaration
+  that actually caused it. `natural`, `end`, `order` and `limit` bite the same way.
+- **`cross join lateral unnest(categories)` multiplies rows.** A report with three categories
+  becomes three rows, so `count(*)` over that join reports three times the real number of
+  reports. Use `count(distinct r.id)`. This one is dangerous rather than merely wrong: it
+  silently inflates every watchlist entry past the threshold.
+- **The insert trigger forces `status = 'pending'`, including on your test fixtures.** Seeding
+  approved reports directly gives you an empty watchlist and a confusing hour. Insert, then
+  update, the way a moderator would.
+- **`security definer` functions need `set search_path`.** Without it the function resolves
+  names against the caller's path, which is the standard way these get exploited.
+- **Nothing that reads `reporter_email` may return it.** `refresh_watchlist()` reads emails to
+  count households and writes only an integer. Keep that property when you change it.
+- **`marquee` is not an option for the ticker.** It is deprecated, unpausable and inaccessible.
+  A CSS `translateX` animation on a duplicated track, with `prefers-reduced-motion` honoured and
+  a real pause control, is barely more work.
+- **Google News `<link>` values are redirect URLs**, not publisher URLs, and the encoding is
+  undocumented. Store them as-is; do not try to unwrap them.
+- **`VITE_`-prefixed environment variables are compiled into the client bundle.** An API key in
+  one is a published API key. Edge Function secrets are a different mechanism and are not
+  exposed.
+- **A dead feed must not fail the refresh run.** Wrap each fetch in its own `try`; partial
+  results beat none, and third-party feeds go down regularly.
+
 **Numbers to check the build against**
 
 | Check | Expected |
@@ -1027,6 +1694,698 @@ Things that went wrong building this the first time. Each one costs an hour if y
 | Jitter distance, measured over many inserts | 100–200 m, never 0 |
 | Anon `select * from reports` | 0 rows or permission denied |
 | Horizontal scroll at 320px | none, on every page |
+| Elected representative layers | 8 county districts, 5 VA House, 2 VA Senate |
+| Watchlist: 6 reports from 6 households | exactly 1 entry |
+| Watchlist: 7 reports from 1 household | 0 entries |
+| Watchlist: 6 unmoderated reports | 0 entries |
+| Anon calling `refresh_watchlist()` | permission denied |
+
+---
+
+
+## Appendix E — The Part Two database schema
+
+Run this after `01_schema.sql`, `02_rls.sql` and `03_storage.sql`. It adds the four tables
+Part Two needs and the function that computes the watchlist.
+
+I ran this file against PostgreSQL 16 with a Supabase-shaped shim before writing it down, and
+checked the behaviour rather than the syntax: a cluster of six reports from six households
+produces exactly one watchlist entry named after the facility at its centre; seven reports
+from one household produce none; six approved-looking but unmoderated reports produce none;
+four households produce none. `anon` can read the watchlist, cannot call the refresh
+function, cannot read `public.reports`, and cannot insert a fake entry.
+
+```sql
+-- =============================================================================
+-- Loudoun Data Center Watch — Part Two schema
+--
+-- Run after 01_schema.sql, 02_rls.sql and 03_storage.sql.
+--
+-- Adds the four tables Part Two needs — facilities, watchlist, news_items,
+-- meetings — and the function that computes the watchlist.
+--
+-- The privacy model is unchanged and this file is careful not to weaken it.
+-- refresh_watchlist() is the only thing here that reads public.reports, it is
+-- SECURITY DEFINER for exactly one reason (counting distinct households needs
+-- reporter_email), and it writes nothing but counts. anon can read the output
+-- tables and nothing else.
+-- =============================================================================
+
+-- ---- Distance ---------------------------------------------------------------
+-- Haversine in plain SQL. PostGIS would be the obvious tool, but it is a large
+-- dependency for one function and the earthdistance extension needs cube, which
+-- some managed setups restrict. This is accurate to a few metres over county
+-- distances, which is far below the 100-200 m jitter already in the data.
+
+create or replace function public.meters_between(
+  lat1 double precision, lng1 double precision,
+  lat2 double precision, lng2 double precision
+) returns double precision
+language sql immutable parallel safe as $$
+  select 6371008.8 * 2 * asin(sqrt(
+      power(sin(radians(lat2 - lat1) / 2), 2)
+    + cos(radians(lat1)) * cos(radians(lat2))
+    * power(sin(radians(lng2 - lng1) / 2), 2)
+  ));
+$$;
+
+-- ---- Facilities -------------------------------------------------------------
+-- A mirror of the county GIS layers, refreshed server-side. Part One reads
+-- facilities from a static GeoJSON in the browser and that still works; this
+-- table exists so the watchlist can name a cluster after the facility at its
+-- centre, and so change detection has something to diff against.
+
+create table if not exists public.facilities (
+  id            text primary key,              -- county PIN or application number
+  name          text not null,
+  operator      text,
+  status        facility_status not null default 'unknown',
+  locality      text,
+  lat           double precision not null,
+  lng           double precision not null,
+  sq_ft         bigint,
+  application   text,                          -- EPLAN-2023-0083, ZMAP-2018-0015
+  source_layer  text not null,
+  first_seen_at timestamptz not null default now(),
+  last_seen_at  timestamptz not null default now(),
+  retired_at    timestamptz                    -- set when it drops out of the county layer
+);
+
+create index if not exists facilities_latlng_idx on public.facilities (lat, lng);
+create index if not exists facilities_status_idx on public.facilities (status)
+  where retired_at is null;
+
+-- ---- Watchlist --------------------------------------------------------------
+
+create table if not exists public.watchlist (
+  id               uuid primary key default gen_random_uuid(),
+  kind             text not null check (kind in ('facility', 'area')),
+  label            text not null check (char_length(label) between 2 and 160),
+  locality         text,
+  facility_id      text references public.facilities (id) on delete set null,
+
+  -- Cluster centre. For a facility cluster this is the facility. For an area
+  -- cluster it is the published (jittered) location of the anchor report, which
+  -- is deliberate: no exact address is ever the centre of a published circle.
+  lat              double precision not null,
+  lng              double precision not null,
+  radius_m         integer not null default 3219,   -- 2 miles
+
+  report_count     integer not null check (report_count     >= 0),
+  household_count  integer not null check (household_count  >= 0),
+  categories       text[]  not null default '{}',
+  top_severity     smallint,
+
+  first_report_at  timestamptz,
+  latest_report_at timestamptz,
+  created_at       timestamptz not null default now(),
+  updated_at       timestamptz not null default now()
+);
+
+create index if not exists watchlist_rank_idx on public.watchlist (report_count desc);
+
+-- Thresholds live in one place so the rule can be changed without hunting.
+-- 5 reports from 5 distinct households within 2 miles. Both halves matter:
+-- one household filing five times is not a cluster.
+create or replace function public.watchlist_config()
+returns table (radius_m integer, min_reports integer, min_households integer)
+language sql immutable as $$ select 3219, 5, 5 $$;
+
+-- =============================================================================
+-- refresh_watchlist()
+--
+-- SECURITY DEFINER because counting distinct households requires reading
+-- reporter_email from public.reports, which no client role may do. Nothing it
+-- writes contains an email, an exact coordinate, or any other private field.
+--
+-- Candidate centres are the reports themselves rather than a fixed grid: every
+-- real cluster contains at least one report at its core, so scanning reports
+-- finds the same clusters as a grid without inventing centres in empty fields.
+-- Candidates are then taken strongest-first, and any candidate within one
+-- radius of an already-accepted centre is dropped, so the output does not
+-- contain five overlapping entries describing one cluster.
+-- =============================================================================
+
+create or replace function public.refresh_watchlist()
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  cfg          record;
+  candidate    record;
+  accepted     integer := 0;
+  centres      jsonb   := '[]'::jsonb;
+  centre       jsonb;
+  is_duplicate     boolean;
+  near_facility record;
+begin
+  select * into cfg from public.watchlist_config();
+
+  create temp table _candidates on commit drop as
+  select
+      anchor.id                                as anchor_id,
+      anchor.lat_public                        as lat,
+      anchor.lng_public                        as lng,
+      anchor.locality                          as locality,
+      count(distinct near.id)                  as report_count,
+      count(distinct lower(trim(near.reporter_email)))
+        filter (where near.reporter_email is not null and trim(near.reporter_email) <> '')
+                                               as household_count,
+      array_agg(distinct cat)                  as categories,
+      max(near.severity)                       as top_severity,
+      min(near.created_at)                     as first_report_at,
+      max(near.created_at)                     as latest_report_at
+    from public.reports anchor
+    join public.reports near
+      on near.status = 'approved'
+     and public.meters_between(anchor.lat_public, anchor.lng_public,
+                               near.lat_public,   near.lng_public) <= cfg.radius_m
+    cross join lateral unnest(near.categories) as cat
+   where anchor.status = 'approved'
+   group by anchor.id, anchor.lat_public, anchor.lng_public, anchor.locality
+  having count(distinct near.id) >= cfg.min_reports;
+
+  delete from public.watchlist;
+
+  for candidate in
+    select * from _candidates
+     where household_count >= cfg.min_households
+     order by report_count desc, latest_report_at desc, anchor_id
+  loop
+    -- Drop candidates that describe a cluster already accepted.
+    is_duplicate := false;
+    for centre in select * from jsonb_array_elements(centres) loop
+      if public.meters_between(candidate.lat, candidate.lng,
+                               (centre ->> 'lat')::double precision,
+                               (centre ->> 'lng')::double precision) <= cfg.radius_m then
+        is_duplicate := true;
+        exit;
+      end if;
+    end loop;
+    continue when is_duplicate;
+
+    -- Name it after the facility at its centre when there is one.
+    select f.id, f.name, f.locality
+      into near_facility
+      from public.facilities f
+     where f.retired_at is null
+       and public.meters_between(candidate.lat, candidate.lng, f.lat, f.lng) <= cfg.radius_m
+     order by public.meters_between(candidate.lat, candidate.lng, f.lat, f.lng)
+     limit 1;
+
+    insert into public.watchlist (
+      kind, label, locality, facility_id, lat, lng, radius_m,
+      report_count, household_count, categories, top_severity,
+      first_report_at, latest_report_at
+    ) values (
+      case when near_facility.id is null then 'area' else 'facility' end,
+      coalesce(near_facility.name, 'Near ' || coalesce(candidate.locality, 'Loudoun County')),
+      coalesce(candidate.locality, near_facility.locality),
+      near_facility.id,
+      candidate.lat, candidate.lng, cfg.radius_m,
+      candidate.report_count, candidate.household_count,
+      candidate.categories, candidate.top_severity,
+      candidate.first_report_at, candidate.latest_report_at
+    );
+
+    centres  := centres || jsonb_build_object('lat', candidate.lat, 'lng', candidate.lng);
+    accepted := accepted + 1;
+  end loop;
+
+  return accepted;
+end;
+$$;
+
+revoke all on function public.refresh_watchlist() from public, anon;
+
+-- ---- News -------------------------------------------------------------------
+-- Written only by the Edge Function, using the service role. Headline, source,
+-- date and link. No article body: the site links to journalism, it does not
+-- republish it.
+
+create table if not exists public.news_items (
+  id             uuid primary key default gen_random_uuid(),
+  title          text not null check (char_length(title) between 3 and 400),
+  url            text not null check (url ~ '^https?://'),
+  source         text not null check (char_length(source) <= 120),
+  topic          text not null default 'loudoun',
+  published_at   timestamptz not null,
+  fetched_at     timestamptz not null default now(),
+  hidden         boolean not null default false,
+  -- Normalised title, used to collapse the same wire story across mastheads.
+  dedupe_key     text generated always as (
+                   regexp_replace(lower(title), '[^a-z0-9]+', '', 'g')
+                 ) stored,
+  unique (dedupe_key)
+);
+
+create index if not exists news_recent_idx
+  on public.news_items (published_at desc) where hidden = false;
+
+-- ---- Meetings ---------------------------------------------------------------
+
+create table if not exists public.meetings (
+  id               text primary key,            -- the county EID
+  title            text not null,
+  body             text,                        -- Board of Supervisors, Planning Commission...
+  starts_at        timestamptz not null,
+  location         text,
+  detail_url       text,
+  agenda_url       text,
+  stream_url       text,
+  data_center_flag boolean not null default false,
+  public_comment   boolean,
+  fetched_at       timestamptz not null default now()
+);
+
+create index if not exists meetings_upcoming_idx on public.meetings (starts_at);
+
+-- ---- RLS --------------------------------------------------------------------
+-- Everything here is published aggregate or public-record data, so anon may
+-- read it. Nothing here is writable by anon; the Edge Functions write with the
+-- service role, which bypasses RLS.
+
+alter table public.facilities  enable row level security;
+alter table public.watchlist   enable row level security;
+alter table public.news_items  enable row level security;
+alter table public.meetings    enable row level security;
+
+drop policy if exists "facilities: public read" on public.facilities;
+drop policy if exists "watchlist: public read"  on public.watchlist;
+drop policy if exists "news: public read"       on public.news_items;
+drop policy if exists "meetings: public read"   on public.meetings;
+
+create policy "facilities: public read" on public.facilities
+  for select to anon, authenticated using (retired_at is null);
+
+create policy "watchlist: public read" on public.watchlist
+  for select to anon, authenticated using (true);
+
+create policy "news: public read" on public.news_items
+  for select to anon, authenticated using (hidden = false);
+
+create policy "meetings: public read" on public.meetings
+  for select to anon, authenticated using (true);
+
+grant select on public.facilities, public.watchlist, public.news_items, public.meetings
+  to anon, authenticated;
+
+-- ---- Scheduling -------------------------------------------------------------
+-- With pg_cron enabled (Database → Extensions in the Supabase dashboard):
+--
+--   select cron.schedule('watchlist-refresh', '17 * * * *',
+--                        $cron$ select public.refresh_watchlist() $cron$);
+--
+-- Also call refresh_watchlist() from the moderation UI right after a report is
+-- approved, so the ticker reflects a decision immediately rather than up to an
+-- hour later.
+--
+-- Without pg_cron, invoke it from the same scheduled Edge Function that
+-- refreshes news and meetings.
+```
+
+---
+
+## Appendix F — The four Edge Functions
+
+Part Two needs a server. Not much of one — four Supabase Edge Functions, which are Deno
+TypeScript files you deploy with one command each and never think about again.
+
+They exist because of three hard constraints, none of which prompting can talk its way around:
+
+| Constraint | Why it forces a server |
+|---|---|
+| News and calendar feeds send no CORS headers | A browser `fetch()` to any of them fails, always |
+| The Anthropic API key must stay secret | Anything in client JS, or in a `VITE_`-prefixed variable, is compiled into the bundle and public |
+| Counting distinct households needs reporter emails | The browser must never receive them |
+
+**Set the secrets once:**
+
+```bash
+supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
+# SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are injected automatically.
+```
+
+The service role key bypasses RLS. It belongs in Edge Function secrets and **nowhere else** —
+not in `.env` in the repo, not in Lovable's environment variables panel if that panel feeds the
+client bundle, not in a comment.
+
+---
+
+### F1 — `refresh-news`
+
+Fetches the feeds, parses them, writes `news_items`. Run it hourly.
+
+```ts
+// supabase/functions/refresh-news/index.ts
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+
+const GOOGLE_NEWS = 'https://news.google.com/rss/search'
+
+// Each entry becomes one Google News query. Tag drives the topic filter chips.
+const QUERIES: Array<{ topic: string; q: string }> = [
+  { topic: 'loudoun',  q: '"data center" Loudoun' },
+  { topic: 'virginia', q: '"data center" Virginia when:30d' },
+  { topic: 'power',    q: 'data center electricity Dominion Virginia' },
+  { topic: 'water',    q: 'data center water usage Virginia' },
+  { topic: 'ai',       q: 'AI data center construction Virginia' },
+  { topic: 'loudoun',  q: 'site:loudounnow.com "data center"' },
+  { topic: 'loudoun',  q: 'site:loudountimes.com "data center"' },
+]
+
+// Outlets with their own working feeds. Filtered by keyword after fetching,
+// because these are general news feeds, not data center feeds.
+const DIRECT_FEEDS = [
+  { topic: 'virginia', url: 'https://virginiamercury.com/feed/' },
+  { topic: 'virginia', url: 'https://cardinalnews.org/feed/' },
+  { topic: 'regional', url: 'https://wtop.com/feed/' },
+]
+const RELEVANT = /data\s?cent|datacent|hyperscale|AI infrastructure/i
+
+const tag = (xml: string, name: string) => {
+  // RSS uses CDATA about half the time. Handle both without a DOM parser —
+  // Deno has no DOMParser for XML and pulling one in for four tags is silly.
+  const m = xml.match(new RegExp(`<${name}[^>]*>([\\s\\S]*?)</${name}>`, 'i'))
+  if (!m) return ''
+  return m[1].replace(/^<!\[CDATA\[/, '').replace(/\]\]>$/, '').trim()
+}
+
+const decode = (s: string) =>
+  s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
+   .replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&')
+
+function parseItems(xml: string, topic: string) {
+  const out = []
+  for (const block of xml.match(/<item>[\s\S]*?<\/item>/gi) ?? []) {
+    const rawTitle = decode(tag(block, 'title'))
+    const link     = tag(block, 'link')
+    const pubDate  = tag(block, 'pubDate')
+    if (!rawTitle || !link) continue
+
+    // Google News formats titles as "Headline - Publication". The <source>
+    // element is more reliable when present, so prefer it.
+    let title  = rawTitle
+    let source = decode(tag(block, 'source'))
+    const cut  = rawTitle.lastIndexOf(' - ')
+    if (cut > 20) {
+      title = rawTitle.slice(0, cut).trim()
+      if (!source) source = rawTitle.slice(cut + 3).trim()
+    }
+
+    const published = pubDate ? new Date(pubDate) : new Date()
+    if (isNaN(published.getTime())) continue
+
+    out.push({
+      title,
+      url: link,
+      source: source || 'Unknown',
+      topic,
+      published_at: published.toISOString(),
+    })
+  }
+  return out
+}
+
+Deno.serve(async () => {
+  const supabase = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+  )
+
+  const items = []
+
+  for (const { topic, q } of QUERIES) {
+    const url = `${GOOGLE_NEWS}?q=${encodeURIComponent(q)}&hl=en-US&gl=US&ceid=US:en`
+    try {
+      const res = await fetch(url, { headers: { 'User-Agent': 'loudoun-dc-watch/1.0' } })
+      if (res.ok) items.push(...parseItems(await res.text(), topic))
+    } catch (err) {
+      // One dead feed must not fail the run. Partial results beat none.
+      console.error('feed failed', q, err)
+    }
+  }
+
+  for (const { topic, url } of DIRECT_FEEDS) {
+    try {
+      const res = await fetch(url, { headers: { 'User-Agent': 'loudoun-dc-watch/1.0' } })
+      if (res.ok) {
+        items.push(...parseItems(await res.text(), topic).filter((i) => RELEVANT.test(i.title)))
+      }
+    } catch (err) {
+      console.error('feed failed', url, err)
+    }
+  }
+
+  // dedupe_key is a generated column with a unique index, so the same wire
+  // story under three mastheads collapses to one row. ignoreDuplicates keeps
+  // the first-seen version rather than churning the row on every run.
+  const { error } = await supabase
+    .from('news_items')
+    .upsert(items, { onConflict: 'dedupe_key', ignoreDuplicates: true })
+
+  const cutoff = new Date(Date.now() - 90 * 864e5).toISOString()
+  await supabase.from('news_items').delete().lt('published_at', cutoff)
+
+  return Response.json({ fetched: items.length, error: error?.message ?? null })
+})
+```
+
+```bash
+supabase functions deploy refresh-news --no-verify-jwt
+```
+
+Schedule it hourly with pg_cron:
+
+```sql
+select cron.schedule('news-refresh', '9 * * * *', $cron$
+  select net.http_post(
+    url     := 'https://<project-ref>.supabase.co/functions/v1/refresh-news',
+    headers := '{"Authorization": "Bearer <anon-key>"}'::jsonb
+  );
+$cron$);
+```
+
+---
+
+### F2 — `refresh-meetings`
+
+Same shape, one feed:
+
+```
+https://www.loudoun.gov/RSSFeed.aspx?ModID=58&CID=All-calendar.xml
+```
+
+Parse `<item>` the same way. The `<link>` is `loudoun.gov/Calendar.aspx?EID=<id>` — use that
+`EID` as the primary key so re-runs update rather than duplicate. Set `data_center_flag` when
+the title or description matches `/data\s?cent|ZMAP|ZCPA|SPEX|rezon/i`. Upsert on `id`.
+
+Run it every six hours; a county calendar does not change by the minute.
+
+---
+
+### F3 — `ai-assist`
+
+One function, three modes. The key never leaves it.
+
+```ts
+// supabase/functions/ai-assist/index.ts
+const MODEL = 'claude-opus-5'
+
+const SYSTEM: Record<string, string> = {
+  letter: `You help a Loudoun County, Virginia resident write to an elected official about data
+center development near their home.
+
+Write in the first person, as the resident, in plain language.
+
+Absolute rules:
+- Use ONLY the facts given to you in the user message. Invent nothing.
+- Do not attribute intent, motive or blame to any company or person.
+- Do not state legal conclusions or allege that anyone broke a law or permit.
+- Do not cite studies, statistics or news the user did not supply.
+- Under 350 words.
+
+Structure: open with the writer's connection to the district; describe what they are
+experiencing in their own words; make one specific, actionable ask; close politely. Return only
+the letter body, with no preamble, no subject line, and no placeholders in brackets.`,
+
+  application: `You explain a Loudoun County land-use application to a resident with no planning
+background. Two to three sentences. Use only the record supplied. State what is proposed, how
+large, and what stage it is at. Do not speculate about impacts, and do not characterise the
+application as good or bad.`,
+
+  record: `You summarise an elected official's public record on data center issues.
+
+You will be given rows of sourced facts — votes, public statements, campaign contributions —
+already published on the page. Summarise ONLY those rows in two short, neutral paragraphs.
+
+Absolute rules:
+- Add no fact that is not in the rows provided.
+- Use nothing you may recall about this person from training. If the rows are thin, say the
+  record is limited.
+- Do not rate, rank, score or judge the official. Do not say they are good or bad on this issue.
+- Attribute contributions as reported filings, not as influence.`,
+}
+
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response(null, { headers: cors })
+
+  const { mode, facts } = await req.json()
+  const system = SYSTEM[mode]
+  if (!system) return Response.json({ error: 'unknown mode' }, { status: 400, headers: cors })
+
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': Deno.env.get('ANTHROPIC_API_KEY')!,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: MODEL,
+      max_tokens: 1500,
+      system,
+      messages: [{ role: 'user', content: facts }],
+      // Adaptive thinking is the current form. `budget_tokens` is rejected
+      // outright on Opus 5, as are temperature, top_p and top_k.
+      thinking: { type: 'adaptive' },
+    }),
+  })
+
+  if (!res.ok) {
+    console.error('anthropic error', res.status, await res.text())
+    return Response.json({ error: 'generation failed' }, { status: 502, headers: cors })
+  }
+
+  const data = await res.json()
+  const text = data.content
+    .filter((b: { type: string }) => b.type === 'text')
+    .map((b: { text: string }) => b.text)
+    .join('')
+
+  return Response.json({ text, model: MODEL }, { headers: cors })
+})
+
+const cors = {
+  'Access-Control-Allow-Origin': '*',   // tighten to your domain in production
+  'Access-Control-Allow-Headers': 'authorization, content-type',
+}
+```
+
+Two things about that response parsing: with `thinking` enabled the `content` array contains
+`thinking` blocks as well as `text` blocks, so filtering on `type === 'text'` is required, not
+tidiness. And letters are short — if you raise `max_tokens` substantially, add `stream: true`
+and read the SSE, or long requests will time out.
+
+```bash
+supabase functions deploy ai-assist
+```
+
+Rate-limit it. A table of `(ip_hash, minute, count)` checked at the top of the function is
+enough, and it is the difference between an API bill you expected and one you did not.
+
+---
+
+### F4 — `refresh-county`
+
+Pulls the four county GIS layers server-side, upserts `facilities`, sets `retired_at` on
+anything that has dropped out of the source, and calls `refresh_watchlist()`. Run daily.
+
+This is the same normalisation as Prompt 2 — the centroid maths, the `BULT/UNDER CONSTRUCTION`
+substring match, the title-casing allow-list — just running on a schedule instead of on page
+load. It is what makes change detection (Prompt 18.4) possible, because you cannot diff data you
+never stored.
+
+---
+
+## Appendix G — Every data source, verified
+
+Every URL in this document was fetched while writing it. This table records what came back, so
+that when something breaks later you can tell whether it is your code or the source.
+
+**CORS matters more than availability.** A source marked "no" cannot be fetched from the browser
+at all, no matter how the request is written.
+
+| Source | Endpoint | CORS | Notes |
+|---|---|---|---|
+| Data center parcels (existing) | `services1.arcgis.com/MxjRokvPm7bjslyR/.../Existing_Data_Center_Parcel/FeatureServer/1` | **yes** | 139 parcels |
+| Data center parcels (pipeline) | `.../Pipeline_Data_Center_Areas/FeatureServer/1` | **yes** | 85 proposed |
+| Building outlines | `.../Data_Center_Building_Outlines/FeatureServer/0` | **yes** | 271 buildings |
+| By-right parcels | `.../ByRight_Data_Center_Parcels/FeatureServer/0` | **yes** | No public hearing required — newsworthy in itself |
+| Approved applications | `.../Aprpoved_Applications_No_DC_Permits/FeatureServer/0` | **yes** | Application number, name, type, approval date. The typo in the layer name is the county's |
+| Election districts | `logis.loudoun.gov/gis/rest/services/COL/ElectionDistricts/MapServer/8` | **yes** | Eight districts |
+| **Elected representatives** | `.../ElectedReps_Data/FeatureServer/{0,1,2}` | **yes** | Layer 0 county, 1 VA House, 2 VA Senate. Names, parties, emails, phones, photos |
+| Members of Congress | `unitedstates.github.io/congress-legislators/legislators-current.json` | **yes** | Filter to VA-10, VA-11 and both senators |
+| Address geocoding | `nominatim.openstreetmap.org/search` | **yes** | 1 req/sec, descriptive User-Agent required |
+| VA campaign finance | `apps.elections.virginia.gov/SBE_CSV/CF/{YYYY_MM}/ScheduleA.csv` | n/a | 41 MB bulk CSV. Server-side ingest only |
+| County meeting calendar | `loudoun.gov/RSSFeed.aspx?ModID=58&CID=All-calendar.xml` | **no** | Edge Function required |
+| Google News | `news.google.com/rss/search?q=...` | **no** | Edge Function required |
+| Virginia Mercury | `virginiamercury.com/feed/` | **no** | Edge Function required |
+| Cardinal News | `cardinalnews.org/feed/` | **no** | Edge Function required |
+| WTOP | `wtop.com/feed/` | **no** | Edge Function required |
+| VPAP | `vpap.org` | — | Blocks automated requests. Link to it; do not scrape it |
+
+Two that look usable and are not:
+
+- **`loudounnow.com/feed/` returns 404**, and `?feed=rss2` returns a 200 with no items. Reach
+  Loudoun Now through the Google News `site:` query instead.
+- **The Loudoun Times-Mirror `?f=rss` search feed works but is unfiltered**, and adding `q=`
+  returns mostly SEO spam. Use the Google News `site:` query for that outlet too.
+
+### Who currently holds each office
+
+From the county's live layer at the time of writing. **Do not hard-code this** — read the layer.
+It is here so you can tell at a glance whether your lookup is returning sense.
+
+| District | Supervisor | Party | First elected |
+|---|---|---|---|
+| At-large (Chair) | Phyllis J. Randall | Democrat | 2015 |
+| Algonkian | Juli E. Briskman | Democrat | 2019 |
+| Ashburn | Michael R. Turner | Democrat | 2011 |
+| Broad Run | Sylvia R. Glass | Democrat | 2019 |
+| Catoctin | Caleb A. Kershner | Republican | 2019 |
+| Dulles | Matthew F. Letourneau | Republican | 2011 |
+| Leesburg | Kristen C. Umstattd | Democrat | 2015 |
+| Little River | Laura A. TeKrony | Democrat | 2023 |
+| Sterling | Koran T. Saines | Democrat | 2015 |
+
+Virginia House districts 26 (JJ Singh), 27 (Atoosa R. Reaser), 28 (David A. Reid), 29 (Fernando
+J. "Marty" Martinez) and 30 (John Chilton McAuliff). Virginia Senate districts 31 (Russet W.
+Perry) and 32 (Kannan Srinivasan). US House VA-10 (Suhas Subramanyam) and VA-11 (James R.
+Walkinshaw); Senators Mark R. Warner and Tim Kaine.
+
+---
+
+## Appendix H — Build order
+
+If you cannot build everything, this is the order that produces a useful site soonest.
+
+| Order | Feature | Why here |
+|---|---|---|
+| 1 | Map satellite and overlays (Prompt 10) | Biggest visible upgrade, no new data dependencies |
+| 2 | Report detail and permalinks (Prompt 11) | Makes every report shareable — this is how the site spreads |
+| 3 | Watchlist and ticker (Prompt 12) | Needs only reports you already have; makes the site feel alive |
+| 4 | News feed (Prompt 13) | Your first Edge Function. Small, self-contained, gives people a reason to return |
+| 5 | Meetings calendar (Prompt 17) | Reuses the same function and parser. High civic value for little work |
+| 6 | "What's near me" (Prompt 18.1) | Uses data you already have; answers the question everyone arrives with |
+| 7 | Facts and myths (Prompt 14) | No APIs. Bounded only by how fast a human can source the cards |
+| 8 | Officials hub (Prompt 15) | The most work and the most editorial risk. Do it once the rest is solid |
+| 9 | AI letter writer (Prompt 16) | Depends on the officials hub to know who to write to |
+| 10 | Alerts (Prompt 18.2) | Needs email infrastructure and a scheduled job |
+
+Two notes on that ordering.
+
+**The watchlist is third for a reason.** It is the feature most likely to make someone open the
+site a second time, and it costs you no new data source — it is a query over reports you already
+have. Build it early.
+
+**The officials hub is eighth for a reason.** It is the feature most likely to attract a
+complaint from a press office. Build it when you have time to source every claim properly, not
+in the same rush as everything else. If you find yourself about to publish a scorecard component
+you cannot link to a document, ship the profiles without the score. Names, districts, contact
+routes and the reports in their district are useful on their own, and none of it can be
+contested.
 
 ---
 
@@ -1037,4 +2396,14 @@ where people live, publishes them, and names the companies whose parcels sit nea
 coordinate jitter, the moderation queue, the EXIF stripping and the careful wording of the
 disclaimers are not polish — they are what make it responsible to run at all.
 
-If you cut something for time, cut an animation.
+Part Two raises the same question in a sharper form. A watchlist entry names a place and says
+five households reported problems near it. An officials scorecard puts a number next to a living
+person's name. Both are defensible — but only for as long as every one of them is traceable to a
+moderated report or a primary document, and only for as long as the wording describes the record
+rather than assigning blame. That is why the watchlist counts distinct households and only
+approved reports, why the officials score is composed of sourced components rather than produced
+by a language model, and why the AI features are confined to summarising material already on the
+page.
+
+If you cut something for time, cut an animation. If you cut something under pressure, cut the
+scorecard before you cut the sourcing.
