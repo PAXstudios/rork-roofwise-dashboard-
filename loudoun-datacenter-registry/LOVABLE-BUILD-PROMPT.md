@@ -1674,6 +1674,19 @@ Things that went wrong building this the first time. Each one costs an hour if y
 - **`marquee` is not an option for the ticker.** It is deprecated, unpausable and inaccessible.
   A CSS `translateX` animation on a duplicated track, with `prefers-reduced-motion` honoured and
   a real pause control, is barely more work.
+- **`hidden` loses to any class that sets `display`.** The browser's own rule is
+  `[hidden] { display: none }` at specificity (0,1,0), so `<div class="ticker" hidden>` where
+  `.ticker { display: flex }` stays on screen — the dismiss button appears to do nothing, and an
+  empty banner renders as a bar of whitespace. Add `[hidden] { display: none !important; }`
+  once, globally. This is the case that keyword exists for.
+- **Pause-on-`:focus-within` scoped to the whole ticker breaks the Play button.** Clicking Play
+  leaves focus on the button, which is inside the ticker, so it stays paused until the reader
+  clicks elsewhere. Scope the focus rule to the scrolling viewport, not the container.
+- **Markers swallow map clicks.** With a measure or radius tool armed, a click that lands on a
+  pin or a cluster never reaches the map — and in eastern Loudoun most of the map is pins. Set
+  `pointer-events: none` on the marker and overlay panes while a tool is active.
+- **A live region that collapses when empty shifts the layout every time it speaks.** Give the
+  measure/radius readout a `min-height` of about one line.
 - **Google News `<link>` values are redirect URLs**, not publisher URLs, and the encoding is
   undocumented. Store them as-is; do not try to unwrap them.
 - **`VITE_`-prefixed environment variables are compiled into the client bundle.** An API key in

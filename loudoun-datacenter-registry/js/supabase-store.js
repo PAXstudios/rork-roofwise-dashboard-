@@ -172,6 +172,36 @@ window.LDCW = window.LDCW || {};
       });
     },
 
+    /* The watchlist is computed in the database, not here.
+       Counting distinct households requires reading reporter_email, and anon
+       has no read on public.reports at all — by design. refresh_watchlist() in
+       sql/05_parttwo.sql does the arithmetic as SECURITY DEFINER and writes
+       only counts into public.watchlist, which is what this reads.
+
+       Returning null from watchlistSource is the signal to the caller that
+       there is nothing to compute client-side. */
+    watchlistSource: function () {
+      return Promise.resolve(null);
+    },
+
+    listWatchlist: function () {
+      return withClient(function (supabase) {
+        return supabase
+          .from("watchlist")
+          .select("*")
+          .order("report_count", { ascending: false })
+          .then(function (result) {
+            if (result.error) {
+              // A project that hasn't run 05_parttwo.sql yet has no watchlist
+              // table. That's a site without the feature, not a broken site.
+              if (/does not exist|schema cache/i.test(result.error.message || "")) return [];
+              throw describe(result.error, "Couldn't load the watchlist.");
+            }
+            return result.data || [];
+          });
+      });
+    },
+
     getReport: function (id) {
       return withClient(function (supabase) {
         return supabase

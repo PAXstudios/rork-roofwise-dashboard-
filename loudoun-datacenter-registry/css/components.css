@@ -1902,6 +1902,16 @@ legend {
   cursor: crosshair;
 }
 
+/* While a tool is armed the map is a canvas to click on, so markers must stop
+   swallowing the click. Without this, clicking anywhere near a pin or a cluster
+   — which is most of eastern Loudoun — does nothing at all: the marker eats the
+   event, the map never hears it, and the reader is left pressing a dead map. */
+.map--measuring .leaflet-marker-pane,
+.map--measuring .leaflet-overlay-pane,
+.map--measuring .leaflet-marker-icon {
+  pointer-events: none;
+}
+
 /* Markers are drawn for a light background. Over aerial imagery they vanish
    into tree cover and asphalt without a halo, so the base layer switch adds
    this class and the pins grow an outline. */
@@ -2298,4 +2308,281 @@ body.has-sheet {
   padding: var(--space-3) var(--space-4);
   font-size: var(--text-sm);
   margin: var(--space-4) 0;
+}
+
+/* ============================================================================
+   Watchlist ticker
+
+   Not a <marquee>. That element is deprecated, cannot be paused, and screen
+   readers handle it badly. This is a CSS transform on a duplicated track:
+   two identical runs sit side by side, the pair translates left by exactly
+   half its width, and the restart is invisible because run two is now where
+   run one was.
+
+   It stops on hover, on keyboard focus, on the pause button, and entirely
+   under prefers-reduced-motion — where it degrades to a strip you scroll
+   yourself rather than one that moves on its own.
+   ==========================================================================*/
+
+.ticker {
+  display: flex;
+  align-items: stretch;
+  background: var(--bg-ink);
+  color: var(--text-on-ink);
+  border-bottom: var(--border-width) solid var(--bg-ink);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  overflow: hidden;
+}
+
+.ticker__lead {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  padding: var(--space-2) var(--space-3);
+  background: var(--status-reported);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  letter-spacing: var(--tracking-kicker);
+  text-transform: uppercase;
+}
+
+.ticker__lead a {
+  color: #fff;
+  text-decoration: none;
+}
+
+.ticker__lead a:hover,
+.ticker__lead a:focus-visible {
+  text-decoration: underline;
+}
+
+.ticker__viewport {
+  flex: 1 1 auto;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.ticker__track {
+  display: flex;
+  width: max-content;
+  animation: ticker-scroll var(--ticker-duration, 40s) linear infinite;
+}
+
+.ticker__run {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+@keyframes ticker-scroll {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    /* Exactly one run width. The second run has arrived where the first was,
+       so the reset is invisible. */
+    transform: translateX(-50%);
+  }
+}
+
+/* Pause on hover, on the button, and when keyboard focus lands on one of the
+   scrolling links. Note the focus rule is scoped to the viewport, not the whole
+   ticker: clicking Play leaves focus on the Play button, and a `.ticker:focus-
+   within` rule would then hold it paused until the reader clicked elsewhere —
+   pressing Play and watching nothing happen. The reason to pause on focus is
+   that someone is tabbing through the links and needs them to hold still, and
+   that is exactly what the viewport contains. */
+.ticker:hover .ticker__track,
+.ticker__viewport:focus-within .ticker__track,
+.ticker.is-paused .ticker__track {
+  animation-play-state: paused;
+}
+
+.ticker__item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-5) var(--space-2) 0;
+  margin-right: var(--space-5);
+  color: var(--text-on-ink);
+  text-decoration: none;
+  white-space: nowrap;
+  border-right: var(--border-width) solid rgba(255, 255, 255, 0.22);
+}
+
+.ticker__item:hover,
+.ticker__item:focus-visible {
+  color: #fff;
+}
+
+.ticker__item:hover .ticker__place,
+.ticker__item:focus-visible .ticker__place {
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+}
+
+.ticker__item:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: -2px;
+}
+
+.ticker__flag {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  background: var(--status-reported);
+  transform: rotate(45deg);
+}
+
+.ticker__place {
+  font-weight: var(--weight-semibold);
+}
+
+.ticker__count {
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.ticker__cats {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: var(--text-xs);
+}
+
+.ticker__controls {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: stretch;
+  border-left: var(--border-width) solid rgba(255, 255, 255, 0.22);
+}
+
+.ticker__btn {
+  appearance: none;
+  border: 0;
+  background: none;
+  color: rgba(255, 255, 255, 0.82);
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  padding: 0 var(--space-3);
+  cursor: pointer;
+  min-width: 44px;
+}
+
+.ticker__btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
+.ticker__btn:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: -2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* No movement at all. `animation: none` rather than a near-zero duration:
+     an animation with a fill mode otherwise flashes its start state. The strip
+     becomes something the reader scrolls, which is why the viewport gets its
+     own overflow here. */
+  .ticker__track {
+    animation: none;
+  }
+
+  .ticker__viewport {
+    overflow-x: auto;
+  }
+
+  /* The duplicate run is decorative and hidden from assistive technology.
+     With nothing moving it is just the same ten links a second time. */
+  .ticker__run[aria-hidden="true"] {
+    display: none;
+  }
+}
+
+@media print {
+  .ticker {
+    display: none;
+  }
+}
+
+/* ============================================================================
+   Watchlist page
+   ==========================================================================*/
+
+.watch-list {
+  border-top: var(--rule-heavy) solid var(--text);
+}
+
+.watch-card {
+  display: grid;
+  grid-template-columns: 88px 1fr;
+  gap: var(--space-4);
+  padding: var(--space-4) 0;
+  border-bottom: var(--rule-width) solid var(--rule);
+  align-items: start;
+}
+
+.watch-card__rank {
+  text-align: right;
+  border-right: var(--rule-width) solid var(--rule);
+  padding-right: var(--space-4);
+}
+
+.watch-card__count {
+  display: block;
+  font-family: var(--font-serif);
+  font-size: var(--text-2xl);
+  font-weight: var(--weight-black);
+  letter-spacing: var(--tracking-tighter);
+  line-height: 1;
+}
+
+.watch-card__unit {
+  display: block;
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  color: var(--text-subtle);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-kicker);
+}
+
+.watch-card__body h3 {
+  font-family: var(--font-serif);
+  font-size: var(--text-xl);
+  font-weight: var(--weight-bold);
+  letter-spacing: var(--tracking-tight);
+  margin: 0 0 var(--space-1);
+  line-height: var(--leading-snug);
+}
+
+.watch-card__body h3 a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.watch-card__body h3 a:hover {
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+}
+
+.watch-card__meta {
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  color: var(--text-subtle);
+  margin: 0 0 var(--space-2);
+}
+
+@media (max-width: 520px) {
+  .watch-card {
+    grid-template-columns: 1fr;
+    gap: var(--space-2);
+  }
+
+  .watch-card__rank {
+    text-align: left;
+    border-right: 0;
+    padding-right: 0;
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+  }
 }

@@ -244,6 +244,87 @@ window.LDCW = window.LDCW || {};
         "Two prospective buyers walked out of viewings after hearing the noise from the garden. The agent now advises us to schedule viewings for mid-morning when it is quieter. The house has been on the market for four months.",
       other_notes: null,
     },
+
+    /* The five below sit within about a mile of each other in Ashburn. They
+       exist so the demo shows a second watchlist cluster forming, which is the
+       behaviour the site is actually for — one household is an anecdote, five
+       within two miles is a pattern worth a look. Illustrative like the rest of
+       this seed, and labelled Sample everywhere it appears. */
+    {
+      locality: "Ashburn",
+      zip: "20147",
+      lat_public: 39.0432,
+      lng_public: -77.4871,
+      facility_name: null,
+      facility_status: "under_construction",
+      categories: ["noise", "traffic"],
+      severity: 4,
+      occurred_at: dateDaysAgo(12),
+      created_at: daysAgo(11),
+      description:
+        "Construction traffic starts on our road before six in the morning. It is not the work itself so much as the queue of trucks idling at the junction waiting for the site to open. We have asked about a staging area away from the houses and been told it is being looked at.",
+      other_notes: "Counted 22 trucks between 5:50 and 6:40 on a Tuesday.",
+    },
+    {
+      locality: "Ashburn",
+      zip: "20147",
+      lat_public: 39.0489,
+      lng_public: -77.4802,
+      facility_name: null,
+      facility_status: "operational",
+      categories: ["noise"],
+      severity: 3,
+      occurred_at: dateDaysAgo(9),
+      created_at: daysAgo(8),
+      description:
+        "A steady hum on still evenings that was not there two years ago. It is not loud but it does not stop, and once you have noticed it you cannot stop noticing it. Worse when the wind is from the east.",
+      other_notes: null,
+    },
+    {
+      locality: "Ashburn",
+      zip: "20148",
+      lat_public: 39.0361,
+      lng_public: -77.4795,
+      facility_name: null,
+      facility_status: "operational",
+      categories: ["power", "noise"],
+      severity: 4,
+      occurred_at: dateDaysAgo(6),
+      created_at: daysAgo(5),
+      description:
+        "Our lights dipped four times in one evening last week. The utility said there was no fault on our line. I do not know what causes it and I am not claiming to, but I have started writing down the dates because several neighbours have mentioned the same thing.",
+      other_notes: "Dates so far: the 2nd, 4th, 9th and 11th.",
+    },
+    {
+      locality: "Ashburn",
+      zip: "20147",
+      lat_public: 39.0524,
+      lng_public: -77.4913,
+      facility_name: null,
+      facility_status: "proposed",
+      categories: ["light", "wildlife"],
+      severity: 3,
+      occurred_at: dateDaysAgo(20),
+      created_at: daysAgo(18),
+      description:
+        "The security lighting on the site behind us stays on all night and washes across the back of the house. We used to see deer crossing the field at dusk and have not seen them since the spring.",
+      other_notes: "Blackout blinds fitted in two bedrooms in March.",
+    },
+    {
+      locality: "Ashburn",
+      zip: "20148",
+      lat_public: 39.0398,
+      lng_public: -77.4736,
+      facility_name: null,
+      facility_status: "under_construction",
+      categories: ["water", "traffic"],
+      severity: 2,
+      occurred_at: dateDaysAgo(28),
+      created_at: daysAgo(26),
+      description:
+        "The stream at the bottom of the common land runs brown after heavy rain now, which it did not before the clearing work started upstream. I have photographed it twice. It clears within a day or so each time.",
+      other_notes: null,
+    },
   ];
 
   function buildSeed() {
@@ -388,6 +469,42 @@ window.LDCW = window.LDCW || {};
         return row.id === id && row.status === "approved";
       })[0];
       return Promise.resolve(found ? LDCW.schema.toPublicReport(found) : null);
+    },
+
+    /* ---- Watchlist source ---------------------------------------------------
+       The watchlist needs to count distinct *households*, not distinct reports,
+       and that means touching the reporter's email — which is exactly what the
+       public shape strips out.
+
+       In demo mode every record already lives in this browser, so the
+       computation runs here. In production it cannot: anon holds no read on the
+       base table at all, so the same arithmetic runs inside the database as
+       refresh_watchlist() and the browser only ever reads the aggregate. See
+       sql/05_parttwo.sql.
+
+       What leaves this function is a household *key*, never an address. The
+       key is the lower-cased email where one was given, and the report's own id
+       where it wasn't — so a report submitted without contact details counts
+       toward the report total but cannot, on its own, stand in for a
+       neighbour. */
+    watchlistSource: function () {
+      var schema = LDCW.schema;
+      var rows = readAll()
+        .filter(function (row) {
+          return row.status === "approved";
+        })
+        .map(function (row) {
+          var email = (row.reporter_email || "").trim().toLowerCase();
+          var pub = schema.toPublicReport(row);
+          // The fourteen seed reports are written as fourteen different
+          // residents and carry no email, so each stands in for its own
+          // household. Real submissions without an email do too — but see
+          // hasContact below, which is what the strict count uses.
+          pub.household_key = email || row.id;
+          pub.has_contact = Boolean(email) || row.is_demo === true;
+          return pub;
+        });
+      return Promise.resolve(rows);
     },
 
     submitReport: function (draft, files) {

@@ -17,6 +17,7 @@
   var NAV = [
     { href: "index.html", label: "Map" },
     { href: "reports.html", label: "Reports" },
+    { href: "watchlist.html", label: "Watchlist" },
     { href: "stats.html", label: "Statistics" },
     { href: "resources.html", label: "Resources" },
     { href: "about.html", label: "About" },
@@ -29,6 +30,7 @@
         { href: "index.html", label: "Map" },
         { href: "report.html", label: "Report an issue" },
         { href: "reports.html", label: "Community reports" },
+        { href: "watchlist.html", label: "Watchlist" },
         { href: "stats.html", label: "Statistics" },
       ],
     },

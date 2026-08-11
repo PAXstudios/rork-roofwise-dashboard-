@@ -8,6 +8,17 @@
   box-sizing: border-box;
 }
 
+/* The `hidden` attribute means hidden, and it has to beat any class on the same
+   element. The browser's own rule is `[hidden] { display: none }`, which any
+   class setting `display` outranks on specificity — so an element written as
+   `<div class="banner" hidden>` renders as an empty bar, and one written as
+   `<div class="ticker" hidden>` never goes away when dismissed. Both of those
+   happened here. This is the case `!important` exists for: there is no state
+   in which markup says hidden and the element should be on screen. */
+[hidden] {
+  display: none !important;
+}
+
 html {
   -webkit-text-size-adjust: 100%;
   scroll-behavior: smooth;

@@ -207,6 +207,20 @@ window.LDCW = window.LDCW || {};
       return backend.getReport(id);
     },
 
+    /* Raw-ish rows carrying a household key, for computing the watchlist in
+       the browser. Resolves to null against a real backend, where the
+       computation belongs in the database. */
+    watchlistSource: function () {
+      return backend.watchlistSource
+        ? backend.watchlistSource()
+        : Promise.resolve(null);
+    },
+
+    /* Pre-computed watchlist rows. Only the Supabase backend has these. */
+    listWatchlist: function () {
+      return backend.listWatchlist ? backend.listWatchlist() : Promise.resolve(null);
+    },
+
     submitReport: function (draft, files) {
       return backend.submitReport(draft, files);
     },
