@@ -79,7 +79,10 @@ window.LDCW_CONFIG = {
         "MapServer/tile/{z}/{y}/{x}",
       attribution:
         "Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community",
-      maxZoom: 19,
+      // The service advertises detail levels to 23 and serves real tiles past
+      // 19. Parcel-level inspection is the whole point of the satellite view,
+      // so don't cap it at the default.
+      maxZoom: 21,
       dark: true,
     },
     {

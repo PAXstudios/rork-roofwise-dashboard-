@@ -811,12 +811,34 @@ scoring after the prompt.
 > - "Write to this official" → the letter writer in Prompt 16
 > - A "correct this profile" link on every page, above the fold, not buried in a footer
 >
-> **Voting record.** Be straight about what is available:
-> - **Loudoun Board of Supervisors votes have no API.** They exist in meeting minutes published
->   through the county's Granicus portal as PDFs and video. There is no feed to parse. Build the
->   UI as a hand-curated table — motion, date, vote, link to the minutes PDF and the video
->   timestamp — and enter the data-center-relevant votes by hand. Twenty accurate hand-entered
->   votes beat two hundred scraped ones with an error rate.
+> **Voting record.** Be straight about what is available, and note that the obvious place to look
+> is the wrong one:
+> - **Loudoun Board of Supervisors votes have no API, and Granicus has no minutes.** The county's
+>   Granicus portal (`loudoun.granicus.com`) publishes agendas and video, and
+>   `GeneratedAgendaViewer.php` returns a full structured agenda with land-use case numbers inline
+>   — but `MinutesViewer.php` serves a stub for Board of Supervisors clips. There are no minutes
+>   there to parse.
+> - The actual vote record is a per-meeting **"Action Report" PDF** in the county's Laserfiche
+>   portal at `lfportal.loudoun.gov`. That portal has an undocumented, cookie-free RSS index —
+>   `https://lfportal.loudoun.gov/LFPortalinternet/rss/dbid/0/folder/{folderId}/feed.rss` returns
+>   one item per meeting with its folder id, no session cookie and no special User-Agent required.
+>   Everything else in that portal does need a cookie and two redirects.
+> - **Votes are English prose, not roll-call tables.** They read
+>   `The motion passed 5-3-1: Supervisors Briskman, TeKrony, and Umstattd opposed; Supervisor
+>   Letourneau absent.` Some meetings do record a formal roll call and say so; most do not. Any
+>   regex over this is a parsing problem, not a data feed — and a naive one silently drops the
+>   `The motion, as amended, passed …` form, which is exactly the form the interesting
+>   data-center votes tend to take.
+> - **PDF text extraction corrupts case numbers.** Line-wrap hyphens vanish, so `SPEX-2025-0023`
+>   comes out as `SPEX2025-0023` in roughly one case number in twelve — intermittently, which
+>   makes it easy to miss. If you join votes to GIS records on the case number, normalise both
+>   sides first or the join silently loses rows.
+> - Given all of that: build the UI as a **hand-curated table** — motion, date, vote, link to the
+>   Action Report PDF and the video timestamp — and enter the data-center-relevant votes by hand.
+>   Twenty accurate hand-entered votes beat two hundred scraped ones with an error rate, and this
+>   is a page where an error rate is a correction notice about a named person.
+> - There is **no Legistar API** for Loudoun. `webapi.legistar.com/v1/loudoun/bodies` returns a 500
+>   saying the connection string is not configured. Do not build against it.
 > - **Virginia General Assembly** bills and votes are published by the Legislative Information
 >   System at `https://lis.virginia.gov` and are far more tractable, though also not CORS-open.
 > - **Congress** — use `https://api.congress.gov` (free key from `api.congress.gov/sign-up`) or
@@ -839,6 +861,28 @@ scoring after the prompt.
 > (`https://api.open.fec.gov/v1/`, free key from `api.data.gov`). Link out to VPAP for context but
 > do **not** scrape it — it blocks automated requests, and it is a small non-profit whose work
 > deserves traffic rather than extraction.
+>
+> **Three things about that data that will produce a wrong number if you ignore them:**
+>
+> 1. **Virginia files large contributions twice.** A big cheque appears immediately on a "Large
+>    Contribution Report" and again inside the next periodic report — under a *different*
+>    `ScheduleAId`, so de-duplicating on that column removes nothing. In one month I checked, 125
+>    contributions worth about $4M appeared in both, which was 43% of that month's large-
+>    contribution rows. De-duplicate on contributor plus date plus amount plus committee, and say
+>    on the methodology page how you did it.
+> 2. **`IsLocal` does not mean local, and `IsGeneralAssembly` is unpopulated.** Hundreds of House
+>    of Delegates and state Senate committees carry `IsLocal = True`, and `IsGeneralAssembly` was
+>    `False` on every row of the file I checked. Filter to Loudoun officials by your hand-verified
+>    `CommitteeCode` list, never by these flags.
+> 3. **A PAC funding its own PAC is not money to an official.** The largest "Dominion" rows in
+>    that data are Dominion Energy Inc. transferring to the Dominion Energy PAC. Publishing that
+>    on a page about money to officials would be materially false, and counting both it and the
+>    PAC's later disbursements double-counts the same dollars.
+>
+> **One privacy trap:** `Report.csv` carries `SubmitterEmail` and `SubmitterPhone` — the personal
+> contact details of the person who filed the report. Drop those columns at ingest. A site whose
+> entire promise is that it does not publish contact details should not import a spreadsheet of
+> them by accident.
 >
 > **Two matching problems you must handle explicitly, because both produce libel if you get them
 > wrong:**
@@ -2328,6 +2372,9 @@ at all, no matter how the request is written.
 | By-right parcels | `.../ByRight_Data_Center_Parcels/FeatureServer/0` | **yes** | No public hearing required — newsworthy in itself |
 | Approved applications | `.../Aprpoved_Applications_No_DC_Permits/FeatureServer/0` | **yes** | Application number, name, type, approval date. The typo in the layer name is the county's |
 | Election districts | `logis.loudoun.gov/gis/rest/services/COL/ElectionDistricts/MapServer/8` | **yes** | Eight districts |
+| **Land-use applications** | `logis.loudoun.gov/gis/rest/services/Projects/LOLA_DATA/MapServer/0` | **yes** | `LOLA_PLANS_POLY`. 20,299 cases; 476 with `DATA CENTER` in `PlanDescription`. Carries `PlanNumber`, `PlanType`, `PlanStatus`, `PlanApplicationDate`. This is the application tracker's source — but it also carries `AssignedTo`/`AssignedEmail` for county planners, which you should not republish |
+| BOS meeting index | `loudoun.granicus.com/ViewPublisherRSS.php?view_id=92&mode=podcast` | **no** | Agendas and video only, capped at 100 items |
+| BOS vote records | `lfportal.loudoun.gov/LFPortalinternet/rss/dbid/0/folder/{id}/feed.rss` | **no** | The RSS index is cookie-free; the PDFs behind it are not |
 | **Elected representatives** | `.../ElectedReps_Data/FeatureServer/{0,1,2}` | **yes** | Layer 0 county, 1 VA House, 2 VA Senate. Names, parties, emails, phones, photos |
 | Members of Congress | `unitedstates.github.io/congress-legislators/legislators-current.json` | **yes** | Filter to VA-10, VA-11 and both senators |
 | Address geocoding | `nominatim.openstreetmap.org/search` | **yes** | 1 req/sec, descriptive User-Agent required |
