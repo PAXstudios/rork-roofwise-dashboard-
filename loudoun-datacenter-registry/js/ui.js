@@ -129,6 +129,14 @@ window.LDCW = window.LDCW || {};
       severity +
       "/5</span>" +
       "</div>" +
+      // A real link, not a button with a click handler. Without JavaScript it
+      // still navigates to the report's own page; report-detail.js intercepts
+      // it to open the sheet instead when it can.
+      '<p class="report-card__more"><a href="report-detail.html?id=' +
+      encodeURIComponent(report.id) +
+      '" data-report-link="' +
+      escape(report.id) +
+      '">Read the full report</a></p>' +
       "</article>"
     );
   }

@@ -299,7 +299,15 @@ window.LDCW = window.LDCW || {};
             report.severity +
             " of 5",
         });
-        marker.bindPopup(reportPopup(report), { maxWidth: 320 });
+        // A popup is a teaser; the sheet is the record. Clicking the pin opens
+        // the full report directly rather than making the reader click twice.
+        if (LDCW.reportDetail) {
+          marker.on("click", function () {
+            LDCW.reportDetail.openSheet(report);
+          });
+        } else {
+          marker.bindPopup(reportPopup(report), { maxWidth: 320 });
+        }
         layers.reports.addLayer(marker);
         state.markersById[report.id] = marker;
       });

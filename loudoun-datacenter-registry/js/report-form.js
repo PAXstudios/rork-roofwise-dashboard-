@@ -804,6 +804,47 @@
     }
 
     form.addEventListener("submit", handleSubmit);
+    prefillFromExistingReport(form);
+  }
+
+  /* "I'm experiencing this too" on a report's detail view lands here with
+     ?like=<report id>. It copies the district and issue categories across so
+     the neighbour isn't retyping context — and nothing else. In particular it
+     does NOT copy the description or the location: this has to be that
+     person's own account of their own address, or the map stops meaning
+     anything. It also goes through the normal form and the normal moderation
+     queue, like every other submission. */
+  function prefillFromExistingReport(form) {
+    var id = new URLSearchParams(window.location.search).get("like");
+    if (!id || !LDCW.Store) return;
+
+    LDCW.Store.getReport(id)
+      .then(function (source) {
+        if (!source) return;
+
+        var locality = form.querySelector('[name="locality"]');
+        if (locality && source.locality) locality.value = source.locality;
+
+        (source.categories || []).forEach(function (key) {
+          var input = form.querySelector('input[name="categories"][value="' + key + '"]');
+          if (input) input.checked = true;
+        });
+
+        var note = document.getElementById("prefill-note");
+        if (note) {
+          note.hidden = false;
+          note.innerHTML =
+            "<strong>Starting from a neighbour's report.</strong> The district and issue types " +
+            "are filled in from <a href=\"" +
+            "report-detail.html?id=" +
+            encodeURIComponent(id) +
+            '">the report you came from</a>. Everything else has to be your own account of ' +
+            "your own address — change anything that isn't right.";
+        }
+      })
+      .catch(function () {
+        /* A bad or stale ?like= is not worth an error message. The form works. */
+      });
   }
 
   if (document.readyState === "loading") {
