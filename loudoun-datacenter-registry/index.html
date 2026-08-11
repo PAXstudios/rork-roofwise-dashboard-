@@ -40,30 +40,37 @@
     <main id="main">
       <!-- ================================================================ -->
       <section class="hero">
+        <div class="hero__grain" aria-hidden="true"></div>
         <div class="container container-wide">
           <div class="hero__grid">
-            <div>
-              <p class="hero__eyebrow">Loudoun County, Virginia</p>
+            <div class="hero__copy">
+              <p class="hero__eyebrow"><span class="hero__pulse" aria-hidden="true"></span>Loudoun County, Virginia</p>
               <h1 class="hero__title">
-                The data centers are mapped. The people living beside them are not.
+                The data centers are mapped.<br />The people living beside them are&nbsp;not.
               </h1>
               <p class="hero__lead">
-                Loudoun County holds the largest concentration of data centers on earth. The
-                county publishes where every one of them is. Nobody publishes what it is like to
-                live next to one — those accounts are scattered across board meetings,
-                neighbourhood groups and local news. This map puts both on the same screen.
+                Loudoun holds the largest concentration of data centers on earth. The county
+                publishes where every one of them is. Nobody publishes what it is like to live
+                next to one. This map puts both on the same screen.
               </p>
               <div class="hero__actions">
                 <a class="btn btn--primary btn--lg" href="report.html">Report an issue</a>
-                <a class="btn btn--secondary btn--lg" href="#map-section">See the map</a>
+                <a class="btn btn--ghost-invert btn--lg" href="#map-section">See the map</a>
               </div>
+              <dl class="hero__figures">
+                <div><dt>Parcels</dt><dd data-hero-figure="total">224</dd></div>
+                <div><dt>Operational</dt><dd data-hero-figure="operational">103</dd></div>
+                <div><dt>Proposed</dt><dd data-hero-figure="proposed">85</dd></div>
+                <div><dt>Floor area</dt><dd data-hero-figure="sqft">114.4M ft&sup2;</dd></div>
+              </dl>
             </div>
 
-            <figure class="hero-figure" style="margin: 0">
-              <!-- Built at runtime by js/hero-map.js from data/county.json and
-                   the 224 real facility coordinates. -->
-              <div id="hero-figure"></div>
-              <figcaption class="hero-figure__caption" id="hero-figure-caption"></figcaption>
+            <figure class="hero-fig">
+              <!-- Built at runtime by js/hero-timeline.js: the county outline,
+                   then all 224 parcels in the order their applications were
+                   filed, 2005 to 2025. -->
+              <div id="hero-figure" class="hero-fig__stage"></div>
+              <figcaption class="hero-fig__caption" id="hero-figure-caption"></figcaption>
             </figure>
           </div>
         </div>
@@ -252,7 +259,7 @@
     <script src="js/report-detail.js"></script>
     <script src="js/watchlist.js"></script>
     <script src="js/news.js"></script>
-    <script src="js/hero-map.js"></script>
+    <script src="js/hero-timeline.js"></script>
     <script src="js/home.js"></script>
   </body>
 </html>

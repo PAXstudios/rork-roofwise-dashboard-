@@ -1,6 +1,6 @@
 # Data provenance
 
-Generated 2026-08-06 by `scripts/refresh-facilities.py`.
+Generated 2026-08-11 by `scripts/refresh-facilities.py`.
 
 All facility data on this site comes from **Loudoun County GIS**, published as
 public, unauthenticated ArcGIS services. Nothing here is scraped, guessed, or

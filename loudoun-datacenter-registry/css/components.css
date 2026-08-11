@@ -10,6 +10,11 @@
    -------------------------------------------------------------------------- */
 
 .btn {
+  transition: background var(--duration-fast) var(--ease-out),
+              color var(--duration-fast) var(--ease-out),
+              border-color var(--duration-fast) var(--ease-out),
+              transform var(--duration-fast) var(--ease-out),
+              box-shadow var(--duration-fast) var(--ease-out);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -33,14 +38,39 @@
   cursor: not-allowed;
 }
 
+/* The primary action is the signal colour — this is a site whose whole purpose
+   is getting people to file a report, so the loudest thing on the page should
+   be the button that does it. */
 .btn--primary {
-  background: var(--bg-ink);
-  color: var(--text-on-ink);
+  background: var(--signal-deep);
+  color: #fff;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.18) inset,
+              0 6px 18px rgba(194, 52, 10, 0.28);
 }
 
 .btn--primary:hover:not(:disabled) {
-  background: var(--accent);
+  background: #a82c08;
+  color: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.2) inset,
+              0 10px 26px rgba(194, 52, 10, 0.34);
+}
+
+.btn--primary:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+/* For use on the dark panel, where a bordered button needs light edges. */
+.btn--ghost-invert {
+  background: transparent;
+  border-color: var(--border-on-ink);
   color: var(--text-on-ink);
+}
+
+.btn--ghost-invert:hover:not(:disabled) {
+  background: rgba(247, 248, 251, 0.08);
+  border-color: var(--teal-bright);
+  color: var(--teal-bright);
 }
 
 .btn--secondary {
@@ -182,13 +212,54 @@
 }
 
 /* --------------------------------------------------------------------------
-   Hero
+   Hero — the instrument panel
+
+   The identity lives in the switch: a dark, lit panel carrying the animated
+   county, then light editorial paper for everything below it. Every colour
+   here is a token, and the panel paints its own background explicitly so it
+   never borrows the host page's ground.
    -------------------------------------------------------------------------- */
 
 .hero {
-  padding-block: var(--space-6) var(--space-7);
-  border-bottom: var(--rule-heavy) solid var(--text);
+  position: relative;
+  isolation: isolate;
+  background: var(--bg-ink);
+  color: var(--text-on-ink);
+  padding-block: var(--space-7) var(--space-8);
   overflow: hidden;
+}
+
+/* A wash of heat behind the eastern corridor, echoing where the parcels
+   actually are. Sits under the content, above the ground. */
+.hero::before {
+  content: "";
+  position: absolute;
+  inset: -20% -10% auto auto;
+  width: min(70vw, 900px);
+  aspect-ratio: 1;
+  background: radial-gradient(
+    circle at 60% 45%,
+    rgba(255, 107, 61, 0.22),
+    rgba(232, 148, 12, 0.12) 38%,
+    rgba(0, 184, 189, 0.06) 62%,
+    transparent 72%
+  );
+  z-index: -1;
+  pointer-events: none;
+}
+
+/* A faint grid, like a plan drawing under the map. */
+.hero__grain {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.5;
+  background-image:
+    linear-gradient(to right, rgba(152, 163, 188, 0.07) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(152, 163, 188, 0.07) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(ellipse at 50% 30%, #000 20%, transparent 78%);
 }
 
 .hero__grid {
@@ -200,7 +271,7 @@
 
 @media (min-width: 1000px) {
   .hero__grid {
-    grid-template-columns: 1.05fr 0.95fr;
+    grid-template-columns: 1.02fr 0.98fr;
     gap: var(--space-8);
   }
 }
@@ -210,30 +281,47 @@
   align-items: center;
   gap: var(--space-2);
   margin-bottom: var(--space-4);
-  font-family: var(--font-sans);
+  font-family: var(--font-mono);
   font-size: var(--text-xs);
-  font-weight: var(--weight-bold);
+  font-weight: var(--weight-medium);
   letter-spacing: var(--tracking-kicker);
   text-transform: uppercase;
-  color: var(--text);
-  border-bottom: var(--rule-heavy) solid var(--status-reported);
-  padding-bottom: var(--space-1);
+  color: var(--teal-bright);
+}
+
+/* A slow blink — the "live" light on a piece of equipment. */
+.hero__pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--teal-bright);
+  box-shadow: 0 0 0 0 rgba(0, 184, 189, 0.6);
+  animation: hero-pulse 2.4s var(--ease-in-out) infinite;
+}
+
+@keyframes hero-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(0, 184, 189, 0.55); }
+  60%      { box-shadow: 0 0 0 9px rgba(0, 184, 189, 0); }
 }
 
 .hero__title {
   font-size: var(--text-4xl);
-  font-weight: var(--weight-black);
+  font-weight: 800;
+  font-stretch: 78%;
+  font-variation-settings: "wdth" 78;
   letter-spacing: var(--tracking-tighter);
-  line-height: 0.98;
+  line-height: 0.94;
   margin-bottom: var(--space-4);
-  max-width: 15ch;
+  color: var(--text-on-ink);
+  max-width: 18ch;
 }
 
 .hero__lead {
+  font-family: var(--font-serif);
   font-size: var(--text-lg);
   line-height: var(--leading-snug);
-  color: var(--text-muted);
-  max-width: 54ch;
+  color: var(--text-on-ink-muted);
+  max-width: 52ch;
   margin-bottom: var(--space-5);
 }
 
@@ -241,68 +329,224 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-3);
+  margin-bottom: var(--space-6);
 }
 
-/* The county figure — an SVG built at runtime by hero-map.js from
-   data/county.json plus the 224 real facility coordinates. */
-.hero-figure {
+/* Four figures under the copy, in mono, so the panel reads as a readout. */
+.hero__figures {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+  margin: 0;
+  padding-top: var(--space-5);
+  border-top: var(--border-width) solid var(--border-on-ink);
+}
+
+@media (min-width: 560px) {
+  .hero__figures { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+.hero__figures dt {
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-kicker);
+  text-transform: uppercase;
+  color: var(--text-on-ink-muted);
+  margin-bottom: var(--space-1);
+}
+
+.hero__figures dd {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-xl);
+  font-weight: 600;
+  color: var(--text-on-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --------------------------------------------------------------------------
+   Hero figure — the timeline
+   -------------------------------------------------------------------------- */
+
+.hero-fig {
+  margin: 0;
   position: relative;
 }
 
-.hero-figure svg {
+.hero-fig__stage {
+  position: relative;
+}
+
+.hero-fig__svg {
   width: 100%;
   height: auto;
   overflow: visible;
 }
 
-.hero-figure__outline {
+.hero-fig__district {
+  fill: rgba(152, 163, 188, 0.06);
+  stroke: rgba(152, 163, 188, 0.22);
+  stroke-width: 1;
+}
+
+.hero-fig__outline {
   fill: none;
-  stroke: var(--text);
-  stroke-width: 2.5;
+  stroke: var(--text-on-ink);
+  stroke-width: 2;
   stroke-linejoin: round;
+  opacity: 0.85;
 }
 
-.hero-figure__district {
-  fill: var(--bg-sunken);
-  stroke: var(--rule);
-  stroke-width: 1.2;
+/* Dots are hidden until their year arrives. */
+.hero-fig__dot {
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  transform: scale(0.2);
+  transition: opacity 420ms var(--ease-out), transform 420ms var(--ease-spring);
 }
 
-.hero-figure__dot--operational {
-  fill: var(--status-operational);
-}
-.hero-figure__dot--under_construction {
-  fill: var(--status-construction);
-}
-.hero-figure__dot--proposed {
-  fill: var(--status-proposed);
+.hero-fig__dot.is-on {
+  opacity: 0.92;
+  transform: scale(1);
 }
 
-.hero-figure__label {
-  font-family: var(--font-sans);
-  font-size: 15px;
-  font-weight: var(--weight-bold);
-  letter-spacing: var(--tracking-kicker);
-  text-transform: uppercase;
-  fill: var(--text);
-  text-anchor: middle;
-  /* The eastern districts sit under the dense cluster of facility dots. A
-     white halo, painted behind the glyphs, keeps the names readable there
-     without hiding the data underneath. */
-  stroke: #fff;
-  stroke-width: 4px;
-  stroke-linejoin: round;
-  paint-order: stroke fill;
+.hero-fig__dot--operational { fill: var(--teal-bright); }
+.hero-fig__dot--under_construction { fill: var(--amber-bright); }
+.hero-fig__dot--proposed { fill: var(--violet-bright); }
+.hero-fig__dot--unknown { fill: var(--text-on-ink-muted); }
+
+/* The year a parcel lands, it flares once. */
+.hero-fig__dot.is-new {
+  animation: dot-land 900ms var(--ease-out);
 }
 
-.hero-figure__caption {
-  margin-top: var(--space-3);
+@keyframes dot-land {
+  0%   { filter: drop-shadow(0 0 0 currentColor); }
+  25%  { filter: drop-shadow(0 0 7px var(--signal-bright)); }
+  100% { filter: drop-shadow(0 0 0 transparent); }
+}
+
+/* ---- Readout ------------------------------------------------------------ */
+
+/* The readout sits over the empty north-west of the county, which is exactly
+   the part of the map that stays empty for the whole animation. */
+.hero-fig__readout {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  pointer-events: none;
+  text-shadow: 0 2px 12px rgba(10, 15, 28, 0.85);
+}
+
+.hero-fig__year {
+  font-family: var(--font-mono);
+  font-size: clamp(2.5rem, 1.6rem + 4vw, 4.5rem);
+  font-weight: 600;
+  line-height: 1;
+  color: var(--text-on-ink);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+}
+
+.hero-fig__tally {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  max-width: 22ch;
+}
+
+.hero-fig__count {
+  font-family: var(--font-mono);
+  font-size: var(--text-xl);
+  font-weight: 600;
+  color: var(--signal-bright);
+  font-variant-numeric: tabular-nums;
+}
+
+.hero-fig__unit {
   font-family: var(--font-sans);
   font-size: var(--text-xs);
-  color: var(--text-subtle);
+  line-height: 1.25;
+  color: var(--text-on-ink-muted);
+}
+
+/* ---- Controls ----------------------------------------------------------- */
+
+.hero-fig__controls {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-areas: "play scrub" ". range";
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.hero-fig__play {
+  grid-area: play;
+  appearance: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: var(--border-width) solid var(--border-on-ink);
+  background: var(--bg-ink-raised);
+  color: var(--text-on-ink);
+  font-size: 0.7rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hero-fig__play:hover {
+  border-color: var(--teal-bright);
+  color: var(--teal-bright);
+}
+
+.hero-fig__scrub {
+  grid-area: scrub;
+  width: 100%;
+  accent-color: var(--signal-bright);
+  cursor: pointer;
+  min-width: 0;
+}
+
+.hero-fig__range {
+  grid-area: range;
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-on-ink-muted);
+}
+
+.hero-fig__caption {
+  margin-top: var(--space-4);
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
   line-height: var(--leading-normal);
-  border-top: var(--rule-width) solid var(--rule);
-  padding-top: var(--space-2);
+  color: var(--text-on-ink-muted);
+  border-top: var(--border-width) solid var(--border-on-ink);
+  padding-top: var(--space-3);
+}
+
+.hero-fig__caption strong { color: var(--text-on-ink); }
+
+@media (prefers-reduced-motion: reduce) {
+  .hero__pulse,
+  .hero-fig__dot,
+  .hero-fig__dot.is-new {
+    animation: none;
+    transition: none;
+  }
+  /* The finished map is the point; a reader who can't take motion gets it
+     immediately rather than getting an empty county. */
+  .hero-fig__dot.is-on { opacity: 0.92; transform: none; }
+  .hero-fig__controls { display: none; }
 }
 
 /* --------------------------------------------------------------------------
@@ -519,14 +763,23 @@
   border-left-color: var(--success);
 }
 
+/* Sits between the dark masthead and whatever follows, so it is styled to
+   belong to the panel rather than interrupting it with a cream stripe. */
 .demo-banner {
-  background: var(--warning-soft);
-  border-bottom: var(--rule-width) solid var(--rule);
+  background: var(--bg-ink-raised);
+  color: var(--text-on-ink-muted);
+  border-bottom: var(--border-width) solid var(--border-on-ink);
   padding-block: var(--space-2);
   font-family: var(--font-sans);
   font-size: var(--text-xs);
   text-align: center;
 }
+
+.demo-banner strong { color: var(--amber-bright); }
+
+.demo-banner a { color: var(--teal-bright); }
+
+.demo-banner a:hover { color: var(--text-on-ink); }
 
 .demo-banner[hidden] {
   display: none;

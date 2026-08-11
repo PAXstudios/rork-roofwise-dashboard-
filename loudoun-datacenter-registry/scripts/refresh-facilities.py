@@ -26,6 +26,7 @@ import json
 import math
 import os
 import sys
+import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import date
@@ -36,6 +37,11 @@ from datetime import date
 
 AGOL = "https://services1.arcgis.com/MxjRokvPm7bjslyR/arcgis/rest/services"
 LOGIS = "https://logis.loudoun.gov/gis/rest/services"
+
+# The county's land-development plans layer. 20,299 cases, of which 476 mention
+# a data center, each with the date its application was filed. This is what
+# gives every parcel a year.
+LOLA_PLANS = f"{LOGIS}/Projects/LOLA_DATA/MapServer/0"
 
 SOURCES = {
     "existing": f"{AGOL}/Existing_Data_Center_Parcel/FeatureServer/1",
@@ -314,6 +320,89 @@ def district_for(lng: float, lat: float, index) -> str | None:
 # --------------------------------------------------------------------------
 
 
+def attach_application_dates(facilities: list) -> None:
+    """Add the year each parcel's application was filed, from the county's
+    land-development plans layer.
+
+    The facility layers carry a case number (`ZMAP-2018-0015`) or an
+    application number (`EPLAN-2023-0083`) but no dates. LOLA_PLANS_POLY holds
+    20,000-odd cases WITH `PlanApplicationDate`, so joining on the number gives
+    every parcel a date the county itself published.
+
+    This is what the home page animates: 1 application in 2005, 31 in 2024, and
+    you can watch the corridor fill in. It is the clearest single statement of
+    what happened here, and none of it is estimated.
+
+    Roughly one number in eight has no match — a case filed under a different
+    number, or withdrawn and refiled. Those parcels simply carry no year and
+    the animation shows them in a final "undated" pass rather than guessing.
+    """
+    wanted = {}
+    for feature in facilities:
+        props = feature["properties"]
+        for key in ("zoning_case", "application"):
+            number = (props.get(key) or "").strip().upper()
+            if number:
+                wanted.setdefault(number, []).append(props)
+
+    if not wanted:
+        return
+
+    print(f"\nDating {len(wanted)} case numbers against LOLA_PLANS_POLY...")
+    matched = {}
+    numbers = sorted(wanted)
+
+    # IN () lists get chunked: the county's endpoint rejects very long queries,
+    # and a single failed chunk should not cost every other date.
+    for start in range(0, len(numbers), 60):
+        chunk = numbers[start : start + 60]
+        where = "PlanNumber IN (" + ",".join(
+            "'" + n.replace("'", "''") + "'" for n in chunk
+        ) + ")"
+        url = LOLA_PLANS + "/query?" + urllib.parse.urlencode(
+            {
+                "where": where,
+                "outFields": "PlanNumber,PlanApplicationDate,PlanType,PlanStatus",
+                "returnGeometry": "false",
+                "f": "json",
+                "resultRecordCount": 2000,
+            }
+        )
+        try:
+            request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+            with urllib.request.urlopen(request, timeout=60) as response:
+                payload = json.load(response)
+            for feature in payload.get("features", []):
+                attrs = feature["attributes"]
+                number = (attrs.get("PlanNumber") or "").strip().upper()
+                if number:
+                    matched[number] = attrs
+        except (urllib.error.URLError, OSError, ValueError, TimeoutError) as error:
+            print(f"  chunk {start // 60 + 1} failed: {error}")
+
+    dated = 0
+    for number, targets in wanted.items():
+        attrs = matched.get(number)
+        stamp = attrs.get("PlanApplicationDate") if attrs else None
+        if not stamp:
+            continue
+        # ArcGIS returns epoch milliseconds, UTC.
+        year = date.fromtimestamp(stamp / 1000).year
+        for props in targets:
+            # A parcel can carry two numbers; keep the earliest filing.
+            if props.get("applied_year") is None or year < props["applied_year"]:
+                props["applied_year"] = year
+                props["plan_status"] = clean(attrs.get("PlanStatus"))
+                dated += 1
+
+    with_year = [f for f in facilities if f["properties"].get("applied_year")]
+    years = sorted(f["properties"]["applied_year"] for f in with_year)
+    print(
+        f"  dated {len(with_year)} of {len(facilities)} parcels"
+        + (f", {years[0]}–{years[-1]}" if years else "")
+    )
+
+
 def main() -> int:
     os.makedirs(DATA, exist_ok=True)
 
@@ -435,6 +524,9 @@ def main() -> int:
                     "properties": {"id": fid, "status": "proposed"},
                 }
             )
+
+    # ---- When each one was applied for -------------------------------------
+    attach_application_dates(facilities)
 
     # ---- Building footprints ----------------------------------------------
     buildings = []

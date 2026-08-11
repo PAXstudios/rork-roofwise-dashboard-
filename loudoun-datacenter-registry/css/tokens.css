@@ -1,43 +1,72 @@
 /* ==========================================================================
    Design tokens — Loudoun Data Center Watch
 
-   One theme: white, bright, high contrast. There is deliberately no dark mode
-   — a front page is printed on paper, and a single theme is one set of
-   contrast decisions to get right instead of two.
+   The identity is instrumentation.
 
-   Every colour, size and duration used anywhere on the site is declared here.
+   A data center is, physically, a machine for turning electricity into heat at
+   enormous scale. So the palette is a thermal ramp read off an instrument —
+   cool teal where something is running, amber where it is being built, violet
+   where it is only proposed, and hot orange where a resident says something is
+   wrong. The colour is not decoration: on this site it is the legend.
+
+   The ground is a substation blue-black rather than pure black, and the paper
+   is a cool off-white biased toward that same hue, so the neutrals read as
+   chosen rather than inherited.
+
+   ---- The three-tier colour rule ----------------------------------------
+
+   Every status colour exists three times, and which one you use depends
+   entirely on what is behind it:
+
+     --x-bright   graphics on the DARK panel only. Fails contrast on paper.
+     --x          markers and bars. Clears 3:1 on BOTH grounds — this is the
+                  one to reach for when the background could be either.
+     --x-deep     text. Clears 4.5:1 on paper.
+
+   Getting this wrong is the single easiest way to make part of this site
+   unreadable, and it will look fine on whichever ground you happened to test.
    ========================================================================== */
 
 :root {
   color-scheme: light;
 
   /* ---- Type ------------------------------------------------------------
-     Serif carries the words; sans carries the furniture (kickers, labels,
-     nav, data). The fallback stacks matter — if the woff2 files ever go
-     missing the site should still read as editorial, not as a default
-     browser page. */
+     Three faces, three jobs.
 
+     Archivo is the voice: a variable grotesque with a WIDTH axis as well as
+     weight, so headlines can be set heavy and narrow for compression without
+     a second font file. That width axis is doing the identity work — it is
+     what makes the display type specific rather than another neutral sans.
+
+     Source Serif carries long-form reading, because a watchdog site lives or
+     dies on being believed and a serif still buys that.
+
+     IBM Plex Mono carries data — counts, case numbers, coordinates, years.
+     Infrastructure work is done in monospace. */
+
+  --font-display: "Archivo Variable", "Helvetica Neue", Arial, sans-serif;
   --font-serif: "Source Serif Variable", "Iowan Old Style", "Charter",
     "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
-  --font-sans: "Libre Franklin Variable", -apple-system, BlinkMacSystemFont,
+  --font-sans: "Archivo Variable", -apple-system, BlinkMacSystemFont,
     "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
-    "Liberation Mono", monospace;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo,
+    Consolas, "Liberation Mono", monospace;
 
-  /* A closed ramp. New components pick from this list — nothing in between.
-     The top three are fluid so a broadsheet headline can be genuinely large
-     on a wide screen without wrapping badly on a phone. */
+  /* Archivo's width axis. Display type is compressed; UI stays normal. */
+  --width-display: 84%;
+  --width-normal: 100%;
+
   --text-xs: 0.75rem;     /* 12px — bylines, footnotes, legends       */
   --text-sm: 0.8125rem;   /* 13px — labels, meta, captions            */
   --text-base: 1.0625rem; /* 17px — body copy                         */
   --text-lg: 1.25rem;     /* 20px — standfirst, lead paragraphs       */
   --text-xl: 1.5rem;      /* 24px — card and subsection headings      */
-  --text-2xl: clamp(1.75rem, 1.4rem + 1.6vw, 2.375rem);  /* section heads */
-  --text-3xl: clamp(2.25rem, 1.6rem + 3vw, 3.5rem);      /* page titles   */
-  --text-4xl: clamp(2.75rem, 1.5rem + 5.5vw, 5rem);      /* the headline  */
+  --text-2xl: clamp(1.75rem, 1.4rem + 1.6vw, 2.5rem);    /* section heads */
+  --text-3xl: clamp(2.25rem, 1.6rem + 3vw, 3.75rem);     /* page titles   */
+  --text-4xl: clamp(2.75rem, 1.4rem + 6vw, 5.5rem);      /* the headline  */
 
-  --leading-tight: 1.05;
-  --leading-snug: 1.25;
+  --leading-tight: 0.98;
+  --leading-snug: 1.22;
   --leading-normal: 1.55;
   --leading-loose: 1.7;
 
@@ -47,11 +76,9 @@
   --weight-bold: 700;
   --weight-black: 800;
 
-  /* Kickers and labels are set in small caps with wide tracking — the single
-     most recognisable signal of a newspaper's furniture. */
-  --tracking-kicker: 0.09em;
-  --tracking-tight: -0.021em;
-  --tracking-tighter: -0.032em;
+  --tracking-kicker: 0.11em;
+  --tracking-tight: -0.018em;
+  --tracking-tighter: -0.03em;
 
   /* ---- Space (4px scale) ----------------------------------------------- */
   --space-1: 0.25rem;
@@ -65,11 +92,12 @@
   --space-9: 6.5rem;
 
   /* ---- Shape -----------------------------------------------------------
-     Newsprint has no rounded corners. Radii are kept small and reserved for
-     interactive controls, where roundness signals "clickable". */
-  --radius-sm: 2px;
-  --radius-md: 3px;
-  --radius-lg: 4px;
+     Slightly softer than before, but still restrained. Instruments have
+     machined edges, not pill-shaped ones. */
+  --radius-sm: 3px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-xl: 16px;
   --radius-pill: 999px;
 
   --border-width: 1px;
@@ -80,73 +108,112 @@
   --container: 1240px;
   --container-wide: 1440px;
   --container-narrow: 700px;
-  --header-height: 62px;
+  --header-height: 64px;
 
-  /* ---- Colour -----------------------------------------------------------
-     Near-black on white, with one warm off-white for section bands so the
-     page has texture without ever going grey. */
+  /* ---- Ground ----------------------------------------------------------- */
 
-  --bg: #ffffff;
+  --bg: #f7f8fb;             /* cool paper, biased toward the ink's hue */
   --bg-raised: #ffffff;
-  --bg-sunken: #f7f7f4;      /* warm paper tint */
-  --bg-tint: #fbfbf9;
-  --bg-ink: #121212;
+  --bg-sunken: #edf0f6;
+  --bg-tint: #f2f4f9;
+  --bg-ink: #0a0f1c;         /* substation night */
+  --bg-ink-raised: #131a2c;  /* a panel lifted off the night ground */
 
-  --text: #121212;
-  --text-muted: #5a5a55;
-  --text-subtle: #6b6b64;    /* 5.3:1 on white — safe for 12px */
-  --text-on-ink: #ffffff;
+  --text: #0f1524;           /* 17.2:1 on paper */
+  --text-muted: #48526a;     /*  7.4:1 */
+  --text-subtle: #59637a;    /*  5.7:1 — safe at 12px */
+  --text-on-ink: #f7f8fb;    /* 18.0:1 on ink */
+  --text-on-ink-muted: #98a3bc; /* 7.6:1 on ink */
   --text-on-accent: #ffffff;
 
-  --rule: #dcdcd5;           /* hairline between sections */
-  --rule-strong: #121212;    /* the heavy rule under the masthead */
-  --border: #e4e4de;
-  --border-strong: #c3c3ba;
+  --rule: #dbe1ec;
+  --rule-strong: #0f1524;
+  --border: #e2e7f0;
+  --border-strong: #b9c2d4;
+  --border-on-ink: #26304a;
 
-  --accent: #1c4f8f;         /* 7.6:1 on white */
-  --accent-hover: #14395f;
-  --accent-soft: #eaf1fa;
+  /* ---- The thermal ramp -------------------------------------------------
+     Cool where it runs, hot where it hurts. See the three-tier rule above. */
 
-  --danger: #a8231c;
-  --danger-soft: #fdeceb;
-  --success: #1b6b3a;
-  --success-soft: #e8f5ec;
-  --warning: #8a5000;
-  --warning-soft: #fdf3e2;
+  /* Teal — operational. It is running. */
+  --teal-bright: #00b8bd;
+  --teal: #008387;
+  --teal-deep: #00696c;
+  --teal-soft: #e0f4f5;
 
-  --focus-ring: #1c4f8f;
+  /* Amber — under construction. */
+  --amber-bright: #e8940c;
+  --amber: #a66206;
+  --amber-deep: #8a5200;
+  --amber-soft: #fdf1de;
 
-  /* Shadows are almost absent by design — newsprint doesn't float. What's
-     left is used only for genuinely layered things: popups and the sticky
-     header once it detaches. */
-  --shadow-sm: 0 1px 2px rgba(18, 18, 18, 0.05);
-  --shadow-md: 0 2px 10px rgba(18, 18, 18, 0.08);
-  --shadow-lg: 0 16px 40px rgba(18, 18, 18, 0.14);
+  /* Violet — proposed. Not here yet. */
+  --violet-bright: #9b84ff;
+  --violet: #7b5cff;
+  --violet-deep: #4b2fd6;
+  --violet-soft: #eeeaff;
 
-  /* ---- Status colours ---------------------------------------------------
-     These four carry meaning across the map, legend, badges and charts. Each
-     is always paired with a distinct marker shape and a text label, so the
-     map never depends on colour alone. All clear 4.5:1 on white. */
-  --status-operational: #1a56b0;
-  --status-construction: #8a5000;
-  --status-proposed: #6b28c9;
-  --status-reported: #b3231b;
+  /* Signal — a resident says something is wrong. The loudest thing here, and
+     reserved for that: reports, the watchlist, alerts. Nothing else. */
+  --signal-bright: #ff6b3d;
+  --signal: #d93b0f;
+  --signal-deep: #c2340a;
+  --signal-soft: #ffeae3;
 
-  --status-operational-soft: #e7effb;
-  --status-construction-soft: #fdf3e2;
-  --status-proposed-soft: #f2eafc;
-  --status-reported-soft: #fdecea;
+  /* ---- Roles ------------------------------------------------------------ */
 
-  /* ---- Severity (1 low → 5 severe) ------------------------------------- */
-  --severity-1: #1b6b3a;
-  --severity-2: #4d7c0f;
-  --severity-3: #9a6700;
-  --severity-4: #b45309;
-  --severity-5: #a8231c;
+  --accent: var(--teal-deep);      /* 6.1:1 — links, focus, primary UI */
+  --accent-hover: #00504f;
+  --accent-soft: var(--teal-soft);
+
+  --danger: var(--signal-deep);
+  --danger-soft: var(--signal-soft);
+  --success: #0e6b45;
+  --success-soft: #e2f4ec;
+  --warning: var(--amber-deep);
+  --warning-soft: var(--amber-soft);
+
+  --focus-ring: #00696c;
+
+  /* ---- Status (what the map legend means) -------------------------------
+     Aliases onto the ramp so the legend, the markers, the badges and the
+     charts cannot drift apart. These are the both-grounds tier, which is why
+     markers stay legible over satellite imagery as well as paper. */
+  --status-operational: var(--teal);
+  --status-construction: var(--amber);
+  --status-proposed: var(--violet);
+  --status-reported: var(--signal);
+
+  --status-operational-text: var(--teal-deep);
+  --status-construction-text: var(--amber-deep);
+  --status-proposed-text: var(--violet-deep);
+  --status-reported-text: var(--signal-deep);
+
+  --status-operational-soft: var(--teal-soft);
+  --status-construction-soft: var(--amber-soft);
+  --status-proposed-soft: var(--violet-soft);
+  --status-reported-soft: var(--signal-soft);
+
+  /* ---- Severity (1 barely noticeable → 5 severe) ------------------------
+     Walks the same ramp, so a severity 5 and a community report are the same
+     heat. All clear 4.5:1 on paper. */
+  --severity-1: #0e6b45;
+  --severity-2: #4a6b0f;
+  --severity-3: #8a5200;
+  --severity-4: #b04a08;
+  --severity-5: #c2340a;
+
+  /* ---- Elevation --------------------------------------------------------
+     Shadows are tinted with the ink's hue rather than neutral black, which is
+     what stops a light UI looking like it was lit by a dead bulb. */
+  --shadow-sm: 0 1px 2px rgba(10, 15, 28, 0.06);
+  --shadow-md: 0 4px 16px rgba(10, 15, 28, 0.09);
+  --shadow-lg: 0 20px 48px rgba(10, 15, 28, 0.16);
+  --shadow-glow: 0 0 0 1px rgba(0, 184, 189, 0.35), 0 0 28px rgba(0, 184, 189, 0.28);
 
   /* ---- Motion -----------------------------------------------------------
-     One easing curve for entrances (decelerate), one for movement. Durations
-     are deliberately short: this is a news page, not a product tour. */
+     One decelerating curve for entrances, one symmetric for movement, one
+     with overshoot for anything that should feel physical. */
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -156,7 +223,5 @@
   --duration-slow: 620ms;
   --duration-hero: 1100ms;
 
-  /* Cascades read the index off a custom property so one keyframe can serve
-     any number of children. */
   --stagger-step: 45ms;
 }

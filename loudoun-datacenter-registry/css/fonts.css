@@ -1,18 +1,42 @@
 /* ==========================================================================
    Fonts — vendored, no external requests
 
-   Two open families, chosen to give a newspaper front page its voice:
+   Three families, three jobs.
 
-   - Source Serif 4 — transitional serif for headlines and body copy.
-   - Libre Franklin — an open Franklin Gothic, for kickers, labels and UI.
+   - Archivo (variable, weight 100–900 AND width 62–125%). The voice. The
+     width axis is the point: headlines are set heavy and narrow, which gives
+     the display type a specific character without shipping a second file or
+     reaching for the sans everyone else reaches for.
+   - Source Serif 4 (variable). Long-form reading. A watchdog site has to be
+     believed, and a serif still buys that.
+   - IBM Plex Mono. Data — counts, case numbers, coordinates, years.
+     Infrastructure is documented in monospace.
 
-   Both are variable-weight woff2, so one file per family covers the whole
-   range (300–800) instead of five static cuts. 130 KB for the set.
+   All three are open-licensed: Archivo and IBM Plex Mono under the SIL Open
+   Font License, Source Serif 4 likewise. Latin subsets only, ~285 KB for the
+   set.
 
    Note on the New York Times: its actual faces (Cheltenham, Imperial,
-   Franklin) are proprietary and cannot be used here. These are the closest
-   open equivalents — same typographic system, not the same identity.
+   Franklin) are proprietary and are not used here.
    ========================================================================== */
+
+@font-face {
+  font-family: "Archivo Variable";
+  src: url("../vendor/fonts/archivo.woff2") format("woff2-variations");
+  font-weight: 100 900;
+  font-stretch: 62% 125%;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Archivo Variable";
+  src: url("../vendor/fonts/archivo-italic.woff2") format("woff2-variations");
+  font-weight: 100 900;
+  font-stretch: 62% 125%;
+  font-style: italic;
+  font-display: swap;
+}
 
 @font-face {
   font-family: "Source Serif Variable";
@@ -31,9 +55,9 @@
 }
 
 @font-face {
-  font-family: "Libre Franklin Variable";
-  src: url("../vendor/fonts/libre-franklin.woff2") format("woff2-variations");
-  font-weight: 100 900;
+  font-family: "IBM Plex Mono";
+  src: url("../vendor/fonts/plex-mono.woff2") format("woff2");
+  font-weight: 400 600;
   font-style: normal;
   font-display: swap;
 }
