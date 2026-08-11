@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>In the news — Loudoun Data Center Watch</title>
+    <meta
+      name="description"
+      content="Recent reporting on data centers and AI infrastructure in Loudoun County and Virginia, collected automatically from public news feeds."
+    />
+    <meta name="color-scheme" content="light" />
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+
+    <link rel="stylesheet" href="css/fonts.css" />
+    <link rel="stylesheet" href="css/tokens.css" />
+    <link rel="stylesheet" href="css/base.css" />
+    <link rel="stylesheet" href="css/components.css" />
+    <link rel="stylesheet" href="css/animations.css" />
+  </head>
+
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header id="site-header"></header>
+    <div class="demo-banner" hidden></div>
+    <div id="watch-ticker" hidden></div>
+
+    <main id="main">
+      <div class="container">
+        <div class="page-header">
+          <p class="kicker">Coverage</p>
+          <h1>In the news</h1>
+          <p class="lead">
+            Reporting on data centers and AI infrastructure in Loudoun County and across Virginia,
+            collected automatically from public news feeds.
+          </p>
+        </div>
+
+        <div class="banner banner--info">
+          <p>
+            <strong>These are headlines and links, nothing more.</strong> Inclusion is not
+            endorsement, and this project has no relationship with any outlet listed. Every link
+            opens on the publisher's own site — please read them there, because local reporting on
+            this subject only continues if people read it.
+          </p>
+        </div>
+
+        <div class="filter-bar">
+          <div class="filter-bar__field" style="grid-column: 1 / -1">
+            <label for="news-search">Search headlines</label>
+            <input
+              class="input"
+              id="news-search"
+              type="search"
+              placeholder="noise, Dominion, moratorium…"
+            />
+          </div>
+        </div>
+
+        <div class="chips" id="news-filters"></div>
+
+        <div class="row row-between" style="margin-bottom: var(--space-4)">
+          <p class="filter-bar__result" id="news-count" role="status" aria-live="polite"
+             style="margin: 0">&mdash;</p>
+          <p class="tiny muted" id="news-generated" style="margin: 0"></p>
+        </div>
+
+        <div id="news-list">
+          <noscript>
+            <div class="empty-state">
+              <p class="empty-state__title">This page needs JavaScript</p>
+              <p>
+                Headlines are loaded from a data file in the browser. The
+                <a href="resources.html">resources page</a> lists the outlets covering this
+                directly.
+              </p>
+            </div>
+          </noscript>
+        </div>
+
+        <p style="text-align: center; margin-top: var(--space-5)">
+          <button class="btn btn--secondary" type="button" id="news-more" hidden></button>
+        </p>
+
+        <section class="section" aria-labelledby="news-method">
+          <h2 class="section__title" id="news-method">Where these come from</h2>
+          <div class="prose">
+            <p>
+              Headlines are collected from Google News searches and from the feeds published by
+              <a href="https://virginiamercury.com" rel="noopener">Virginia Mercury</a>,
+              <a href="https://cardinalnews.org" rel="noopener">Cardinal News</a> and
+              <a href="https://wtop.com" rel="noopener">WTOP</a>, filtered to stories mentioning
+              data centers, hyperscale development or AI infrastructure.
+            </p>
+            <p>
+              The collection is automated and unreviewed. Automated feeds occasionally surface
+              press releases and search-optimised filler dressed as news, and a headline appearing
+              here is not a judgement that the story is accurate or that this project agrees with
+              it.
+            </p>
+            <p>
+              Only the headline, publication, date and link are stored — no article text, and no
+              AI-written summary. Summarising an article nobody here has read would be inventing,
+              and a link is what the reporting deserves anyway.
+            </p>
+            <p class="muted">
+              Missing an outlet that covers this well? <a href="about.html#corrections">Tell us</a>
+              and we will add its feed.
+            </p>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <footer id="site-footer"></footer>
+
+    <script src="js/config.js"></script>
+    <script src="js/schema.js"></script>
+    <script src="js/local-store.js"></script>
+    <script src="js/supabase-store.js"></script>
+    <script src="js/store.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/motion.js"></script>
+    <script src="js/layout.js"></script>
+    <script src="js/watchlist.js"></script>
+    <script src="js/news.js"></script>
+  </body>
+</html>

@@ -125,6 +125,26 @@ exact source URLs and every transformation applied.
 Current snapshot: **224 parcels** — 103 operational, 36 under construction, 85 in the approval
 pipeline — plus 271 building footprints and 8 election districts.
 
+## Refreshing the news feed
+
+```bash
+python3 scripts/refresh-news.py
+```
+
+Writes `data/news.json` (the archive) and `data/news-home.json` (six headlines for the home
+page, so a visitor reading five lines doesn't download a couple of hundred kilobytes).
+
+This runs as a script rather than in the browser for one reason: **not one of these feeds sends
+CORS headers.** Google News, Virginia Mercury, Cardinal News, WTOP — none of them. A `fetch()`
+from the site's own JavaScript fails on every one, and the restriction is on the far end, so
+there is no request shape that works. If you deploy with a backend, the same parser belongs in a
+scheduled Supabase Edge Function; Appendix F of `LOVABLE-BUILD-PROMPT.md` has it in TypeScript.
+
+Only the headline, publication, date and link are stored. No article text and no AI summary —
+nobody here has read these articles, and a link is what the reporting deserves anyway.
+
+Run it hourly, daily, or whenever. A run takes a few seconds and one dead feed does not fail it.
+
 ---
 
 ## How it fits together
@@ -133,6 +153,9 @@ pipeline — plus 271 building footprints and 8 election districts.
 index.html      map, headline counts, concern cards, recent reports
 report.html     the submission form
 reports.html    browsable list + map, sharable via ?locality=&category=&q=
+report-detail.html  one report in full, at ?id= — the shareable permalink
+watchlist.html  clusters meeting the threshold; ?id= for one cluster
+news.html       local coverage, from data/news.json
 stats.html      dashboard + CSV export
 resources.html  how to file with the county, FAQ
 about.html      what this is and isn't, full data provenance
@@ -146,6 +169,11 @@ js/store.js         picks a backend, loads facility data, computes statistics
 js/local-store.js   demo backend (localStorage) + sample reports
 js/supabase-store.js live backend; loads vendor/supabase.js on demand
 js/map.js           Leaflet layers, clustering, popups, legend, marker motion
+js/map-layers.js    basemaps (incl. satellite) and the parcel/district/heat overlays
+js/map-tools.js     measure, radius rings, locate, fullscreen, address search
+js/report-detail.js the full report record — sheet, permalink page, lightbox
+js/watchlist.js     the cluster rule, the /watchlist page and the site-wide ticker
+js/news.js          renders data/news.json
 js/motion.js        scroll reveal, count-up, parallax, reduced-motion guard
 js/hero-map.js      the animated county figure on the home page
 js/ui.js            report cards, filters, icons, URL state

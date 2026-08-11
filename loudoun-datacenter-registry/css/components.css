@@ -2333,6 +2333,12 @@ body.has-sheet {
   font-family: var(--font-sans);
   font-size: var(--text-sm);
   overflow: hidden;
+  /* The ticker is a flex item of <body>, and a flex item's default
+     `min-width: auto` refuses to shrink below its content — which here is a
+     1,800px scrolling track. Without this the element simply grows to fit,
+     its own `overflow: hidden` never has anything to clip, and the whole page
+     scrolls sideways on a phone. */
+  min-width: 0;
 }
 
 .ticker__lead {
@@ -2585,4 +2591,120 @@ body.has-sheet {
     align-items: baseline;
     gap: var(--space-2);
   }
+}
+
+/* ============================================================================
+   News — headline lists
+   ==========================================================================*/
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.chip {
+  appearance: none;
+  border: var(--border-width) solid var(--border-strong);
+  background: var(--bg);
+  color: var(--text-muted);
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  padding: var(--space-1) var(--space-3);
+  min-height: 32px;
+  cursor: pointer;
+  border-radius: var(--radius-pill);
+}
+
+.chip:hover {
+  border-color: var(--text);
+  color: var(--text);
+}
+
+.chip.is-active {
+  background: var(--bg-ink);
+  border-color: var(--bg-ink);
+  color: var(--text-on-ink);
+}
+
+.chip:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.news-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  border-top: var(--rule-heavy) solid var(--text);
+}
+
+.news-item {
+  padding: var(--space-4) 0;
+  border-bottom: var(--rule-width) solid var(--rule);
+}
+
+.news-item__link {
+  /* Headlines come from third-party feeds and occasionally arrive as one
+     unbroken token — a form-encoded title with + instead of spaces, or a very
+     long URL-like string. Without this, a single such headline is a 600px word
+     that pushes the whole page sideways on a phone. */
+  overflow-wrap: anywhere;
+  font-family: var(--font-serif);
+  font-size: var(--text-lg);
+  font-weight: var(--weight-bold);
+  letter-spacing: var(--tracking-tight);
+  line-height: var(--leading-snug);
+  color: var(--text);
+  text-decoration: none;
+  display: inline-block;
+}
+
+.news-item__link:hover,
+.news-item__link:focus-visible {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+}
+
+/* An external link opening in a new tab should say so — otherwise the back
+   button appears broken to anyone not watching the tab bar. */
+.news-item__link::after {
+  content: " ↗";
+  font-size: 0.8em;
+  color: var(--text-subtle);
+  text-decoration: none;
+}
+
+.news-item__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  align-items: baseline;
+  margin: var(--space-2) 0 0;
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  color: var(--text-subtle);
+}
+
+.news-item__source {
+  font-weight: var(--weight-semibold);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-kicker);
+}
+
+.news-item__topic {
+  border: var(--border-width) solid var(--border);
+  padding: 0 var(--space-2);
+}
+
+.news-list--compact .news-item {
+  padding: var(--space-3) 0;
+}
+
+.news-list--compact .news-item__link {
+  font-size: var(--text-base);
 }

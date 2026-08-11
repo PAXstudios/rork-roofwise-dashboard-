@@ -18,6 +18,7 @@
     { href: "index.html", label: "Map" },
     { href: "reports.html", label: "Reports" },
     { href: "watchlist.html", label: "Watchlist" },
+    { href: "news.html", label: "News" },
     { href: "stats.html", label: "Statistics" },
     { href: "resources.html", label: "Resources" },
     { href: "about.html", label: "About" },
@@ -37,6 +38,7 @@
     {
       title: "Information",
       links: [
+        { href: "news.html", label: "In the news" },
         { href: "resources.html", label: "Resources & FAQ" },
         { href: "about.html", label: "About this project" },
         { href: "privacy.html", label: "Privacy policy" },
