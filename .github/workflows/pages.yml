@@ -1,0 +1,71 @@
+name: Deploy Loudoun Data Center Watch
+
+# Publishes loudoun-datacenter-registry/ to GitHub Pages.
+#
+# The site is a static site with no build step, so this only has to copy the
+# right subdirectory and hand it to Pages. Every path inside the site is
+# relative, which is what lets it work from a project subpath like
+# /rork-roofwise-dashboard-/ rather than a domain root.
+#
+# One manual step is required once, and it cannot be done from here:
+#   Settings -> Pages -> Build and deployment -> Source: "GitHub Actions"
+# Until that is set, this workflow runs and then fails at the deploy step.
+
+on:
+  push:
+    branches:
+      - main
+      - claude/loudoun-datacenter-registry-1uyy1r
+    paths:
+      - "loudoun-datacenter-registry/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Let a running deploy finish rather than cancelling it — a half-published
+# site is worse than a slightly stale one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Assemble the site
+        run: |
+          mkdir -p _site
+          cd loudoun-datacenter-registry
+          cp -r *.html css js data assets vendor ../_site/
+          # Pages runs Jekyll over the artifact unless told not to, and Jekyll
+          # silently drops files and directories beginning with an underscore.
+          touch ../_site/.nojekyll
+
+      - name: Check nothing obvious is missing
+        run: |
+          cd _site
+          for f in index.html reports.html watchlist.html news.html \
+                   data/facilities.geojson data/news.json js/map.js css/tokens.css; do
+            test -f "$f" || { echo "missing $f"; exit 1; }
+          done
+          echo "$(find . -type f | wc -l) files, $(du -sh . | cut -f1)"
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
