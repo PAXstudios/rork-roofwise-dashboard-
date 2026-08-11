@@ -62,16 +62,20 @@ JS_FILES = [
     "js/map-layers.js",
     "js/map-tools.js",
     "js/map.js",
+    "js/hero-timeline.js",
     "js/report-detail.js",
     "js/watchlist.js",
     "js/news.js",
 ]
 
-FONTS = {
-    "source-serif.woff2": ("Source Serif Variable", "normal", "200 900"),
-    "source-serif-italic.woff2": ("Source Serif Variable", "italic", "200 900"),
-    "libre-franklin.woff2": ("Libre Franklin Variable", "normal", "100 900"),
-}
+# (file, family, style, weight range, width range or None)
+FONTS = [
+    ("archivo.woff2", "Archivo Variable", "normal", "100 900", "62% 125%"),
+    ("archivo-italic.woff2", "Archivo Variable", "italic", "100 900", "62% 125%"),
+    ("source-serif.woff2", "Source Serif Variable", "normal", "200 900", None),
+    ("source-serif-italic.woff2", "Source Serif Variable", "italic", "200 900", None),
+    ("plex-mono.woff2", "IBM Plex Mono", "normal", "400 600", None),
+]
 
 
 def read(path: str) -> str:
@@ -149,13 +153,17 @@ def build(tiles_sat: str, tiles_osm: str, news_limit: int) -> str:
     css = "\n".join(f"/* ---- {f} ---- */\n" + read(f) for f in CSS_FILES)
 
     font_css = []
-    for filename, (family, style, weight) in FONTS.items():
+    for filename, family, style, weight, width in FONTS:
         path = os.path.join(ROOT, "vendor", "fonts", filename)
         if not os.path.exists(path):
             continue
+        # Plex Mono is a static face; declaring it as woff2-variations makes
+        # some engines reject it outright and silently fall back.
+        fmt = "woff2-variations" if width or "Variable" in family else "woff2"
+        stretch = f"font-stretch:{width};" if width else ""
         font_css.append(
             f'@font-face{{font-family:"{family}";src:url("{data_uri(path)}") '
-            f'format("woff2-variations");font-weight:{weight};font-style:{style};'
+            f'format("{fmt}");font-weight:{weight};font-style:{style};{stretch}'
             "font-display:swap;}"
         )
 
@@ -269,19 +277,42 @@ body {{ background: var(--bg); color: var(--text); }}
 <div id="watch-ticker" hidden></div>
 
 <main id="main">
-  <div class="container">{notes}</div>
-
   <!-- MAP -->
   <section class="artifact-section" data-section="map">
+    <div class="hero">
+      <div class="hero__grain" aria-hidden="true"></div>
+      <div class="container container-wide">
+        <div class="hero__grid">
+          <div class="hero__copy">
+            <p class="hero__eyebrow"><span class="hero__pulse" aria-hidden="true"></span>Loudoun County, Virginia</p>
+            <h1 class="hero__title">The data centers are mapped.<br>The people living beside them are&nbsp;not.</h1>
+            <p class="hero__lead">Loudoun holds the largest concentration of data centers on earth.
+            Below is every one of them, from the county's own records &mdash; and what residents
+            say about living next to them.</p>
+            <dl class="hero__figures">
+              <div><dt>Parcels</dt><dd>224</dd></div>
+              <div><dt>Operational</dt><dd>103</dd></div>
+              <div><dt>Proposed</dt><dd>85</dd></div>
+              <div><dt>Floor area</dt><dd>114.4M ft&sup2;</dd></div>
+            </dl>
+          </div>
+          <figure class="hero-fig">
+            <div id="hero-figure" class="hero-fig__stage"></div>
+            <figcaption class="hero-fig__caption" id="hero-figure-caption"></figcaption>
+          </figure>
+        </div>
+      </div>
+    </div>
+
     <div class="container">
-      <div class="page-header">
-        <p class="kicker">224 parcels, from the county's own GIS</p>
-        <h1>Where the data centers are</h1>
-        <p class="lead">Every operational, under-construction and proposed data center parcel in
-        Loudoun County, with community reports alongside them. Switch to satellite and turn on
-        parcel boundaries to see the real footprints.</p>
+      <div class="page-header" style="margin-top: var(--space-6)">
+        <p class="kicker">The map</p>
+        <h2>Every parcel, and every report</h2>
+        <p class="lead">Switch to satellite and turn on parcel boundaries to see the real
+        footprints against the neighbourhoods.</p>
       </div>
       <div class="stat-grid stat-grid--4" id="headline-stats"></div>
+      {notes}
       <div class="map-shell" style="margin-top: var(--space-5)">
         <div id="layer-toggles"></div>
         <div id="map-controls"></div>
