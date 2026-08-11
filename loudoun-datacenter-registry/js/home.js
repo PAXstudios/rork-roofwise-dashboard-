@@ -97,6 +97,7 @@
     if (!mapController) return;
 
     mapController.bindToggles(document.getElementById("layer-toggles"));
+    LDCW.map.renderMapControls(document.getElementById("map-controls"), mapController);
     mapController.setFilter(filter);
 
     Store.loadFacilities()

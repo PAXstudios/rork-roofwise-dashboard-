@@ -181,10 +181,20 @@ window.LDCW = window.LDCW || {};
         "Map of Loudoun County data centers and community reports. An equivalent list follows below."
     );
 
-    L.tileLayer(settings.TILE_URL, {
-      attribution: settings.TILE_ATTRIBUTION,
-      maxZoom: 19,
-    }).addTo(map);
+    /* Basemaps. If map-layers.js isn't on the page — the hero and any future
+       embed load a smaller script set — fall back to the single OSM layer, so
+       a missing optional file degrades rather than breaks. */
+    var basemaps = LDCW.mapLayers ? LDCW.mapLayers.buildBasemaps(map) : null;
+    if (basemaps) {
+      basemaps.select(options.basemap || "streets");
+    } else {
+      L.tileLayer(settings.TILE_URL, {
+        attribution: settings.TILE_ATTRIBUTION,
+        maxZoom: 19,
+      }).addTo(map);
+    }
+
+    L.control.scale({ position: "bottomleft", imperial: true, metric: true }).addTo(map);
 
     var layers = {
       operational: L.markerClusterGroup({
@@ -298,6 +308,7 @@ window.LDCW = window.LDCW || {};
 
       state.counts = counts;
       updateToggleCounts();
+      refreshHeat();
       element.dispatchEvent(new CustomEvent("ldcw:mapcounts", { detail: counts, bubbles: true }));
     }
 
@@ -356,11 +367,94 @@ window.LDCW = window.LDCW || {};
       });
     }
 
+    /* ---- Overlays ----------------------------------------------------------
+       Geometry is fetched on first toggle, not on load. The parcel outlines and
+       building footprints are ~170 KB together and most visitors never turn
+       them on; loading them eagerly was the single biggest thing slowing the
+       first paint of this map. */
+
+    var overlays = {};
+    var overlayOn = {};
+    var overlayPending = {};
+
+    function heatPoints() {
+      return state.reports
+        .filter(function (report) {
+          return (
+            isFinite(report.lat) &&
+            isFinite(report.lng) &&
+            schema.matchesFilter(report, state.filter)
+          );
+        })
+        .map(function (report) {
+          return L.latLng(report.lat, report.lng);
+        });
+    }
+
+    function setOverlay(key, on, onError) {
+      overlayOn[key] = on;
+
+      if (!on) {
+        if (overlays[key] && map.hasLayer(overlays[key])) map.removeLayer(overlays[key]);
+        return Promise.resolve();
+      }
+
+      if (overlays[key]) {
+        overlays[key].addTo(map);
+        return Promise.resolve();
+      }
+
+      if (key === "heat") {
+        if (!LDCW.mapLayers) return Promise.resolve();
+        overlays.heat = LDCW.mapLayers.heatLayer(heatPoints());
+        overlays.heat.addTo(map);
+        return Promise.resolve();
+      }
+
+      // Guard against a double-click queueing two fetches for the same file.
+      if (overlayPending[key]) return overlayPending[key];
+
+      var def = null;
+      (LDCW.mapLayers ? LDCW.mapLayers.OVERLAY_DEFS : []).forEach(function (candidate) {
+        if (candidate.key === key) def = candidate;
+      });
+      if (!def || !def.build) return Promise.resolve();
+
+      overlayPending[key] = def
+        .build()
+        .then(function (layer) {
+          overlays[key] = layer;
+          delete overlayPending[key];
+          // The reader may have toggled it back off while the fetch was in
+          // flight. Respect the last thing they asked for, not the first.
+          if (overlayOn[key]) layer.addTo(map);
+          if (key === "parcels" || key === "buildings" || key === "districts") {
+            layer.bringToBack();
+          }
+        })
+        .catch(function (error) {
+          delete overlayPending[key];
+          overlayOn[key] = false;
+          if (typeof onError === "function") onError(error);
+        });
+
+      return overlayPending[key];
+    }
+
+    function refreshHeat() {
+      if (overlays.heat && overlayOn.heat) overlays.heat.setPoints(heatPoints());
+    }
+
     /* ---- Controller ------------------------------------------------------- */
 
     var controller = {
       map: map,
       layers: layers,
+      basemaps: basemaps,
+      setOverlay: setOverlay,
+      overlayEnabled: function (key) {
+        return overlayOn[key] === true;
+      },
 
       setFacilities: function (facilities) {
         state.facilities = facilities || [];
@@ -384,6 +478,30 @@ window.LDCW = window.LDCW || {};
 
       getCounts: function () {
         return Object.assign({}, state.counts);
+      },
+
+      /* What sits inside a circle. Used by the radius tool, and by "what's near
+         me". Counts everything currently loaded, not just what the filter is
+         showing — "three facilities within a mile" must not change because the
+         reader happened to filter the map to one district. */
+      countWithin: function (lat, lng, metres) {
+        var origin = L.latLng(lat, lng);
+        var result = { facilities: 0, reports: 0, byStatus: {} };
+
+        state.facilities.forEach(function (facility) {
+          if (!isFinite(facility.lat) || !isFinite(facility.lng)) return;
+          if (origin.distanceTo(L.latLng(facility.lat, facility.lng)) > metres) return;
+          result.facilities += 1;
+          result.byStatus[facility.status] = (result.byStatus[facility.status] || 0) + 1;
+        });
+
+        state.reports.forEach(function (report) {
+          if (!isFinite(report.lat) || !isFinite(report.lng)) return;
+          if (origin.distanceTo(L.latLng(report.lat, report.lng)) > metres) return;
+          result.reports += 1;
+        });
+
+        return result;
       },
 
       bindToggles: bindToggles,
@@ -434,6 +552,11 @@ window.LDCW = window.LDCW || {};
       map.invalidateSize();
     }, 200);
 
+    // Several scripts on a page need the same map — the controls, the report
+    // detail panel, the watchlist. With no module system, one shared handle
+    // beats threading the controller through every init function.
+    LDCW.map.current = controller;
+
     if (typeof options.onReady === "function") options.onReady(controller);
 
     return controller;
@@ -479,9 +602,272 @@ window.LDCW = window.LDCW || {};
       .join("");
   }
 
+  /* ---- Map controls -------------------------------------------------------
+     Basemap, overlays and tools. Built as one panel rather than six Leaflet
+     controls stacked over the map: on a phone, six floating buttons cover the
+     thing you're trying to look at.
+
+     Below 720px the whole panel collapses into a <details> sheet. <details> is
+     used deliberately — it is keyboard operable, announces its state to screen
+     readers, and survives with JavaScript disabled, none of which is true of a
+     div with a click handler. */
+
+  function renderMapControls(container, controller, options) {
+    if (!container || !controller) return null;
+    options = options || {};
+
+    var tools = LDCW.mapTools;
+    var basemaps = controller.basemaps;
+    var overlayDefs = LDCW.mapLayers ? LDCW.mapLayers.OVERLAY_DEFS : [];
+
+    var basemapMarkup = !basemaps
+      ? ""
+      : '<div class="map-controls__group">' +
+        '<h3 class="map-controls__title" id="map-basemap-label">Base map</h3>' +
+        '<div class="segmented" role="radiogroup" aria-labelledby="map-basemap-label">' +
+        basemaps.defs
+          .map(function (def, index) {
+            return (
+              '<button type="button" class="segmented__option" role="radio" ' +
+              'aria-checked="' +
+              (index === 0 ? "true" : "false") +
+              '" data-basemap="' +
+              def.key +
+              '" title="' +
+              schema.escapeHtml(def.hint || "") +
+              '">' +
+              schema.escapeHtml(def.label) +
+              "</button>"
+            );
+          })
+          .join("") +
+        "</div></div>";
+
+    var overlayMarkup = !overlayDefs.length
+      ? ""
+      : '<div class="map-controls__group">' +
+        '<h3 class="map-controls__title">Overlays</h3>' +
+        '<div class="overlay-toggles">' +
+        overlayDefs
+          .map(function (def) {
+            return (
+              '<label class="overlay-toggle">' +
+              '<input type="checkbox" data-overlay="' +
+              def.key +
+              '"><span class="overlay-toggle__label">' +
+              schema.escapeHtml(def.label) +
+              '</span><span class="overlay-toggle__hint">' +
+              schema.escapeHtml(def.hint || "") +
+              "</span></label>"
+            );
+          })
+          .join("") +
+        "</div></div>";
+
+    var toolsMarkup = !tools
+      ? ""
+      : '<div class="map-controls__group">' +
+        '<h3 class="map-controls__title">Tools</h3>' +
+        '<div class="map-tools">' +
+        '<button type="button" class="btn btn--ghost btn--sm" data-tool="measure" aria-pressed="false">Measure</button>' +
+        '<button type="button" class="btn btn--ghost btn--sm" data-tool="radius" aria-pressed="false">Radius rings</button>' +
+        '<button type="button" class="btn btn--ghost btn--sm" data-tool="locate">Use my location</button>' +
+        '<button type="button" class="btn btn--ghost btn--sm" data-tool="fullscreen" aria-pressed="false">Fullscreen</button>' +
+        "</div>" +
+        '<form class="map-search" role="search">' +
+        '<label class="visually-hidden" for="map-address">Find an address in Loudoun County</label>' +
+        '<input class="input" id="map-address" type="search" placeholder="Find an address…" autocomplete="street-address">' +
+        '<button class="btn btn--secondary btn--sm" type="submit">Find</button>' +
+        "</form>" +
+        '<div class="map-search__results" hidden></div>' +
+        "</div>";
+
+    var body = basemapMarkup + overlayMarkup + toolsMarkup;
+
+    container.className = "map-controls";
+    container.innerHTML =
+      '<details class="map-controls__sheet">' +
+      "<summary>Map options</summary>" +
+      '<div class="map-controls__body">' +
+      body +
+      "</div></details>" +
+      '<p class="map-controls__readout" role="status" aria-live="polite"></p>';
+
+    var readout = container.querySelector(".map-controls__readout");
+    var sheet = container.querySelector(".map-controls__sheet");
+
+    function say(message, isError) {
+      readout.textContent = message || "";
+      readout.classList.toggle("is-error", isError === true);
+    }
+
+    // Open by default on a wide screen, closed on a phone. Set once on load
+    // rather than on resize: reopening a sheet the reader deliberately closed,
+    // because they rotated their phone, is worse than the wrong default.
+    if (sheet) sheet.open = window.innerWidth >= 720;
+
+    /* ---- Basemap --------------------------------------------------------- */
+
+    if (basemaps) {
+      container.querySelectorAll("[data-basemap]").forEach(function (button) {
+        button.addEventListener("click", function () {
+          var def = basemaps.select(button.getAttribute("data-basemap"));
+          if (!def) return;
+          container.querySelectorAll("[data-basemap]").forEach(function (other) {
+            other.setAttribute("aria-checked", String(other === button));
+          });
+          say(def.hint || "");
+        });
+      });
+    }
+
+    /* ---- Overlays -------------------------------------------------------- */
+
+    container.querySelectorAll("[data-overlay]").forEach(function (input) {
+      input.addEventListener("change", function () {
+        var key = input.getAttribute("data-overlay");
+        if (input.checked) say("Loading…");
+        controller
+          .setOverlay(key, input.checked, function (error) {
+            input.checked = false;
+            say("Could not load that overlay: " + error.message, true);
+          })
+          .then(function () {
+            if (input.checked && controller.overlayEnabled(key)) say("");
+          });
+      });
+    });
+
+    /* ---- Tools ----------------------------------------------------------- */
+
+    if (tools) {
+      // Declared before the tools that call it. Block-scoped function
+      // declarations do hoist in strict mode, but relying on that to call
+      // something defined forty lines down is a favour to nobody.
+      var setPressed = function (tool, on) {
+        var button = container.querySelector('[data-tool="' + tool + '"]');
+        if (button) button.setAttribute("aria-pressed", String(on));
+      };
+
+      var measure = tools.measureTool(controller.map, readout);
+      var radius = tools.radiusTool(controller.map, {
+        onArm: function () {
+          say("Click the map to centre the rings.");
+        },
+        onDrop: function (latlng, radii) {
+          var inside = radii.map(function (metres) {
+            return controller.countWithin(latlng.lat, latlng.lng, metres);
+          });
+          say(
+            radius.rings
+              .map(function (miles, i) {
+                return (
+                  miles +
+                  " mi: " +
+                  inside[i].facilities +
+                  " facilit" +
+                  (inside[i].facilities === 1 ? "y" : "ies") +
+                  ", " +
+                  inside[i].reports +
+                  " report" +
+                  (inside[i].reports === 1 ? "" : "s")
+                );
+              })
+              .join(" · ")
+          );
+          setPressed("radius", false);
+        },
+        onClear: function () {
+          say("");
+        },
+      });
+
+      container.querySelector('[data-tool="measure"]').addEventListener("click", function () {
+        if (radius.centre()) radius.clear();
+        setPressed("radius", false);
+        setPressed("measure", measure.toggle());
+      });
+
+      container.querySelector('[data-tool="radius"]').addEventListener("click", function () {
+        measure.clear();
+        setPressed("measure", false);
+        setPressed("radius", radius.toggle());
+      });
+
+      container.querySelector('[data-tool="locate"]').addEventListener("click", function () {
+        say("Asking your browser for your location…");
+        tools.locate(controller.map, function (error) {
+          say(error ? error.message : "", Boolean(error));
+        });
+      });
+
+      container.querySelector('[data-tool="fullscreen"]').addEventListener("click", function () {
+        setPressed("fullscreen", tools.toggleFullscreen(controller.map));
+      });
+
+      /* ---- Address search ------------------------------------------------ */
+
+      var form = container.querySelector(".map-search");
+      var input = container.querySelector("#map-address");
+      var results = container.querySelector(".map-search__results");
+
+      form.addEventListener("submit", function (event) {
+        event.preventDefault();
+        var query = input.value.trim();
+        if (query.length < 3) {
+          say("Type a few more characters.", true);
+          return;
+        }
+
+        say("Searching…");
+        results.hidden = true;
+
+        tools
+          .geocode(query)
+          .then(function (matches) {
+            if (!matches.length) {
+              say("No match inside Loudoun County. Try adding the town.", true);
+              return;
+            }
+            say("");
+            results.hidden = false;
+            results.innerHTML = matches
+              .map(function (match, index) {
+                return (
+                  '<button type="button" class="map-search__result" data-index="' +
+                  index +
+                  '">' +
+                  schema.escapeHtml(match.label) +
+                  "</button>"
+                );
+              })
+              .join("");
+
+            results.querySelectorAll(".map-search__result").forEach(function (button) {
+              button.addEventListener("click", function () {
+                var match = matches[Number(button.getAttribute("data-index"))];
+                controller.focus(match.lat, match.lng, 15);
+                radius.at(L.latLng(match.lat, match.lng));
+                results.hidden = true;
+                input.value = match.label;
+              });
+            });
+          })
+          .catch(function (error) {
+            say(error.message, true);
+          });
+      });
+    }
+
+    if (typeof options.onReady === "function") options.onReady({ say: say });
+
+    return { say: say };
+  }
+
   LDCW.map = {
     createMap: createMap,
     renderLayerToggles: renderLayerToggles,
+    renderMapControls: renderMapControls,
     LAYER_DEFS: LAYER_DEFS,
   };
 })(window.LDCW);
