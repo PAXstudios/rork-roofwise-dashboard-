@@ -79,16 +79,32 @@ are unreachable to it.
 
 ## Deploying
 
-Any static host. The site uses only relative paths, so it works from a subdirectory.
+Any static host. Every path in the site is relative, so it works at a domain root or under a
+subpath without changes.
 
-**GitHub Pages** — Settings → Pages → deploy from a branch, then point it at
-`/loudoun-datacenter-registry`. Or copy this directory to a repository root and deploy that.
+**Fastest, no account** — zip the *contents* of this directory (so `index.html` is at the top
+level of the archive, not inside a folder) and drop it on
+[app.netlify.com/drop](https://app.netlify.com/drop). Live URL in about thirty seconds.
 
-**Netlify / Cloudflare Pages / Vercel** — set the publish directory to
-`loudoun-datacenter-registry` and leave the build command empty.
+**Netlify / Cloudflare Pages / Vercel** — point the project at this repository, set the publish
+directory to `loudoun-datacenter-registry`, and leave the build command empty.
 
-Set your Supabase project's **Site URL** and redirect allow-list to the deployed origin, or
-moderator sign-in will fail.
+**GitHub Pages** — note that Pages only publishes from a repository root or from `/docs`; it
+**cannot** serve an arbitrary subdirectory, so pointing it at `loudoun-datacenter-registry`
+will not work. Two routes that do:
+
+- *Actions* (keeps the source where it is). Set Settings → Pages → Source to "GitHub Actions"
+  and add a workflow that runs `actions/upload-pages-artifact` with
+  `path: loudoun-datacenter-registry`, then `actions/deploy-pages`.
+- *A dedicated branch*. Push a branch whose root is this directory's contents, then
+  Settings → Pages → Deploy from a branch → that branch → `/ (root)`.
+
+Add an empty `.nojekyll` file if you use Pages, so it doesn't try to run the site through
+Jekyll.
+
+If you have connected Supabase, set its **Site URL** and redirect allow-list to the deployed
+origin, or moderator sign-in will fail. Without Supabase the deployed site runs in demo mode:
+it is fully browsable, but submitted reports stay in the visitor's own browser.
 
 ---
 
