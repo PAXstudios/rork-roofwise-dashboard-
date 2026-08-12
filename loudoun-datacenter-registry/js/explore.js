@@ -174,7 +174,13 @@
     writePending = setTimeout(function () {
       writePending = null;
       if (!state.controller) return;
-      window.history.replaceState(null, "", currentUrl());
+      try {
+        window.history.replaceState(null, "", currentUrl());
+      } catch (error) {
+        // A sandboxed iframe and a file:// origin both refuse this. The map
+        // still works; it just isn't linkable there, and there is nothing the
+        // reader could do about it, so don't shout.
+      }
     }, 220);
   }
 
@@ -226,6 +232,10 @@
         '">—</span></button>'
       );
     }).join("");
+
+    // Claim these counters, so this map's numbers land in these chips and not
+    // in whatever [data-layer-count] happens to come first in the document.
+    state.controller.bindCounts(els.chips);
 
     els.chips.querySelectorAll("[data-layer]").forEach(function (button) {
       button.addEventListener("click", function () {
@@ -634,14 +644,22 @@
      {z}/{y}/{x}. Interpolating positionally would silently fetch a tile of
      somewhere else entirely. All seven were fetched and return real imagery at
      these coordinates. */
+  var SWATCH_TILE = { z: "11", x: "583", y: "782" };
+
   function swatchStyle(def) {
-    var url = def.url
-      .replace("{z}", "11")
-      .replace("{x}", "583")
-      .replace("{y}", "782")
-      .replace("{s}", "a")
-      .replace("{r}", "");
-    return "background-image:url('" + url + "')";
+    // A host that serves tiles from somewhere other than the live service —
+    // the single-file build ships a built-in cache and can make no external
+    // request at all — supplies its own resolver rather than having this
+    // point at a URL its CSP will block.
+    var url = LDCW.swatchUrl
+      ? LDCW.swatchUrl(def, SWATCH_TILE)
+      : def.url
+          .replace("{z}", SWATCH_TILE.z)
+          .replace("{x}", SWATCH_TILE.x)
+          .replace("{y}", SWATCH_TILE.y)
+          .replace("{s}", "a")
+          .replace("{r}", "");
+    return url ? "background-image:url('" + url + "')" : "";
   }
 
   function drawerLayersMarkup() {
@@ -964,7 +982,11 @@
 
   function bindSearch() {
     var tools = LDCW.mapTools;
-    if (!tools) return;
+    // A host with no geocoder to reach replaces the whole control with an
+    // explanation. Bail rather than binding handlers to nodes that are gone —
+    // the document-level click listener below would otherwise throw on every
+    // click anywhere on the page.
+    if (!tools || !els.search || !els.searchInput || !els.searchResults) return;
 
     els.search.addEventListener("submit", function (event) {
       event.preventDefault();
@@ -1162,6 +1184,23 @@
       }
     });
   }
+
+  /* Published so a host that reveals this map late — the single-file build
+     puts it behind a tab — can tell it to re-measure. Leaflet sizes its
+     container on creation, and the sheet's snap points are measured from real
+     layout; both come out as zero if the section was hidden at boot. */
+  LDCW.explore = {
+    refresh: function () {
+      if (!state.controller) return;
+      state.controller.map.invalidateSize();
+      setSnap(isDesktop() ? "full" : "peek");
+      renderList();
+    },
+    controller: function () {
+      return state.controller;
+    },
+    select: select,
+  };
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", boot);

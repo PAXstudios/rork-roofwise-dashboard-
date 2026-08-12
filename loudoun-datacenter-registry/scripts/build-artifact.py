@@ -49,7 +49,13 @@ DATA_FILES = [
     "data/news-home.json",
 ]
 
-CSS_FILES = ["css/tokens.css", "css/base.css", "css/components.css", "css/animations.css"]
+CSS_FILES = [
+    "css/tokens.css",
+    "css/base.css",
+    "css/components.css",
+    "css/animations.css",
+    "css/explore.css",
+]
 
 # Order matters — these are plain scripts sharing a window.LDCW namespace.
 JS_FILES = [
@@ -67,6 +73,8 @@ JS_FILES = [
     "js/watchlist.js",
     "js/news.js",
     "js/report-form.js",
+    # Last: it reads LDCW.map and LDCW.mapTools at boot.
+    "js/explore.js",
 ]
 
 # (file, family, style, weight range, width range or None)
@@ -122,6 +130,7 @@ def collect_tiles(directory: str, mime: str) -> dict:
 # --------------------------------------------------------------------------
 
 SECTIONS = [
+    ("home", "Home"),
     ("map", "Map"),
     ("report", "Report an issue"),
     ("reports", "Reports"),
@@ -163,7 +172,7 @@ def extract_report_form() -> str:
     return page[start:end].strip()
 
 
-def build(tiles_sat: str, tiles_osm: str, news_limit: int) -> str:
+def build(tiles_sat: str, tiles_osm: str, tiles_dark: str, news_limit: int) -> str:
     css = "\n".join(f"/* ---- {f} ---- */\n" + read(f) for f in CSS_FILES)
 
     font_css = []
@@ -197,6 +206,7 @@ def build(tiles_sat: str, tiles_osm: str, news_limit: int) -> str:
 
     satellite = collect_tiles(tiles_sat, "image/jpeg")
     streets = collect_tiles(tiles_osm, "image/png")
+    dark = collect_tiles(tiles_dark, "image/png")
 
     leaflet_css = read("vendor/leaflet.css")
     # Leaflet's stylesheet points at sprite images for the zoom control and the
@@ -208,7 +218,7 @@ def build(tiles_sat: str, tiles_osm: str, news_limit: int) -> str:
 
     nav = "".join(
         f'<button type="button" class="site-nav__link artifact-tab'
-        f'{" is-current" if key == "map" else ""}" data-section="{key}">{label}</button>'
+        f'{" is-current" if key == "home" else ""}" data-section="{key}">{label}</button>'
         for key, label in SECTIONS
     )
 
@@ -224,14 +234,18 @@ def build(tiles_sat: str, tiles_osm: str, news_limit: int) -> str:
         leaflet_js=read("vendor/leaflet.js"),
         markercluster_js=read("vendor/markercluster.js"),
         data_json=json.dumps(payload, separators=(",", ":")),
-        tiles_json=json.dumps({"satellite": satellite, "streets": streets}, separators=(",", ":")),
+        tiles_json=json.dumps(
+            {"satellite": satellite, "streets": streets, "dark": dark},
+            separators=(",", ":"),
+        ),
         max_native=MAX_NATIVE_ZOOM,
         max_zoom=MAX_ZOOM,
         site_js=js,
     )
 
 
-PAGE = r"""<title>Loudoun Data Center Watch</title>
+PAGE = r"""<meta charset="utf-8">
+<title>Loudoun Data Center Watch</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>{font_css}</style>
 <style>{leaflet_css}</style>
@@ -274,11 +288,56 @@ PAGE = r"""<title>Loudoun Data Center Watch</title>
 .demo-note ul {{ margin: 0 0 var(--space-2); padding-left: var(--space-4); }}
 .demo-note li {{ margin-bottom: var(--space-1); }}
 body {{ background: var(--bg); color: var(--text); }}
+.linklike {{
+  appearance: none; border: 0; background: none; padding: 0; font: inherit;
+  color: var(--accent); text-decoration: underline; cursor: pointer;
+}}
+
+/* ---- The full-screen map, inside a tabbed single page -------------------
+   On the deployed site this map owns the viewport. Here it cannot: the tab
+   bar is the only way back to the rest of the site, so the map fills
+   everything BELOW the chrome instead. --artifact-chrome-h is measured at
+   runtime because the header wraps at narrow widths and the watchlist ticker
+   may or may not be present. */
+.artifact-section[data-section="map"] .explore {{
+  position: fixed;
+  top: var(--artifact-chrome-h, 64px);
+  left: 0;
+  right: 0;
+  bottom: 0;
+}}
+/* Only while that tab is showing — otherwise the other sections lose their
+   scroll. */
+body.is-map-section {{ overflow: hidden; }}
+.artifact-section[data-section="map"] .explore__brand {{ cursor: default; }}
+
+/* The site's nav collapses behind a Menu button below 960px. That button is
+   part of the deployed header, which this build does not use — so without
+   this rule every tab except the first is unreachable on a phone, and the
+   whole artifact is stuck on the section it opened with. Keep the tab strip
+   visible and let it scroll sideways instead. */
+@media (max-width: 959px) {{
+  .site-header__inner {{ flex-wrap: wrap; row-gap: var(--space-2); }}
+  .site-header .site-nav {{
+    display: block;
+    order: 3;
+    width: 100%;
+    margin-left: 0;
+  }}
+  .artifact-tabs {{
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }}
+  .artifact-tabs::-webkit-scrollbar {{ display: none; }}
+  .artifact-tab {{ white-space: nowrap; flex-shrink: 0; }}
+}}
 </style>
 
 <header class="site-header" id="site-header">
   <div class="container site-header__inner">
-    <a class="brand" href="#" data-section-link="map">
+    <a class="brand" href="#" data-section-link="home">
       <span class="brand__mark" data-county-mark aria-hidden="true"></span>
       <span class="brand__name">Loudoun Data Center Watch</span>
       <span class="brand__name--short">LDC Watch</span>
@@ -297,8 +356,8 @@ body {{ background: var(--bg); color: var(--text); }}
 <div id="watch-ticker" hidden></div>
 
 <main id="main">
-  <!-- MAP -->
-  <section class="artifact-section" data-section="map">
+  <!-- HOME -->
+  <section class="artifact-section" data-section="home">
     <div class="hero">
       <div class="hero__grain" aria-hidden="true"></div>
       <div class="container container-wide">
@@ -313,8 +372,8 @@ body {{ background: var(--bg); color: var(--text); }}
               <button type="button" class="btn btn--primary btn--lg" data-section-link="report">
                 Report an issue
               </button>
-              <button type="button" class="btn btn--ghost-invert btn--lg" data-section-link="reports">
-                Read what residents say
+              <button type="button" class="btn btn--ghost-invert btn--lg" data-section-link="map">
+                Open the full map
               </button>
             </div>
             <dl class="hero__figures">
@@ -336,8 +395,11 @@ body {{ background: var(--bg); color: var(--text); }}
       <div class="page-header" style="margin-top: var(--space-6)">
         <p class="kicker">The map</p>
         <h2>Every parcel, and every report</h2>
-        <p class="lead">Switch to satellite and turn on parcel boundaries to see the real
-        footprints against the neighbourhoods.</p>
+        <p class="lead">Every layer, filter and tool on this map works right here &mdash;
+        switch to satellite and turn on parcel boundaries to see the real footprints against the
+        neighbourhoods. For the whole screen, the filter chips and a list of what you are looking
+        at, open the <button type="button" class="linklike" data-section-link="map">full
+        map</button>.</p>
       </div>
       <div class="stat-grid stat-grid--4" id="headline-stats"></div>
       {notes}
@@ -346,6 +408,116 @@ body {{ background: var(--bg); color: var(--text); }}
         <div id="map-controls"></div>
         <div class="map" id="map"></div>
       </div>
+    </div>
+  </section>
+
+
+  <!-- MAP — the full-screen one -->
+  <section class="artifact-section" data-section="map" hidden>
+    <div class="explore" id="explore">
+      <div class="explore__map" id="explore-map"></div>
+
+      <div class="explore__chrome">
+        <div class="explore__top glass">
+          <span class="explore__brand" aria-hidden="true">
+            <span data-county-mark></span>
+            <span class="explore__brand-name">LDC Watch</span>
+          </span>
+
+          <form class="explore__search" role="search" id="explore-search">
+            <svg class="explore__search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+              <circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path>
+            </svg>
+            <label class="visually-hidden" for="explore-q">Find an address in Loudoun County</label>
+            <input id="explore-q" type="search" placeholder="Find an address&hellip;" autocomplete="street-address">
+            <div class="explore__search-results glass" id="explore-results" hidden></div>
+          </form>
+
+          <span class="explore__top-spacer"></span>
+
+          <button class="explore-btn" type="button" id="explore-layers-btn" aria-expanded="false" aria-controls="explore-drawer" title="Map style and overlays">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true">
+              <path d="m12 3 9 5-9 5-9-5 9-5Z"></path><path d="m3 13 9 5 9-5"></path>
+            </svg>
+            <span class="visually-hidden">Map style and overlays</span>
+          </button>
+
+          <button class="explore-btn" type="button" id="explore-menu-btn" aria-expanded="false" aria-controls="explore-drawer" title="About this map">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+              <path d="M4 7h16M4 12h16M4 17h16"></path>
+            </svg>
+            <span class="visually-hidden">About this map</span>
+          </button>
+
+          <button class="explore-btn explore-btn--wide explore-btn--report" type="button" data-section-link="report">Report</button>
+        </div>
+
+        <div class="explore__chips" id="explore-chips" role="group" aria-label="Choose what the map shows"></div>
+        <p class="explore__status glass" id="explore-status" role="status" aria-live="polite" hidden></p>
+      </div>
+
+      <div class="explore__rail" id="explore-rail">
+        <div class="explore__rail-group glass">
+          <button class="explore-btn" type="button" data-act="zoom-in" title="Zoom in">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+            <span class="visually-hidden">Zoom in</span>
+          </button>
+          <button class="explore-btn" type="button" data-act="zoom-out" title="Zoom out">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"></path></svg>
+            <span class="visually-hidden">Zoom out</span>
+          </button>
+        </div>
+
+        <button class="explore-btn" type="button" data-act="locate" title="Show what is near me">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <circle cx="12" cy="12" r="7"></circle>
+            <circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none"></circle>
+            <path d="M12 2v3M12 19v3M2 12h3M19 12h3" stroke-linecap="round"></path>
+          </svg>
+          <span class="visually-hidden">Show what is near me</span>
+        </button>
+
+        <button class="explore-btn" type="button" data-act="measure" aria-pressed="false" title="Measure a distance">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="m3 17 14-14 4 4L7 21Z"></path><path d="m7 9 2 2M11 5l2 2M11 13l2 2M15 9l2 2"></path>
+          </svg>
+          <span class="visually-hidden">Measure a distance</span>
+        </button>
+
+        <button class="explore-btn" type="button" data-act="radius" aria-pressed="false" title="Count what is within a mile">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <circle cx="12" cy="12" r="9" stroke-dasharray="3 3"></circle>
+            <circle cx="12" cy="12" r="4"></circle>
+            <circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"></circle>
+          </svg>
+          <span class="visually-hidden">Count what is within a mile</span>
+        </button>
+
+        <button class="explore-btn" type="button" data-act="share" title="Copy a link to this view">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M10 13a4 4 0 0 0 6 .5l3-3a4 4 0 0 0-5.7-5.7l-1.7 1.7"></path>
+            <path d="M14 11a4 4 0 0 0-6-.5l-3 3A4 4 0 0 0 10.7 19l1.7-1.7"></path>
+          </svg>
+          <span class="visually-hidden">Copy a link to this view</span>
+        </button>
+      </div>
+
+      <section class="explore__sheet glass" id="explore-sheet" aria-label="What is on this map">
+        <button class="explore__grip" type="button" id="explore-grip" aria-expanded="false" aria-controls="explore-list">
+          <span class="visually-hidden">Expand or collapse the list</span>
+        </button>
+        <div class="explore__sheet-head">
+          <div>
+            <h2 class="explore__sheet-title" id="explore-sheet-title">In this view</h2>
+            <p class="explore__sheet-sub" id="explore-sheet-sub">Loading&hellip;</p>
+          </div>
+          <button class="explore-btn" type="button" id="explore-sheet-close" hidden title="Back to the list">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+            <span class="visually-hidden">Back to the list</span>
+          </button>
+        </div>
+        <div class="explore__sheet-body" id="explore-list" tabindex="-1"></div>
+      </section>
     </div>
   </section>
 
@@ -523,14 +695,27 @@ window.__LDCW_MARK = {mark_json};
     }}
   }});
 
+  /* Only the basemaps with imagery cached in this file. Offering the others
+     would show a "Topographic" swatch that renders street tiles — a small lie
+     about what the reader is looking at. */
   var settings = window.LDCW_CONFIG;
+  var CACHED_BASEMAPS = ["dark", "satellite", "streets"];
   settings.BASEMAPS = settings.BASEMAPS.filter(function (def) {{
-    return def.key === "streets" || def.key === "satellite";
+    return CACHED_BASEMAPS.indexOf(def.key) !== -1;
   }});
   settings.BASEMAPS.forEach(function (def) {{
     def.maxZoom = {max_zoom};
     def.hint = def.hint + " (built-in cache, zoom 10-12)";
   }});
+
+  /* The style picker's swatches are real tiles of the Ashburn corridor. On the
+     deployed site they come from each service; here they must come out of the
+     built-in cache, or the CSP blocks all three and the picker is a row of
+     empty rectangles. Tile keys in the cache are z/y/x. */
+  LDCW.swatchUrl = function (def, tile) {{
+    var cache = window.__LDCW_TILES[def.key] || {{}};
+    return cache[tile.z + "/" + tile.y + "/" + tile.x] || "";
+  }};
 
   var buildBasemaps = LDCW.mapLayers.buildBasemaps;
   LDCW.mapLayers.buildBasemaps = function (map) {{
@@ -576,7 +761,16 @@ window.__LDCW_MARK = {mark_json};
 
   var realTileLayer = L.tileLayer;
   L.tileLayer = function (url, options) {{
-    var key = /World_Imagery/.test(String(url)) ? "satellite" : "streets";
+    // Three caches are shipped. Anything else — the topographic, relief and
+    // muted styles — has no imagery here, which is why the style picker is
+    // trimmed to these three below rather than offering styles that would
+    // quietly render as something else.
+    var text = String(url);
+    var key = /dark_all/.test(text)
+      ? "dark"
+      : /World_Imagery/.test(text)
+      ? "satellite"
+      : "streets";
     return new CachedTiles(key, Object.assign({{}}, options, {{
       maxNativeZoom: {max_native},
       maxZoom: {max_zoom}
@@ -636,16 +830,34 @@ window.__LDCW_MARK = {mark_json};
     // zero-size viewport, so the pin lands outside the county and the form
     // rejects it as an invalid location. Re-measure whatever just became
     // visible.
+    // The full-screen map is fixed under the chrome, and only it may take the
+    // page's scroll.
+    document.body.classList.toggle("is-map-section", key === "map");
+    if (key === "map") measureChrome();
+
     setTimeout(function () {{
-      if (key === "map" && LDCW.map.current) LDCW.map.current.invalidate();
       document
         .querySelectorAll('section[data-section="' + key + '"] .leaflet-container')
         .forEach(function (node) {{
           if (node._leaflet_map) node._leaflet_map.invalidateSize();
         }});
+      // The full-screen map needs more than a re-measure: its sheet snap
+      // points are read off real layout, which is zero while hidden.
+      if (key === "map" && LDCW.explore) LDCW.explore.refresh();
     }}, 60);
     window.scrollTo({{ top: 0, behavior: "auto" }});
   }}
+
+  /* How much vertical room the header (and the ticker, when it is showing)
+     takes. Read from the top of <main> so it cannot drift from whatever the
+     header actually does at this width. */
+  function measureChrome() {{
+    var main = document.getElementById("main");
+    if (!main) return;
+    var top = Math.round(main.getBoundingClientRect().top + window.scrollY);
+    document.documentElement.style.setProperty("--artifact-chrome-h", top + "px");
+  }}
+  window.addEventListener("resize", measureChrome);
 
   tabs.forEach(function (tab) {{
     tab.addEventListener("click", function () {{ show(tab.getAttribute("data-section")); }});
@@ -655,6 +867,69 @@ window.__LDCW_MARK = {mark_json};
       event.preventDefault();
       show(link.getAttribute("data-section-link"));
     }});
+  }});
+
+  /* ---- The full-screen map, adapted to an artifact -----------------------
+     Two of its controls need a network and cannot have one here, so they are
+     removed rather than left to fail. Its menu drawer links to other pages of
+     the deployed site; here those are tabs, so the hrefs are intercepted and
+     turned into section switches. */
+  var exploreSearch = document.getElementById("explore-search");
+  if (exploreSearch) {{
+    // Replace the whole form, not its contents: explore.js checks for the
+    // input and the results list and skips wiring the control up when they
+    // are absent. Gutting the form but leaving its id would leave those
+    // lookups returning null and throw on every click on the page.
+    var note = document.createElement("p");
+    // Same classes, minus the id: it inherits the search field's place in the
+    // bar at every width, and explore.js — which looks the control up by id —
+    // sees it as absent and skips wiring a geocoder that isn't there.
+    note.className = "explore__search explore__search-note";
+    note.style.cssText =
+      "margin:0;padding:0 var(--space-2);font-size:var(--text-xs);" +
+      "color:var(--text-on-ink-muted);line-height:1.35;align-items:center";
+    note.textContent =
+      "Address search needs a lookup service this in-app version cannot reach. " +
+      "Pan and zoom, or tap any marker.";
+    exploreSearch.parentNode.replaceChild(note, exploreSearch);
+  }}
+
+  /* The map's menu drawer builds itself from the site's nav. layout.js is not
+     part of this build — there is no site chrome to inject — so hand it the
+     same list the tabs use. */
+  LDCW.NAV = [
+    {{ href: "explore.html", label: "Map" }},
+    {{ href: "reports.html", label: "Reports" }},
+    {{ href: "watchlist.html", label: "Watchlist" }},
+    {{ href: "news.html", label: "News" }},
+    {{ href: "stats.html", label: "Statistics" }},
+    {{ href: "about.html", label: "About" }}
+  ];
+  var shareButton = document.querySelector('#explore-rail [data-act="share"]');
+  if (shareButton) shareButton.remove();
+
+  var PAGE_TO_SECTION = {{
+    "index.html": "home",
+    "explore.html": "map",
+    "report.html": "report",
+    "reports.html": "reports",
+    "watchlist.html": "watchlist",
+    "news.html": "news",
+    "stats.html": "stats",
+    "resources.html": "about",
+    "about.html": "about",
+    "privacy.html": "about",
+    "terms.html": "about"
+  }};
+
+  document.addEventListener("click", function (event) {{
+    var link = event.target.closest && event.target.closest("#explore-drawer a[href], .explore__sheet a[href]");
+    if (!link) return;
+    var href = link.getAttribute("href") || "";
+    var key = PAGE_TO_SECTION[href.split("#")[0].split("?")[0]];
+    if (!key) return;
+    event.preventDefault();
+    show(key);
   }});
 
   /* ---- The county mark, normally fetched as an SVG file ------------------ */
@@ -742,7 +1017,7 @@ window.__LDCW_MARK = {mark_json};
   LDCW.watchlist.mountPage();
   LDCW.news.mountPage();
 
-  show("map");
+  show("home");
 }})();
 </script>
 """
@@ -753,10 +1028,11 @@ def main() -> int:
     parser.add_argument("-o", "--output", default=os.path.join(ROOT, "artifact.html"))
     parser.add_argument("--tiles-satellite", default="")
     parser.add_argument("--tiles-streets", default="")
+    parser.add_argument("--tiles-dark", default="")
     parser.add_argument("--news-limit", type=int, default=120)
     args = parser.parse_args()
 
-    html = build(args.tiles_satellite, args.tiles_streets, args.news_limit)
+    html = build(args.tiles_satellite, args.tiles_streets, args.tiles_dark, args.news_limit)
 
     with open(args.output, "w", encoding="utf-8") as handle:
         handle.write(html)

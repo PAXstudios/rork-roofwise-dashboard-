@@ -187,7 +187,13 @@ window.LDCW = window.LDCW || {};
        a missing optional file degrades rather than breaks. */
     var basemaps = LDCW.mapLayers ? LDCW.mapLayers.buildBasemaps(map) : null;
     if (basemaps) {
-      basemaps.select(options.basemap || "streets");
+      // select() returns null for a key that isn't in the list, and adds no
+      // layer. A map with no tile layer has no maxZoom, and markercluster
+      // throws outright on that — so an unrecognised basemap name would take
+      // the whole map down rather than just looking wrong. Fall back to the
+      // first one offered.
+      var chosen = basemaps.select(options.basemap || "streets");
+      if (!chosen && basemaps.defs.length) basemaps.select(basemaps.defs[0].key);
     } else {
       L.tileLayer(settings.TILE_URL, {
         attribution: settings.TILE_ATTRIBUTION,
@@ -335,10 +341,24 @@ window.LDCW = window.LDCW || {};
       element.dispatchEvent(new CustomEvent("ldcw:mapcounts", { detail: counts, bubbles: true }));
     }
 
+    /* Where this map's counts get written. A page with two maps on it — the
+       single-file build has the embedded one and the full-screen one in the
+       same document — used to have both controllers race for the first
+       [data-layer-count] in the whole document, so the second map's readouts
+       never updated at all. Each controller now writes only inside the
+       containers registered to it, falling back to the whole document for the
+       single-map pages that never register anything. */
+    var countTargets = [];
+
     function updateToggleCounts() {
+      var scopes = countTargets.length ? countTargets : [document];
       Object.keys(state.counts).forEach(function (key) {
-        var node = document.querySelector('[data-layer-count="' + key + '"]');
-        if (node) node.textContent = schema.formatNumber(state.counts[key]);
+        var selector = '[data-layer-count="' + key + '"]';
+        scopes.forEach(function (scope) {
+          scope.querySelectorAll(selector).forEach(function (node) {
+            node.textContent = schema.formatNumber(state.counts[key]);
+          });
+        });
       });
     }
 
@@ -373,8 +393,17 @@ window.LDCW = window.LDCW || {};
 
     /* ---- Layer toggles ---------------------------------------------------- */
 
+    function bindCounts(container) {
+      if (container && countTargets.indexOf(container) === -1) {
+        countTargets.push(container);
+      }
+      updateToggleCounts();
+      return controller;
+    }
+
     function bindToggles(container) {
       if (!container) return;
+      bindCounts(container);
       container.querySelectorAll("input[data-layer]").forEach(function (input) {
         var key = input.getAttribute("data-layer");
         input.checked = state.visible[key] !== false;
@@ -522,6 +551,7 @@ window.LDCW = window.LDCW || {};
       },
 
       bindToggles: bindToggles,
+      bindCounts: bindCounts,
 
       /* Turn one marker layer on or off without a checkbox. The full-screen
          map drives these from filter chips; the embedded maps drive them from
