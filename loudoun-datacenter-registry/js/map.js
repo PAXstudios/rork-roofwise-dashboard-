@@ -250,6 +250,7 @@ window.LDCW = window.LDCW || {};
       // glitch rather than an arrival.
       hasEntered: false,
       markersById: {},
+      facilityMarkersById: {},
     };
 
     function clearAll() {
@@ -257,6 +258,7 @@ window.LDCW = window.LDCW || {};
         layers[key].clearLayers();
       });
       state.markersById = {};
+      state.facilityMarkersById = {};
     }
 
     function render() {
@@ -297,6 +299,7 @@ window.LDCW = window.LDCW || {};
           marker.bindPopup(facilityPopup(facility), { maxWidth: 320 });
         }
         layers[status].addLayer(marker);
+        if (facility.id) state.facilityMarkersById[facility.id] = marker;
       });
 
       state.reports.forEach(function (report, index) {
@@ -610,6 +613,14 @@ window.LDCW = window.LDCW || {};
         });
 
         return limit ? out.slice(0, limit) : out;
+      },
+
+      /* A facility's marker, by county parcel id. The full-screen map needs
+         this to mark every parcel of a selected campus, not just the one that
+         was tapped. Returns undefined once the layer has been re-rendered
+         with that facility filtered out, which is the honest answer. */
+      facilityMarker: function (id) {
+        return state.facilityMarkersById[id];
       },
 
       /* Bounce a report's pin — used when the reader hovers its card in the

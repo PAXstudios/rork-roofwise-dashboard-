@@ -262,6 +262,7 @@ window.LDCW = window.LDCW || {};
             lat: Number(draft.lat),
             lng: Number(draft.lng),
             facility_name: draft.facility_name || null,
+            facility_ids: draft.facility_ids || [],
             facility_operator: draft.facility_operator || null,
             facility_status: draft.facility_status || "unknown",
             categories: draft.categories || [],

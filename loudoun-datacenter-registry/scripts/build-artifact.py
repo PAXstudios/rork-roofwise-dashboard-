@@ -72,8 +72,10 @@ JS_FILES = [
     "js/report-detail.js",
     "js/watchlist.js",
     "js/news.js",
+    "js/campuses.js",
+    "js/facility-picker.js",
     "js/report-form.js",
-    # Last: it reads LDCW.map and LDCW.mapTools at boot.
+    # Last: it reads LDCW.map, LDCW.mapTools and LDCW.campuses at boot.
     "js/explore.js",
 ]
 
@@ -160,6 +162,30 @@ ARTIFACT_NOTES = """
 """
 
 
+def extract_explore() -> str:
+    """Lift the full-screen map's markup out of explore.html.
+
+    It used to be a second copy living in this file, and a second copy of
+    markup is a second copy that goes stale. Both the select tool and the
+    selection bar were added to the page and silently missing from the build
+    before this existed.
+
+    Only the markup is taken. Everything the artifact has to do differently —
+    dropping the address search, removing the share button, intercepting the
+    drawer's links — is done at runtime by the boot script, where it can be
+    read as a list of adaptations rather than hidden in a divergent template.
+    """
+    page = read("explore.html")
+    start = page.index('<div class="explore" id="explore">')
+    end = page.index("</div>", page.rindex('id="explore-list"'))
+    # Walk to the close of the outer .explore div: the sheet, the chrome and
+    # the rail all nest inside it, so a naive search for the first </div>
+    # would cut the section in half.
+    tail = page.index("<script", start)
+    block = page[start:tail]
+    return block[: block.rindex("</div>") + len("</div>")].strip()
+
+
 def extract_report_form() -> str:
     """Pull the report page's <main> contents straight out of report.html.
 
@@ -230,6 +256,7 @@ def build(tiles_sat: str, tiles_osm: str, tiles_dark: str, news_limit: int) -> s
         nav=nav,
         notes=ARTIFACT_NOTES,
         report_form=extract_report_form(),
+        explore=extract_explore(),
         mark_json=json.dumps(mark),
         leaflet_js=read("vendor/leaflet.js"),
         markercluster_js=read("vendor/markercluster.js"),
@@ -412,113 +439,10 @@ body.is-map-section {{ overflow: hidden; }}
   </section>
 
 
-  <!-- MAP — the full-screen one -->
+  <!-- MAP — the full-screen one. Markup lifted straight out of explore.html
+       at build time, so it cannot drift from the deployed page. -->
   <section class="artifact-section" data-section="map" hidden>
-    <div class="explore" id="explore">
-      <div class="explore__map" id="explore-map"></div>
-
-      <div class="explore__chrome">
-        <div class="explore__top glass">
-          <span class="explore__brand" aria-hidden="true">
-            <span data-county-mark></span>
-            <span class="explore__brand-name">LDC Watch</span>
-          </span>
-
-          <form class="explore__search" role="search" id="explore-search">
-            <svg class="explore__search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
-              <circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path>
-            </svg>
-            <label class="visually-hidden" for="explore-q">Find an address in Loudoun County</label>
-            <input id="explore-q" type="search" placeholder="Find an address&hellip;" autocomplete="street-address">
-            <div class="explore__search-results glass" id="explore-results" hidden></div>
-          </form>
-
-          <span class="explore__top-spacer"></span>
-
-          <button class="explore-btn" type="button" id="explore-layers-btn" aria-expanded="false" aria-controls="explore-drawer" title="Map style and overlays">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true">
-              <path d="m12 3 9 5-9 5-9-5 9-5Z"></path><path d="m3 13 9 5 9-5"></path>
-            </svg>
-            <span class="visually-hidden">Map style and overlays</span>
-          </button>
-
-          <button class="explore-btn" type="button" id="explore-menu-btn" aria-expanded="false" aria-controls="explore-drawer" title="About this map">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
-              <path d="M4 7h16M4 12h16M4 17h16"></path>
-            </svg>
-            <span class="visually-hidden">About this map</span>
-          </button>
-
-          <button class="explore-btn explore-btn--wide explore-btn--report" type="button" data-section-link="report">Report</button>
-        </div>
-
-        <div class="explore__chips" id="explore-chips" role="group" aria-label="Choose what the map shows"></div>
-        <p class="explore__status glass" id="explore-status" role="status" aria-live="polite" hidden></p>
-      </div>
-
-      <div class="explore__rail" id="explore-rail">
-        <div class="explore__rail-group glass">
-          <button class="explore-btn" type="button" data-act="zoom-in" title="Zoom in">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
-            <span class="visually-hidden">Zoom in</span>
-          </button>
-          <button class="explore-btn" type="button" data-act="zoom-out" title="Zoom out">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14"></path></svg>
-            <span class="visually-hidden">Zoom out</span>
-          </button>
-        </div>
-
-        <button class="explore-btn" type="button" data-act="locate" title="Show what is near me">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-            <circle cx="12" cy="12" r="7"></circle>
-            <circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none"></circle>
-            <path d="M12 2v3M12 19v3M2 12h3M19 12h3" stroke-linecap="round"></path>
-          </svg>
-          <span class="visually-hidden">Show what is near me</span>
-        </button>
-
-        <button class="explore-btn" type="button" data-act="measure" aria-pressed="false" title="Measure a distance">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="m3 17 14-14 4 4L7 21Z"></path><path d="m7 9 2 2M11 5l2 2M11 13l2 2M15 9l2 2"></path>
-          </svg>
-          <span class="visually-hidden">Measure a distance</span>
-        </button>
-
-        <button class="explore-btn" type="button" data-act="radius" aria-pressed="false" title="Count what is within a mile">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-            <circle cx="12" cy="12" r="9" stroke-dasharray="3 3"></circle>
-            <circle cx="12" cy="12" r="4"></circle>
-            <circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"></circle>
-          </svg>
-          <span class="visually-hidden">Count what is within a mile</span>
-        </button>
-
-        <button class="explore-btn" type="button" data-act="share" title="Copy a link to this view">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M10 13a4 4 0 0 0 6 .5l3-3a4 4 0 0 0-5.7-5.7l-1.7 1.7"></path>
-            <path d="M14 11a4 4 0 0 0-6-.5l-3 3A4 4 0 0 0 10.7 19l1.7-1.7"></path>
-          </svg>
-          <span class="visually-hidden">Copy a link to this view</span>
-        </button>
-      </div>
-
-      <section class="explore__sheet glass" id="explore-sheet" aria-label="What is on this map">
-        <button class="explore__grip" type="button" id="explore-grip" aria-expanded="false" aria-controls="explore-list">
-          <span class="visually-hidden">Expand or collapse the list</span>
-        </button>
-        <div class="explore__sheet-head">
-          <div>
-            <h2 class="explore__sheet-title" id="explore-sheet-title">In this view</h2>
-            <p class="explore__sheet-sub" id="explore-sheet-sub">Loading&hellip;</p>
-          </div>
-          <button class="explore-btn" type="button" id="explore-sheet-close" hidden title="Back to the list">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"></path></svg>
-            <span class="visually-hidden">Back to the list</span>
-          </button>
-        </div>
-        <div class="explore__sheet-body" id="explore-list" tabindex="-1"></div>
-      </section>
-    </div>
+    {explore}
   </section>
 
   <!-- REPORT AN ISSUE -->
@@ -874,6 +798,12 @@ window.__LDCW_MARK = {mark_json};
      removed rather than left to fail. Its menu drawer links to other pages of
      the deployed site; here those are tabs, so the hrefs are intercepted and
      turned into section switches. */
+  var exploreBrand = document.querySelector('.explore__brand[href]');
+  if (exploreBrand) exploreBrand.setAttribute("data-section-link", "home");
+
+  var exploreReport = document.querySelector(".explore-btn--report[href]");
+  if (exploreReport) exploreReport.setAttribute("data-section-link", "report");
+
   var exploreSearch = document.getElementById("explore-search");
   if (exploreSearch) {{
     // Replace the whole form, not its contents: explore.js checks for the
@@ -923,12 +853,29 @@ window.__LDCW_MARK = {mark_json};
   }};
 
   document.addEventListener("click", function (event) {{
-    var link = event.target.closest && event.target.closest("#explore-drawer a[href], .explore__sheet a[href]");
+    var link =
+      event.target.closest &&
+      event.target.closest(
+        "#explore-drawer a[href], .explore__sheet a[href], #explore-selection a[href]"
+      );
     if (!link) return;
+
     var href = link.getAttribute("href") || "";
     var key = PAGE_TO_SECTION[href.split("#")[0].split("?")[0]];
     if (!key) return;
     event.preventDefault();
+
+    // A "report an issue about these" link carries the map's selection in its
+    // query string. There is no page load here to read it, so hand it over
+    // directly before switching tabs.
+    var query = href.indexOf("?") === -1 ? "" : href.slice(href.indexOf("?") + 1);
+    if (key === "report" && query && LDCW.reportForm) {{
+      var params = new URLSearchParams(query);
+      var ids = (params.get("facilities") || "").split(",").filter(Boolean);
+      if (params.get("district")) ids.push("district:" + params.get("district"));
+      if (ids.length) LDCW.reportForm.applySelection(ids);
+    }}
+
     show(key);
   }});
 

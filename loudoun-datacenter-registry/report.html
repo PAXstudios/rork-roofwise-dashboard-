@@ -103,6 +103,11 @@
                   <button class="btn btn--secondary" type="button" id="find-address">Find</button>
                 </div>
                 <div class="map map--compact" id="pick-map"></div>
+                <p class="small muted" id="pick-map-legend" style="margin: var(--space-2) 0 0" hidden>
+                  The coloured dots are the county's data center parcels. Tap one to choose that
+                  facility above <em>and</em> drop your pin there — or tap anywhere else on the map
+                  to place it yourself.
+                </p>
                 <p class="location-picker__status" id="location-status" role="status" aria-live="polite">
                   No location set yet.
                 </p>
@@ -157,20 +162,20 @@
               </p>
             </div>
 
-            <div class="grid grid-2">
-              <div class="field">
-                <label class="field__label" for="facility_name"
-                  >Facility or campus name<span class="field__optional">optional</span></label
-                >
-                <input
-                  class="input"
-                  type="text"
-                  id="facility_name"
-                  name="facility_name"
-                  placeholder="e.g. the campus off Shaw Road"
-                />
-              </div>
+            <div class="field">
+              <label class="field__label" for="facility-picker-input"
+                >Facility or campus<span class="field__optional">optional</span></label
+              >
+              <div id="facility-picker"></div>
+              <p class="field__help">
+                Pick as many as apply, or a whole district. If you don't know,
+                leave it on <strong>I'm not sure</strong> — that is a real answer and it
+                doesn't weaken your report. Tapping a facility on the map below fills this
+                in for you.
+              </p>
+            </div>
 
+            <div class="grid grid-2">
               <div class="field">
                 <label class="field__label" for="facility_operator"
                   >Owner or operator<span class="field__optional">optional</span></label
@@ -435,6 +440,8 @@
     <script src="js/motion.js"></script>
     <script src="js/layout.js"></script>
     <script src="js/watchlist.js"></script>
+    <script src="js/campuses.js"></script>
+    <script src="js/facility-picker.js"></script>
     <script src="js/report-form.js"></script>
   </body>
 </html>

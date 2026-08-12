@@ -35,6 +35,8 @@
   var pickMap = null;
   var pickMarker = null;
   var location = { lat: null, lng: null };
+  var picker = null;
+  var facilities = [];
 
   /* ==================================================================== */
   /* Field rendering                                                       */
@@ -216,6 +218,7 @@
       map: "Pin placed on the map",
       drag: "Pin moved",
       address: "Found from the address you entered",
+      facility: "Pin placed at the facility you chose",
     };
 
     setStatus(
@@ -278,6 +281,62 @@
         // Not fatal: the district select just won't auto-fill.
         console.warn("District boundaries unavailable", error);
       });
+  }
+
+  /* The facilities themselves, on the picker map.
+
+     Two jobs at once. Tapping one names the campus in the field above without
+     the reader having to know its name — which is the whole difficulty with
+     "which facility?" — and it drops the location pin there, because "the one
+     I'm complaining about" is a perfectly good answer to "where". The pin is
+     still draggable afterwards, and still gets jittered before publication;
+     nothing about the privacy model changes. */
+  function addFacilitiesToPickMap() {
+    if (!pickMap || !facilities.length) return;
+
+    var group = L.layerGroup().addTo(pickMap);
+
+    facilities.forEach(function (facility) {
+      if (!isFinite(facility.lat) || !isFinite(facility.lng)) return;
+
+      var marker = L.marker([facility.lat, facility.lng], {
+        icon: L.divIcon({
+          className: "",
+          html: '<span class="pin pin--' + facility.status + '"></span>',
+          iconSize: [11, 11],
+          iconAnchor: [5.5, 5.5],
+        }),
+        keyboard: true,
+        alt:
+          (facility.name || "Data center") +
+          " — " +
+          schema.statusLabel(facility.status) +
+          ". Choose this facility and put the pin here.",
+      });
+
+      marker.on("click", function (event) {
+        // Leaflet would otherwise also hand this click to the map, which
+        // would drop the pin at the click point rather than at the facility.
+        if (event.originalEvent) L.DomEvent.stopPropagation(event.originalEvent);
+        chooseFacility(facility);
+      });
+
+      group.addLayer(marker);
+    });
+
+    var legend = document.getElementById("pick-map-legend");
+    if (legend) legend.hidden = false;
+  }
+
+  function chooseFacility(facility) {
+    if (picker) picker.selectParcel(facility);
+    setLocation(facility.lat, facility.lng, "facility");
+
+    var operator = document.getElementById("facility_operator");
+    if (operator && !operator.value && facility.operator) {
+      operator.value = facility.operator;
+      operator.dataset.autofilled = "true";
+    }
   }
 
   function useMyLocation() {
@@ -621,15 +680,30 @@
       return node ? node.value.trim() : "";
     }
 
+    var chosen = picker
+      ? picker.value()
+      : { name: "", ids: [], districts: [], unsure: false, status: null };
+
     return {
       locality: value("locality"),
       zip: value("zip"),
       address: value("address-input"),
       lat: location.lat,
       lng: location.lng,
-      facility_name: value("facility_name"),
+      // The picker is the source of truth for these. facility_name stays a
+      // plain string because that is what the reports table stores and what a
+      // moderator reads; facility_ids is what lets a report be counted
+      // alongside the others about the same campus.
+      facility_name: chosen.name,
+      facility_ids: chosen.ids,
+      facility_districts: chosen.districts,
+      facility_unsure: chosen.unsure,
       facility_operator: value("facility_operator"),
-      facility_status: facilityStatus ? facilityStatus.value : "unknown",
+      // A build stage the reader picked themselves wins; otherwise take it
+      // from the campus, which is the county's own answer.
+      facility_status: facilityStatus
+        ? facilityStatus.value
+        : chosen.status || "unknown",
       categories: categories,
       severity: severity ? Number(severity.value) : null,
       occurred_at: value("occurred_at") || null,
@@ -741,12 +815,128 @@
   /* Boot                                                                  */
   /* ==================================================================== */
 
+  /* ==================================================================== */
+  /* The facility picker                                                   */
+  /* ==================================================================== */
+
+  function initFacilityPicker() {
+    var host = document.getElementById("facility-picker");
+    if (!host || !LDCW.facilityPicker) return;
+
+    picker = LDCW.facilityPicker.create(host, {
+      form: form,
+      inputId: "facility-picker-input",
+      placeholder: "Search campuses, or pick a district…",
+      onChange: function (chosen) {
+        // A campus knows its own owner and its own district. Fill both in,
+        // but never over the top of something the reader typed or chose.
+        var operator = document.getElementById("facility_operator");
+        if (operator && chosen.operators.length && (!operator.value || operator.dataset.autofilled === "true")) {
+          operator.value = chosen.operators[0];
+          operator.dataset.autofilled = "true";
+        }
+
+        var localitySelect = document.getElementById("locality");
+        if (
+          localitySelect &&
+          chosen.districts.length === 1 &&
+          (!localitySelect.value || localitySelect.dataset.autofilled === "true")
+        ) {
+          localitySelect.value = chosen.districts[0];
+          localitySelect.dataset.autofilled = "true";
+          clearError("locality");
+        }
+      },
+    });
+
+    if (!picker) return;
+
+    // Start on "I'm not sure". It is the honest default — the field is
+    // optional and most people genuinely don't know — and it means the empty
+    // state of this control is a real answer rather than a blank to be
+    // nagged about.
+    picker.selectNotSure();
+
+    Store.loadFacilities()
+      .then(function (rows) {
+        facilities = rows;
+        picker.setFacilities(rows);
+        addFacilitiesToPickMap();
+        applyHandoff();
+      })
+      .catch(function (error) {
+        // The field still works as free text, so this is a degradation, not
+        // a failure.
+        console.warn("Facility list unavailable", error);
+      });
+  }
+
+  /* A selection made on the full-screen map arrives as a query string — or, in
+     the single-file build where there are no separate pages, as a direct call.
+     Either way it is applied once and explained: arriving at a form with
+     fields already filled in and no reason given is unsettling. */
+  function applyHandoff(explicitIds) {
+    var ids = explicitIds;
+
+    if (!ids) {
+      var params = new URLSearchParams(window.location.search);
+      ids = (params.get("facilities") || "")
+        .split(",")
+        .map(function (id) { return id.trim(); })
+        .filter(Boolean);
+
+      var district = params.get("district");
+      if (district) ids.push("district:" + district);
+    }
+
+    if (!ids.length || !picker) return;
+
+    picker.selectIds(ids);
+    var chosen = picker.value();
+    if (!chosen.options.length) return;
+
+    // Centre the map on what they picked, without setting the pin: where the
+    // facility is and where the reader lives are different questions.
+    if (chosen.campuses.length && pickMap) {
+      var points = chosen.campuses
+        .filter(function (campus) { return isFinite(campus.lat); })
+        .map(function (campus) { return [campus.lat, campus.lng]; });
+      if (points.length === 1) pickMap.setView(points[0], 13);
+      else if (points.length) pickMap.fitBounds(L.latLngBounds(points).pad(0.35));
+    }
+
+    var note = document.getElementById("prefill-note");
+    if (note) {
+      note.innerHTML =
+        "<div><strong>Carried over from the map.</strong> You picked " +
+        schema.escapeHtml(chosen.name) +
+        ". Change or remove it below if that's not right — and you still need to " +
+        "set <em>your own</em> location, which is not the same as the facility's.</div>";
+      note.hidden = false;
+    }
+  }
+
+  /* For a host that has no separate pages to navigate between — the
+     single-file build switches tabs instead — so a selection made on its map
+     still lands in this form. */
+  LDCW.reportForm = {
+    applySelection: function (ids) {
+      if (!picker) return false;
+      applyHandoff(ids);
+      return true;
+    },
+    picker: function () {
+      return picker;
+    },
+  };
+
   function init() {
     ui.fillLocalitySelect(document.getElementById("locality"), "Choose a district…");
     renderCategories();
     renderSeverity();
     renderFacilityStatus();
     initPickMap();
+    initFacilityPicker();
     initPhotos();
 
     var localitySelect = document.getElementById("locality");

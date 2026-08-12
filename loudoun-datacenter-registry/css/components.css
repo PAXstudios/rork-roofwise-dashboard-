@@ -3155,3 +3155,239 @@ body.has-sheet {
 .kicker--accent::after {
   background: linear-gradient(to right, var(--signal), transparent);
 }
+
+/* ==========================================================================
+   Facility picker
+
+   A multi-select combobox. It replaced a free-text box on the report form,
+   so it has to feel at least as easy as typing: the whole control is one
+   click target, the escape hatch ("I'm not sure") is the first thing in the
+   list, and nothing is required.
+   ========================================================================== */
+
+.fpicker {
+  position: relative;
+}
+
+.fpicker__control {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 46px;
+  padding: var(--space-2);
+  background: var(--bg-raised);
+  border: var(--border-width) solid var(--border-strong);
+  border-radius: var(--radius-md);
+  cursor: text;
+}
+
+.fpicker__control:focus-within {
+  border-color: var(--focus-ring);
+  box-shadow: 0 0 0 3px rgba(0, 105, 108, 0.16);
+}
+
+.fpicker.is-filled .fpicker__control {
+  border-color: var(--accent);
+}
+
+.fpicker__chips {
+  display: contents;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.fpicker__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 100%;
+  padding: 3px 3px 3px var(--space-3);
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  border: var(--border-width) solid var(--teal);
+  color: var(--teal-deep);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+}
+
+/* The three kinds read differently on purpose: a named campus is a fact, a
+   district is a neighbourhood, "not sure" is an admission, and typed text is
+   unverified. Colour alone doesn't carry it — the labels differ too. */
+.fpicker__chip--district {
+  background: var(--violet-soft);
+  border-color: var(--violet);
+  color: var(--violet-deep);
+}
+
+.fpicker__chip--unsure {
+  background: var(--bg-sunken);
+  border-color: var(--border-strong);
+  color: var(--text-muted);
+}
+
+.fpicker__chip--custom {
+  background: var(--amber-soft);
+  border-color: var(--amber);
+  color: var(--amber-deep);
+}
+
+.fpicker__chip > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fpicker__remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.fpicker__remove svg {
+  width: 12px;
+  height: 12px;
+}
+
+.fpicker__remove:hover {
+  background: rgba(15, 21, 36, 0.12);
+}
+
+.fpicker__remove:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.fpicker__input {
+  flex: 1 1 12ch;
+  /* Flex items refuse to shrink below their content by default, which with a
+     long placeholder pushes the control wider than its column. */
+  min-width: 0;
+  border: 0;
+  background: none;
+  padding: var(--space-1) 0;
+  font: inherit;
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  color: var(--text);
+}
+
+.fpicker__input:focus {
+  outline: none;
+}
+
+.fpicker__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-subtle);
+  cursor: pointer;
+}
+
+.fpicker__toggle svg {
+  width: 16px;
+  height: 16px;
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.fpicker__input[aria-expanded="true"] ~ .fpicker__toggle svg {
+  transform: rotate(180deg);
+}
+
+.fpicker__list {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 320px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin: 0;
+  padding: var(--space-1);
+  list-style: none;
+  background: var(--bg-raised);
+  border: var(--border-width) solid var(--border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+}
+
+.fpicker__option {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.fpicker__option.is-active,
+.fpicker__option:hover {
+  background: var(--accent-soft);
+}
+
+.fpicker__option[aria-selected="true"] {
+  background: var(--accent);
+  color: var(--text-on-accent);
+}
+
+.fpicker__option[aria-selected="true"] .fpicker__option-hint {
+  color: rgba(255, 255, 255, 0.82);
+}
+
+/* "I'm not sure" is pinned at the top and set apart, because it is the answer
+   most people need and the one they are least likely to believe is allowed. */
+.fpicker__option--unsure {
+  border-bottom: var(--border-width) solid var(--border);
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  margin-bottom: var(--space-1);
+}
+
+.fpicker__option-label {
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+}
+
+.fpicker__option-hint {
+  font-size: var(--text-xs);
+  color: var(--text-subtle);
+  line-height: 1.35;
+}
+
+.fpicker__more {
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--text-subtle);
+  text-align: center;
+}
+
+.fpicker__status {
+  margin: var(--space-2) 0 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-subtle);
+}
+
+.fpicker__status:empty {
+  display: none;
+}

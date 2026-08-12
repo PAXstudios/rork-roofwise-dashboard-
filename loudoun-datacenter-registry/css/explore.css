@@ -1223,3 +1223,102 @@ body.explore-body {
     transition: none !important;
   }
 }
+
+/* ---- Choosing facilities to report about ----------------------------------
+   Armed from the rail. While it is on, tapping a marker adds its campus to a
+   selection rather than opening its record — so the crosshair cursor and the
+   bar at the bottom are both load-bearing, not decoration: they are the only
+   things telling the reader that a tap now means something different. */
+
+.explore--selecting .explore__map {
+  cursor: crosshair;
+}
+
+.explore__map .pin.is-picked {
+  border-color: #fff;
+  transform: scale(1.5);
+  box-shadow: 0 0 0 2px var(--bg-ink), 0 0 0 4px #fff, 0 0 20px rgba(255, 255, 255, 0.65);
+  z-index: 900;
+}
+
+/* The diamond and the teardrop already carry a rotation; overwriting transform
+   wholesale would stand them back up and change what the shape means. */
+.explore__map .pin--proposed.is-picked {
+  transform: rotate(45deg) scale(1.5);
+}
+
+.explore__map .pin--report.is-picked {
+  transform: rotate(45deg) scale(1.4);
+}
+
+.explore__selection {
+  position: absolute;
+  left: var(--chrome-side);
+  right: var(--chrome-side);
+  bottom: calc(var(--peek-h) + var(--space-3) + env(safe-area-inset-bottom, 0px));
+  z-index: 632;
+
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-color: var(--teal-bright);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(0, 184, 189, 0.4);
+  animation: selection-in var(--duration-base) var(--ease-out);
+}
+
+@keyframes selection-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+.explore__selection-text {
+  margin: 0;
+  min-width: 0;
+  flex: 1 1 14ch;
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  line-height: 1.4;
+  color: var(--text-on-ink);
+}
+
+.explore__selection-sub {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-on-ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.explore__selection-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: var(--space-2);
+}
+
+.explore__selection .btn--ghost {
+  border-color: var(--glass-line);
+  color: var(--text-on-ink-muted);
+}
+
+.explore__selection .btn--ghost:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-on-ink);
+}
+
+@media (min-width: 900px) {
+  .explore__selection {
+    left: calc(var(--panel-w) + var(--chrome-side) + var(--space-3));
+    bottom: var(--space-5);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .explore__selection {
+    animation: none;
+  }
+}

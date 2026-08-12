@@ -168,6 +168,20 @@
         <button
           class="explore-btn"
           type="button"
+          data-act="select"
+          aria-pressed="false"
+          title="Choose facilities to report about"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M4 7V5a1 1 0 0 1 1-1h2M17 4h2a1 1 0 0 1 1 1v2M20 17v2a1 1 0 0 1-1 1h-2M7 20H5a1 1 0 0 1-1-1v-2" />
+            <path d="m9 12 2 2 4-4" />
+          </svg>
+          <span class="visually-hidden">Choose facilities to report about</span>
+        </button>
+
+        <button
+          class="explore-btn"
+          type="button"
           data-act="measure"
           aria-pressed="false"
           title="Measure a distance"
@@ -207,6 +221,10 @@
           <span class="visually-hidden">Copy a link to this exact view</span>
         </button>
       </div>
+
+      <!-- ---- Selection ------------------------------------------------------ -->
+      <div class="explore__selection glass" id="explore-selection" role="region"
+           aria-label="Facilities selected for a report" hidden></div>
 
       <!-- ---- The sheet ------------------------------------------------------ -->
       <section class="explore__sheet glass" id="explore-sheet" aria-label="What is on this map">
@@ -251,6 +269,7 @@
     <script src="js/map-tools.js"></script>
     <script src="js/map.js"></script>
     <script src="js/report-detail.js"></script>
+    <script src="js/campuses.js"></script>
     <script src="js/explore.js"></script>
   </body>
 </html>

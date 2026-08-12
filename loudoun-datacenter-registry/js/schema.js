@@ -401,6 +401,10 @@ window.LDCW = window.LDCW || {};
       lat: report.lat_public,
       lng: report.lng_public,
       facility_name: report.facility_name || null,
+      // Campus ids, so a report can be counted alongside the others about the
+      // same campus. Safe to publish: they are derived from the county's own
+      // public facility names and say nothing about the reporter.
+      facility_ids: report.facility_ids || [],
       facility_operator: report.facility_operator || null,
       facility_status: report.facility_status || "unknown",
       categories: report.categories || [],

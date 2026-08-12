@@ -59,6 +59,8 @@
     mode: "list", // "list" | "detail"
     selected: null,
     drawer: null, // "layers" | "menu" | null
+    selecting: false,
+    picked: [],   // campus objects, in the order they were tapped
   };
 
   var els = {};
@@ -502,6 +504,7 @@
   }
 
   function facilityDetail(facility) {
+    var campus = campusFor(facility);
     var rows = [];
     if (facility.operator) rows.push(["Property owner", facility.operator]);
     if (facility.district) rows.push(["District", facility.district]);
@@ -512,6 +515,15 @@
     if (facility.zoning_case) rows.push(["Case", facility.zoning_case]);
     if (facility.application) rows.push(["Application", facility.application]);
     if (facility.status_raw) rows.push(["County status", facility.status_raw]);
+    if (campus && campus.parcels.length > 1) {
+      rows.push([
+        "Campus",
+        campus.parcels.length +
+          " parcels across " +
+          campus.districts.join(" & ") +
+          (schema.formatSqft(campus.sqft) ? ", " + schema.formatSqft(campus.sqft) : ""),
+      ]);
+    }
 
     var near = state.controller.countWithin(facility.lat, facility.lng, M_PER_MILE);
 
@@ -544,7 +556,16 @@
       '<p>Source: Loudoun County GIS. The owner shown is the recorded property owner, ' +
       "which is often a holding company rather than the operator.</p>" +
       '<div class="explore__detail-actions">' +
-      '<a class="btn btn--primary btn--sm" href="report.html">Report an issue near here</a>' +
+      '<a class="btn btn--primary btn--sm" href="' +
+      (campus ? "report.html?facilities=" + encodeURIComponent(campus.id) : "report.html") +
+      '">Report an issue about ' +
+      (campus ? escape(campus.name) : "this") +
+      "</a>" +
+      (campus
+        ? '<button type="button" class="btn btn--secondary btn--sm" data-act="pick">' +
+          (isPicked(campus) ? "Remove from selection" : "Add to a multi-site report") +
+          "</button>"
+        : "") +
       '<button type="button" class="btn btn--ghost btn--sm" data-act="ring">Count within 1, 2 and 5 miles</button>' +
       "</div></div>"
     );
@@ -602,6 +623,15 @@
 
     els.list.querySelector(".explore__back").addEventListener("click", backToList);
 
+    var pick = els.list.querySelector('[data-act="pick"]');
+    if (pick) {
+      pick.addEventListener("click", function () {
+        togglePick(record);
+        // Re-render the detail so the button's label matches what it now does.
+        select(kind, id, {});
+      });
+    }
+
     var ring = els.list.querySelector('[data-act="ring"]');
     if (ring) {
       ring.addEventListener("click", function () {
@@ -629,6 +659,167 @@
   function showRings(record) {
     if (!state.rings) return;
     state.rings.at(L.latLng(record.lat, record.lng));
+  }
+
+  /* ---- Selecting facilities to report about --------------------------------
+
+     The awkward question on the report form is "which facility?", and the
+     honest answer for most people is that they know it when they see it but
+     not what it is called. So: arm this, tap the ones you mean — one, or
+     several, or a whole district via the filter — and carry the selection into
+     the form, which fills the field in for you.
+
+     Selection is by CAMPUS, not by parcel. Tapping one of Beaumeade's nineteen
+     parcels means Beaumeade. Nobody is complaining about a parcel. */
+
+  function campusFor(facility) {
+    return LDCW.campuses ? LDCW.campuses.forParcel(state.facilities, facility) : null;
+  }
+
+  function isPicked(campus) {
+    return state.picked.some(function (chosen) {
+      return chosen.id === campus.id;
+    });
+  }
+
+  function togglePick(facility) {
+    var campus = campusFor(facility);
+    if (!campus) return;
+
+    if (isPicked(campus)) {
+      state.picked = state.picked.filter(function (chosen) {
+        return chosen.id !== campus.id;
+      });
+    } else {
+      state.picked.push(campus);
+    }
+
+    paintPicked();
+    renderSelectionBar();
+  }
+
+  /* Mark every marker belonging to a picked campus, so tapping one parcel of a
+     nineteen-parcel campus visibly selects all nineteen — otherwise the reader
+     cannot tell that "Beaumeade" means more than the dot they touched. */
+  function paintPicked() {
+    var ids = {};
+    state.picked.forEach(function (campus) {
+      campus.parcelIds.forEach(function (parcelId) {
+        ids[parcelId] = true;
+      });
+    });
+
+    els.root.querySelectorAll(".explore__map .pin").forEach(function (pin) {
+      pin.classList.remove("is-picked");
+    });
+
+    if (!state.controller) return;
+    state.facilities.forEach(function (facility) {
+      if (!ids[facility.id]) return;
+      var marker = state.controller.facilityMarker(facility.id);
+      var node = marker && marker.getElement();
+      var pin = node && node.querySelector(".pin");
+      if (pin) pin.classList.add("is-picked");
+    });
+  }
+
+  function selectionHref() {
+    if (state.picked.length) {
+      return (
+        "report.html?facilities=" +
+        encodeURIComponent(
+          state.picked
+            .map(function (campus) {
+              return campus.id;
+            })
+            .join(",")
+        )
+      );
+    }
+    if (state.filter && state.filter.locality) {
+      return "report.html?district=" + encodeURIComponent(state.filter.locality);
+    }
+    return "report.html";
+  }
+
+  function renderSelectionBar() {
+    var bar = els.selection;
+    if (!bar) return;
+
+    var district = state.filter && state.filter.locality;
+
+    if (!state.selecting && !state.picked.length) {
+      bar.hidden = true;
+      bar.innerHTML = "";
+      return;
+    }
+
+    var parcels = state.picked.reduce(function (sum, campus) {
+      return sum + campus.parcels.length;
+    }, 0);
+
+    var headline;
+    if (state.picked.length) {
+      headline =
+        "<strong>" +
+        state.picked.length +
+        (state.picked.length === 1 ? " campus" : " campuses") +
+        "</strong> selected <span class=\"explore__selection-sub\">" +
+        parcels +
+        (parcels === 1 ? " county parcel" : " county parcels") +
+        "</span>";
+    } else if (district) {
+      headline =
+        "Tap the facilities you mean — or report about <strong>all of " +
+        escape(district) +
+        "</strong>.";
+    } else {
+      headline = "Tap the facilities you mean. Tap again to deselect.";
+    }
+
+    bar.innerHTML =
+      '<p class="explore__selection-text">' +
+      headline +
+      "</p>" +
+      '<div class="explore__selection-actions">' +
+      (state.picked.length
+        ? '<button type="button" class="btn btn--ghost btn--sm" data-select-act="clear">Clear</button>'
+        : "") +
+      '<a class="btn btn--primary btn--sm" href="' +
+      selectionHref() +
+      '" data-select-act="report">' +
+      (state.picked.length
+        ? "Report an issue about " + (state.picked.length === 1 ? "it" : "these")
+        : district
+        ? "Report about " + escape(district)
+        : "Report an issue") +
+      "</a></div>";
+
+    bar.hidden = false;
+
+    var clear = bar.querySelector('[data-select-act="clear"]');
+    if (clear) {
+      clear.addEventListener("click", function () {
+        state.picked = [];
+        paintPicked();
+        renderSelectionBar();
+      });
+    }
+  }
+
+  function setSelecting(on) {
+    state.selecting = on === true;
+    els.root.classList.toggle("explore--selecting", state.selecting);
+
+    var button = els.rail.querySelector('[data-act="select"]');
+    if (button) button.setAttribute("aria-pressed", String(state.selecting));
+
+    if (state.selecting) {
+      say("Tap the facilities you're reporting about. Tap again to deselect.");
+    } else {
+      say("");
+    }
+    renderSelectionBar();
   }
 
   /* ---- Drawer -------------------------------------------------------------
@@ -849,6 +1040,7 @@
         else delete state.filter.locality;
         state.controller.setFilter(state.filter);
         renderList();
+        renderSelectionBar();
         writeUrl();
       });
     }
@@ -948,6 +1140,8 @@
         if (measure) measure.clear();
         pressed("measure", false);
         pressed("radius", rings.toggle());
+      } else if (act === "select") {
+        setSelecting(!state.selecting);
       } else if (act === "share") {
         share();
       }
@@ -1065,6 +1259,7 @@
     els.sheetSub = document.getElementById("explore-sheet-sub");
     els.sheetClose = document.getElementById("explore-sheet-close");
     els.list = document.getElementById("explore-list");
+    els.selection = document.getElementById("explore-selection");
     els.layersBtn = document.getElementById("explore-layers-btn");
     els.menuBtn = document.getElementById("explore-menu-btn");
     els.search = document.getElementById("explore-search");
@@ -1083,6 +1278,7 @@
       // bubble for a facility. Here the panel already IS the detail view, so
       // both go there — one sheet, never two stacked on a phone.
       onFacilitySelect: function (facility) {
+        if (state.selecting) return togglePick(facility);
         select("facility", facility.id, { fly: false });
       },
       onReportSelect: function (report) {
@@ -1135,6 +1331,13 @@
     controller.map.on("moveend zoomend", function () {
       renderList();
       writeUrl();
+    });
+
+    // Every render rebuilds the markers from scratch, so the "picked" marks
+    // have to be reapplied or the selection silently loses its highlight the
+    // first time anything changes.
+    document.getElementById("explore-map").addEventListener("ldcw:mapcounts", function () {
+      paintPicked();
     });
 
     window.addEventListener("resize", function () {
