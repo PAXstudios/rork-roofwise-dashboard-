@@ -66,6 +66,7 @@ JS_FILES = [
     "js/report-detail.js",
     "js/watchlist.js",
     "js/news.js",
+    "js/report-form.js",
 ]
 
 # (file, family, style, weight range, width range or None)
@@ -122,6 +123,7 @@ def collect_tiles(directory: str, mime: str) -> dict:
 
 SECTIONS = [
     ("map", "Map"),
+    ("report", "Report an issue"),
     ("reports", "Reports"),
     ("watchlist", "Watchlist"),
     ("news", "News"),
@@ -147,6 +149,18 @@ ARTIFACT_NOTES = """
   real headlines collected from public news feeds.</p>
 </div>
 """
+
+
+def extract_report_form() -> str:
+    """Pull the report page's <main> contents straight out of report.html.
+
+    Copying the markup by hand would guarantee the two drift, and this is the
+    one form on the site that must never quietly diverge from the real thing.
+    """
+    page = read("report.html")
+    start = page.index('<div class="container container-narrow">')
+    end = page.index("</main>")
+    return page[start:end].strip()
 
 
 def build(tiles_sat: str, tiles_osm: str, news_limit: int) -> str:
@@ -205,6 +219,7 @@ def build(tiles_sat: str, tiles_osm: str, news_limit: int) -> str:
         css=css,
         nav=nav,
         notes=ARTIFACT_NOTES,
+        report_form=extract_report_form(),
         mark_json=json.dumps(mark),
         leaflet_js=read("vendor/leaflet.js"),
         markercluster_js=read("vendor/markercluster.js"),
@@ -271,6 +286,11 @@ body {{ background: var(--bg); color: var(--text); }}
     <nav class="site-nav" aria-label="Sections">
       <div class="artifact-tabs">{nav}</div>
     </nav>
+    <div class="header-actions">
+      <button type="button" class="btn btn--primary btn--sm header-cta" data-section-link="report">
+        Report an issue
+      </button>
+    </div>
   </div>
 </header>
 
@@ -289,6 +309,14 @@ body {{ background: var(--bg); color: var(--text); }}
             <p class="hero__lead">Loudoun holds the largest concentration of data centers on earth.
             Below is every one of them, from the county's own records &mdash; and what residents
             say about living next to them.</p>
+            <div class="hero__actions">
+              <button type="button" class="btn btn--primary btn--lg" data-section-link="report">
+                Report an issue
+              </button>
+              <button type="button" class="btn btn--ghost-invert btn--lg" data-section-link="reports">
+                Read what residents say
+              </button>
+            </div>
             <dl class="hero__figures">
               <div><dt>Parcels</dt><dd>224</dd></div>
               <div><dt>Operational</dt><dd>103</dd></div>
@@ -319,6 +347,19 @@ body {{ background: var(--bg); color: var(--text); }}
         <div class="map" id="map"></div>
       </div>
     </div>
+  </section>
+
+  <!-- REPORT AN ISSUE -->
+  <section class="artifact-section" data-section="report" hidden>
+    <div class="banner banner--info demo-note" style="margin: var(--space-5) auto; max-width: var(--container-narrow)">
+      <p><strong>This form works here.</strong> Fill it in and submit and it behaves exactly as
+      the real one does &mdash; it validates, strips location data from any photo you attach,
+      offsets your pin 100&ndash;200&nbsp;m, and files the report as <em>pending</em> so nothing
+      self-publishes. The one difference is where it goes: in this in-app version it is saved to
+      your own browser and nowhere else, because an artifact cannot reach a database. Finding an
+      address by name is off for the same reason &mdash; drop your pin on the map instead.</p>
+    </div>
+    {report_form}
   </section>
 
   <!-- REPORTS -->
@@ -516,6 +557,51 @@ window.__LDCW_MARK = {mark_json};
     return {{ defs: defs, select: select, active: function () {{ return active; }} }};
   }};
 
+  /* ---- The report form's own map ----------------------------------------
+     initPickMap builds its tile layer directly from config.TILE_URL rather
+     than going through mapLayers, so it needs the same in-memory cache or the
+     "drop your pin" map is a blank grey square — which would make the form
+     look broken at the exact moment someone is trying to use it. */
+  // Leaflet keeps no back-reference from container element to map instance, so
+  // record one as each map is created. That is what lets the section switcher
+  // re-measure a map it did not build.
+  var realMap = L.map;
+  L.map = function (element, options) {{
+    var instance = realMap(element, options);
+    var node = typeof element === "string" ? document.getElementById(element) : element;
+    if (node) node._leaflet_map = instance;
+    return instance;
+  }};
+  Object.keys(realMap).forEach(function (key) {{ L.map[key] = realMap[key]; }});
+
+  var realTileLayer = L.tileLayer;
+  L.tileLayer = function (url, options) {{
+    var key = /World_Imagery/.test(String(url)) ? "satellite" : "streets";
+    return new CachedTiles(key, Object.assign({{}}, options, {{
+      maxNativeZoom: {max_native},
+      maxZoom: {max_zoom}
+    }}));
+  }};
+  L.tileLayer.wms = realTileLayer.wms;
+
+  /* Address lookup calls Nominatim, which the CSP blocks. Hide the control and
+     say why, rather than leaving a button that fails. Dropping a pin on the
+     map works and is the better interaction anyway. */
+  var findButton = document.getElementById("find-address");
+  var addressInput = document.getElementById("address-input");
+  if (findButton && addressInput) {{
+    var row = findButton.closest(".field, .row, div");
+    if (row) {{
+      row.hidden = true;
+      var swap = document.createElement("p");
+      swap.className = "tiny muted";
+      swap.textContent =
+        "Searching for an address by name needs a lookup service this in-app version cannot " +
+        "reach. Drop your pin on the map below instead — that is what gets saved either way.";
+      row.parentNode.insertBefore(swap, row);
+    }}
+  }}
+
   /* ---- Turn off what genuinely cannot work here -------------------------
      Address search calls Nominatim, which the CSP blocks. Leaving the control
      visible so it can fail is worse than not offering it. Geolocation is a
@@ -543,11 +629,21 @@ window.__LDCW_MARK = {mark_json};
     tabs.forEach(function (tab) {{
       tab.classList.toggle("is-current", tab.getAttribute("data-section") === key);
     }});
-    // Leaflet measures its container on creation. A map that was hidden at
-    // that moment renders one grey tile until it is told to re-measure.
-    if (key === "map" && LDCW.map.current) {{
-      setTimeout(function () {{ LDCW.map.current.invalidate(); }}, 30);
-    }}
+    // Leaflet measures its container on creation. Every map on this page is
+    // built while its section is still hidden, so each one thinks it is 0x0
+    // until told otherwise. For the main map that means one grey tile; for the
+    // report form's location picker it is worse — a click resolves against a
+    // zero-size viewport, so the pin lands outside the county and the form
+    // rejects it as an invalid location. Re-measure whatever just became
+    // visible.
+    setTimeout(function () {{
+      if (key === "map" && LDCW.map.current) LDCW.map.current.invalidate();
+      document
+        .querySelectorAll('section[data-section="' + key + '"] .leaflet-container')
+        .forEach(function (node) {{
+          if (node._leaflet_map) node._leaflet_map.invalidateSize();
+        }});
+    }}, 60);
     window.scrollTo({{ top: 0, behavior: "auto" }});
   }}
 
