@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=5"
+    />
+    <title>Explore the map — Loudoun Data Center Watch</title>
+    <meta
+      name="description"
+      content="Every data center in Loudoun County, Virginia — operational, under construction and proposed — on one full-screen map, with the reports residents have filed about living next to them."
+    />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" content="#0a0f1c" />
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+
+    <link rel="stylesheet" href="vendor/leaflet.css" />
+    <link rel="stylesheet" href="vendor/markercluster.css" />
+    <link rel="stylesheet" href="vendor/markercluster.default.css" />
+    <link rel="stylesheet" href="css/fonts.css" />
+    <link rel="stylesheet" href="css/tokens.css" />
+    <link rel="stylesheet" href="css/base.css" />
+    <link rel="stylesheet" href="css/components.css" />
+    <link rel="stylesheet" href="css/animations.css" />
+    <link rel="stylesheet" href="css/explore.css" />
+  </head>
+
+  <body class="explore-body">
+    <!-- The panel, not the map, is the accessible copy of this page: it lists
+         everything in view as text. So that is where the skip link goes. -->
+    <a class="skip-link" href="#explore-list">Skip to the list of what is on this map</a>
+
+    <noscript>
+      <div class="container" style="padding: 2rem 1rem">
+        <p class="banner banner--warning">
+          The interactive map needs JavaScript. Every facility and every community report is also
+          published as a list: see <a href="reports.html">community reports</a>,
+          <a href="stats.html">statistics</a> and <a href="about.html">where the data comes from</a>.
+        </p>
+      </div>
+    </noscript>
+
+    <div class="explore" id="explore">
+      <div class="explore__map" id="explore-map"></div>
+
+      <!-- ---- Chrome --------------------------------------------------------
+           Top bar, filter chips and the status line stack in normal flow
+           inside one absolutely-positioned column. Nothing below has to know
+           how tall it came out, which matters because the top bar is one row
+           on a desktop and two on a phone. -->
+      <div class="explore__chrome">
+      <div class="explore__top glass">
+        <a class="explore__brand" href="index.html" title="Loudoun Data Center Watch — home">
+          <span data-county-mark aria-hidden="true"></span>
+          <span class="explore__brand-name">LDC Watch</span>
+        </a>
+
+        <form class="explore__search" role="search" id="explore-search">
+          <svg
+            class="explore__search-icon"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            aria-hidden="true"
+          >
+            <circle cx="11" cy="11" r="7" />
+            <path d="m20 20-3.5-3.5" />
+          </svg>
+          <label class="visually-hidden" for="explore-q">Find an address in Loudoun County</label>
+          <input
+            id="explore-q"
+            type="search"
+            placeholder="Find an address…"
+            autocomplete="street-address"
+            enterkeyhint="search"
+          />
+          <div class="explore__search-results glass" id="explore-results" hidden></div>
+        </form>
+
+        <span class="explore__top-spacer"></span>
+
+        <button
+          class="explore-btn"
+          type="button"
+          id="explore-layers-btn"
+          aria-expanded="false"
+          aria-controls="explore-drawer"
+          title="Map style and overlays"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="m12 3 9 5-9 5-9-5 9-5Z" />
+            <path d="m3 13 9 5 9-5" />
+          </svg>
+          <span class="visually-hidden">Map style and overlays</span>
+        </button>
+
+        <button
+          class="explore-btn"
+          type="button"
+          id="explore-menu-btn"
+          aria-expanded="false"
+          aria-controls="explore-drawer"
+          title="Site menu"
+        >
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            aria-hidden="true"
+          >
+            <path d="M4 7h16M4 12h16M4 17h16" />
+          </svg>
+          <span class="visually-hidden">Site menu</span>
+        </button>
+
+        <a class="explore-btn explore-btn--wide explore-btn--report" href="report.html">Report</a>
+      </div>
+
+      <!-- ---- Filter chips ------------------------------------------------- -->
+      <div
+        class="explore__chips"
+        id="explore-chips"
+        role="group"
+        aria-label="Choose what the map shows"
+      ></div>
+
+      <p class="explore__status glass" id="explore-status" role="status" aria-live="polite" hidden></p>
+      </div>
+
+      <!-- ---- Floating rail ------------------------------------------------- -->
+      <div class="explore__rail" id="explore-rail">
+        <div class="explore__rail-group glass">
+          <button class="explore-btn" type="button" data-act="zoom-in" title="Zoom in">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+            <span class="visually-hidden">Zoom in</span>
+          </button>
+          <button class="explore-btn" type="button" data-act="zoom-out" title="Zoom out">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+              <path d="M5 12h14" />
+            </svg>
+            <span class="visually-hidden">Zoom out</span>
+          </button>
+        </div>
+
+        <button class="explore-btn" type="button" data-act="locate" title="Show what is near me">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <circle cx="12" cy="12" r="7" />
+            <circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none" />
+            <path d="M12 2v3M12 19v3M2 12h3M19 12h3" stroke-linecap="round" />
+          </svg>
+          <span class="visually-hidden">Show what is near me</span>
+        </button>
+
+        <button
+          class="explore-btn"
+          type="button"
+          data-act="measure"
+          aria-pressed="false"
+          title="Measure a distance"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="m3 17 14-14 4 4L7 21Z" />
+            <path d="m7 9 2 2M11 5l2 2M11 13l2 2M15 9l2 2" />
+          </svg>
+          <span class="visually-hidden">Measure a distance</span>
+        </button>
+
+        <button
+          class="explore-btn"
+          type="button"
+          data-act="radius"
+          aria-pressed="false"
+          title="Count what is within a mile"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <circle cx="12" cy="12" r="9" stroke-dasharray="3 3" />
+            <circle cx="12" cy="12" r="4" />
+            <circle cx="12" cy="12" r="1" fill="currentColor" stroke="none" />
+          </svg>
+          <span class="visually-hidden">Count what is within a mile</span>
+        </button>
+
+        <button
+          class="explore-btn"
+          type="button"
+          data-act="share"
+          title="Copy a link to this exact view"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M10 13a4 4 0 0 0 6 .5l3-3a4 4 0 0 0-5.7-5.7l-1.7 1.7" />
+            <path d="M14 11a4 4 0 0 0-6-.5l-3 3A4 4 0 0 0 10.7 19l1.7-1.7" />
+          </svg>
+          <span class="visually-hidden">Copy a link to this exact view</span>
+        </button>
+      </div>
+
+      <!-- ---- The sheet ------------------------------------------------------ -->
+      <section class="explore__sheet glass" id="explore-sheet" aria-label="What is on this map">
+        <button
+          class="explore__grip"
+          type="button"
+          id="explore-grip"
+          aria-expanded="false"
+          aria-controls="explore-list"
+        >
+          <span class="visually-hidden">Expand or collapse the list</span>
+        </button>
+
+        <div class="explore__sheet-head">
+          <div>
+            <h2 class="explore__sheet-title" id="explore-sheet-title">In this view</h2>
+            <p class="explore__sheet-sub" id="explore-sheet-sub">Loading…</p>
+          </div>
+          <button class="explore-btn" type="button" id="explore-sheet-close" hidden title="Back to the list">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+              <path d="M18 6 6 18M6 6l12 12" />
+            </svg>
+            <span class="visually-hidden">Back to the list</span>
+          </button>
+        </div>
+
+        <div class="explore__sheet-body" id="explore-list" tabindex="-1"></div>
+      </section>
+    </div>
+
+    <script src="vendor/leaflet.js"></script>
+    <script src="vendor/markercluster.js"></script>
+    <script src="js/config.js"></script>
+    <script src="js/schema.js"></script>
+    <script src="js/local-store.js"></script>
+    <script src="js/supabase-store.js"></script>
+    <script src="js/store.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/motion.js"></script>
+    <script src="js/layout.js"></script>
+    <script src="js/map-layers.js"></script>
+    <script src="js/map-tools.js"></script>
+    <script src="js/map.js"></script>
+    <script src="js/report-detail.js"></script>
+    <script src="js/explore.js"></script>
+  </body>
+</html>

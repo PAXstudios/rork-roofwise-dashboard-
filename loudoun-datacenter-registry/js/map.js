@@ -60,15 +60,16 @@ window.LDCW = window.LDCW || {};
     });
   }
 
+  /* Each status gets its own cluster group, so a cluster can carry the colour
+     of the thing inside it rather than a neutral grey that says only "some
+     markers". `variant` is the layer key — one of the four in LAYER_DEFS. */
   function clusterIconFactory(variant) {
     return function (cluster) {
       var count = cluster.getChildCount();
       var size = count < 10 ? 34 : count < 100 ? 40 : 48;
       return L.divIcon({
         html: "<span>" + count + "</span>",
-        className:
-          "marker-cluster-custom" +
-          (variant === "reports" ? " marker-cluster-custom--reports" : ""),
+        className: "marker-cluster-custom marker-cluster-custom--" + variant,
         iconSize: L.point(size, size),
       });
     };
@@ -198,19 +199,19 @@ window.LDCW = window.LDCW || {};
 
     var layers = {
       operational: L.markerClusterGroup({
-        iconCreateFunction: clusterIconFactory("facilities"),
+        iconCreateFunction: clusterIconFactory("operational"),
         maxClusterRadius: 45,
         showCoverageOnHover: false,
         animate: !reduced(),
       }),
       under_construction: L.markerClusterGroup({
-        iconCreateFunction: clusterIconFactory("facilities"),
+        iconCreateFunction: clusterIconFactory("under_construction"),
         maxClusterRadius: 45,
         showCoverageOnHover: false,
         animate: !reduced(),
       }),
       proposed: L.markerClusterGroup({
-        iconCreateFunction: clusterIconFactory("facilities"),
+        iconCreateFunction: clusterIconFactory("proposed"),
         maxClusterRadius: 45,
         showCoverageOnHover: false,
         animate: !reduced(),
@@ -278,7 +279,17 @@ window.LDCW = window.LDCW || {};
           keyboard: true,
           alt: (facility.name || "Data center") + " — " + schema.statusLabel(status),
         });
-        marker.bindPopup(facilityPopup(facility), { maxWidth: 320 });
+        // A popup is the right answer on a page where the map is one element
+        // among many. On the full-screen map it isn't: a bubble that covers a
+        // third of a phone screen is worse than a panel you can scroll and
+        // dismiss. Pages that own a panel pass onFacilitySelect and get that.
+        if (typeof options.onFacilitySelect === "function") {
+          marker.on("click", function () {
+            options.onFacilitySelect(facility, marker);
+          });
+        } else {
+          marker.bindPopup(facilityPopup(facility), { maxWidth: 320 });
+        }
         layers[status].addLayer(marker);
       });
 
@@ -301,7 +312,11 @@ window.LDCW = window.LDCW || {};
         });
         // A popup is a teaser; the sheet is the record. Clicking the pin opens
         // the full report directly rather than making the reader click twice.
-        if (LDCW.reportDetail) {
+        if (typeof options.onReportSelect === "function") {
+          marker.on("click", function () {
+            options.onReportSelect(report, marker);
+          });
+        } else if (LDCW.reportDetail) {
           marker.on("click", function () {
             LDCW.reportDetail.openSheet(report);
           });
@@ -364,13 +379,7 @@ window.LDCW = window.LDCW || {};
         var key = input.getAttribute("data-layer");
         input.checked = state.visible[key] !== false;
         input.addEventListener("change", function () {
-          state.visible[key] = input.checked;
-          if (input.checked) {
-            if (!map.hasLayer(layers[key])) map.addLayer(layers[key]);
-          } else if (map.hasLayer(layers[key])) {
-            map.removeLayer(layers[key]);
-          }
-          render();
+          controller.setLayerVisible(key, input.checked);
         });
       });
     }
@@ -514,6 +523,65 @@ window.LDCW = window.LDCW || {};
 
       bindToggles: bindToggles,
 
+      /* Turn one marker layer on or off without a checkbox. The full-screen
+         map drives these from filter chips; the embedded maps drive them from
+         bindToggles. Both end up here so there is one code path. */
+      setLayerVisible: function (key, on) {
+        if (!layers[key]) return controller;
+        state.visible[key] = on !== false;
+        if (state.visible[key]) {
+          if (!map.hasLayer(layers[key])) map.addLayer(layers[key]);
+        } else if (map.hasLayer(layers[key])) {
+          map.removeLayer(layers[key]);
+        }
+        render();
+        return controller;
+      },
+
+      layerVisible: function (key) {
+        return state.visible[key] !== false;
+      },
+
+      /* What is inside the current viewport and passing the current filter,
+         nearest to the centre of the screen first. This is what the side panel
+         lists: on a map you can pan, "what am I looking at" is a more useful
+         question than "what exists in the county". */
+      inBounds: function (limit) {
+        var bounds = map.getBounds();
+        var centre = map.getCenter();
+        var out = [];
+
+        function consider(record, kind) {
+          if (!isFinite(record.lat) || !isFinite(record.lng)) return;
+          if (!bounds.contains(L.latLng(record.lat, record.lng))) return;
+          out.push({
+            kind: kind,
+            record: record,
+            distance: centre.distanceTo(L.latLng(record.lat, record.lng)),
+          });
+        }
+
+        state.facilities.forEach(function (facility) {
+          if (!layers[facility.status]) return;
+          if (!state.visible[facility.status]) return;
+          if (!schema.matchesFacilityFilter(facility, state.filter)) return;
+          consider(facility, "facility");
+        });
+
+        if (state.visible.reports) {
+          state.reports.forEach(function (report) {
+            if (!schema.matchesFilter(report, state.filter)) return;
+            consider(report, "report");
+          });
+        }
+
+        out.sort(function (a, b) {
+          return a.distance - b.distance;
+        });
+
+        return limit ? out.slice(0, limit) : out;
+      },
+
       /* Bounce a report's pin — used when the reader hovers its card in the
          list, so the two views feel like one thing. */
       highlightReport: function (id) {
@@ -634,11 +702,14 @@ window.LDCW = window.LDCW || {};
         '<h3 class="map-controls__title" id="map-basemap-label">Base map</h3>' +
         '<div class="segmented" role="radiogroup" aria-labelledby="map-basemap-label">' +
         basemaps.defs
-          .map(function (def, index) {
+          .map(function (def) {
             return (
               '<button type="button" class="segmented__option" role="radio" ' +
+              // Read the live selection rather than assuming the first entry.
+              // A page that asks for a specific basemap would otherwise get a
+              // control that claims a different one is active.
               'aria-checked="' +
-              (index === 0 ? "true" : "false") +
+              (def.key === basemaps.active() ? "true" : "false") +
               '" data-basemap="' +
               def.key +
               '" title="' +
@@ -876,6 +947,8 @@ window.LDCW = window.LDCW || {};
     createMap: createMap,
     renderLayerToggles: renderLayerToggles,
     renderMapControls: renderMapControls,
+    facilityPopup: facilityPopup,
+    reportPopup: reportPopup,
     LAYER_DEFS: LAYER_DEFS,
   };
 })(window.LDCW);

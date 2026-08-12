@@ -1009,6 +1009,22 @@
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
 }
 
+/* A cluster carries the colour of what is inside it. Each status has its own
+   cluster group, so "17" over Ashburn reads as seventeen operational sites
+   rather than seventeen unspecified things. These are the both-grounds tier of
+   the ramp, because a cluster can land on paper or on satellite imagery. */
+.marker-cluster-custom--operational span {
+  background: var(--status-operational);
+}
+
+.marker-cluster-custom--under_construction span {
+  background: var(--status-construction);
+}
+
+.marker-cluster-custom--proposed span {
+  background: var(--status-proposed);
+}
+
 .marker-cluster-custom--reports span {
   background: var(--status-reported);
 }

@@ -129,6 +129,20 @@ window.LDCW_CONFIG = {
       maxZoom: 16,
       dark: true,
     },
+    {
+      key: "dark",
+      label: "Dark",
+      hint: "Night ground — the data carries the colour, the map recedes",
+      // CARTO's Dark Matter, rendered from OpenStreetMap data. Free and
+      // keyless; the licence is satisfied by the attribution string below,
+      // which names both OSM and CARTO as it must.
+      url: "https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
+      attribution:
+        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, ' +
+        '&copy; <a href="https://carto.com/attributions">CARTO</a>',
+      maxZoom: 19,
+      dark: true,
+    },
   ],
 
   /* ---- Watchlist ---------------------------------------------------------

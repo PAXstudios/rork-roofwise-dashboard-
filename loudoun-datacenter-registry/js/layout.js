@@ -15,7 +15,7 @@
   "use strict";
 
   var NAV = [
-    { href: "index.html", label: "Map" },
+    { href: "explore.html", label: "Map" },
     { href: "reports.html", label: "Reports" },
     { href: "watchlist.html", label: "Watchlist" },
     { href: "news.html", label: "News" },
@@ -24,11 +24,19 @@
     { href: "about.html", label: "About" },
   ];
 
+  // The full-screen map builds its own compact chrome rather than the header
+  // above — a 64px bar plus a ticker plus a banner eats a third of a phone
+  // screen that ought to be map. It still needs the same list of pages, so
+  // this is published rather than copied.
+  window.LDCW = window.LDCW || {};
+  window.LDCW.NAV = NAV;
+
   var FOOTER_LINKS = [
     {
       title: "The project",
       links: [
-        { href: "index.html", label: "Map" },
+        { href: "index.html", label: "Home" },
+        { href: "explore.html", label: "Map" },
         { href: "report.html", label: "Report an issue" },
         { href: "reports.html", label: "Community reports" },
         { href: "watchlist.html", label: "Watchlist" },
@@ -190,7 +198,10 @@
       });
     });
 
-    if (window.LDCW && window.LDCW.motion) {
+    // Both belong to the document chrome. The full-screen map has neither a
+    // sticky header nor a scroll to make progress through, and a reading rail
+    // pinned over the top of it is just a stray line across the map.
+    if (header && window.LDCW && window.LDCW.motion) {
       window.LDCW.motion.stickyHeader(".site-header");
       window.LDCW.motion.readingProgress();
     }
