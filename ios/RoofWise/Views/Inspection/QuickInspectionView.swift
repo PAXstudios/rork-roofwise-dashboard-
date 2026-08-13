@@ -1229,23 +1229,8 @@ struct QuickInspectionView: View {
     }
 
     private func importARSnapshot(_ snapshot: ARInspectionSnapshot) {
-        // Bridge AR markers back into the standard CapturedPhoto pipeline so
-        // the rest of the app (Gemini analysis, claim packet, PDF report)
-        // keeps working unchanged.
-        let damageMarkers = snapshot.markers.enumerated().map { idx, m -> DamageMarker in
-            // Project 3D markers into a synthetic 2D layout so they render in
-            // PhotoDamageOverlayView. Real screen-space coordinates aren't
-            // recovered here — markers live primarily in 3D and are surfaced
-            // for parity with the existing 2D photo overlay.
-            let count = max(snapshot.markers.count, 1)
-            let cols = Int(ceil(sqrt(Double(count))))
-            let row = idx / cols
-            let col = idx % cols
-            let x = CGFloat(col) / CGFloat(max(cols - 1, 1)) * 0.7 + 0.15
-            let y = CGFloat(row) / CGFloat(max(cols - 1, 1)) * 0.7 + 0.15
-            return DamageMarker(x: x, y: y, radius: 0.04,
-                                type: m.type, severity: .moderate, note: m.note)
-        }
+        // Keep LiDAR findings. Do NOT invent a 2D grid of markers — Gemini
+        // must localize every overlay on the snapshot photo.
 
         var arFindings: [InspectionFinding] = []
         if snapshot.pitchDegrees > 0 {
@@ -1294,8 +1279,8 @@ struct QuickInspectionView: View {
             squaresCovered: snapshot.squarePlaced ? 1 : 0
         )
         photo.findings = arFindings
-        photo.damageMarkers = damageMarkers
-        photo.analyzed = true
+        photo.damageMarkers = []
+        photo.analyzed = false
         if let usdz = snapshot.usdzReportURL {
             latestUSDZReportURL = usdz
         }
@@ -1306,8 +1291,34 @@ struct QuickInspectionView: View {
         if let cid = customerStore.activeCustomerID {
             customerStore.appendPhotos([photo], to: cid)
         }
+        let photoId = photo.id
+        Task { await analyzeImportedARPhoto(photoId) }
         let g = UINotificationFeedbackGenerator(); g.notificationOccurred(.success)
         showARMode = false
+    }
+
+    private func analyzeImportedARPhoto(_ id: UUID) async {
+        guard let idx = capturedPhotos.firstIndex(where: { $0.id == id }) else { return }
+        let photo = capturedPhotos[idx]
+        let result = await GeminiAnalysisService.analyzeFull(
+            image: photo.image,
+            slope: photo.slope,
+            mode: photo.captureMode,
+            squaresCovered: photo.squaresCovered
+        )
+        guard let i = capturedPhotos.firstIndex(where: { $0.id == id }) else { return }
+        var merged = capturedPhotos[i].findings
+        for f in result.findings where !merged.contains(where: { $0.label == f.label }) {
+            merged.append(f)
+        }
+        capturedPhotos[i].findings = merged
+        capturedPhotos[i].damageMarkers = result.noRoofDetected ? [] : result.markers
+        capturedPhotos[i].analyzed = !result.failed
+        if let cid = customerStore.activeCustomerID {
+            customerStore.updateAnalysis(for: cid,
+                                         photos: capturedPhotos,
+                                         findings: lastFindings)
+        }
     }
 
     private func resetToCapture() {
@@ -1318,23 +1329,8 @@ struct QuickInspectionView: View {
     }
 
     private func generateClaimPacket() {
-        var photosForGrading = capturedPhotos
-        if photosForGrading.isEmpty {
-            // synthesize a single phantom photo using last findings so HAAG can grade
-            let stub = CapturedPhoto(
-                image: CameraCaptureService.synthesizePlaceholder(slope: currentSlope,
-                                                                  pitchDegrees: motion.pitchDegrees,
-                                                                  elevationFeet: motion.elevationFeet),
-                slope: currentSlope,
-                pitchDegrees: motion.pitchDegrees,
-                elevationFeet: motion.elevationFeet
-            )
-            var copy = stub
-            copy.findings = lastFindings
-            copy.analyzed = true
-            photosForGrading = [copy]
-        }
-        let packet = HaagGrader.grade(photos: photosForGrading)
+        guard !capturedPhotos.isEmpty else { return }
+        let packet = HaagGrader.grade(photos: capturedPhotos)
         claimPacket = packet
         if let cid = customerStore.activeCustomerID {
             customerStore.attachClaim(for: cid, packet: packet)
@@ -1909,18 +1905,21 @@ private struct LiveDamageMarkerLayer: View {
     var body: some View {
         ZStack {
             ForEach(markers) { marker in
-                let markerSize: CGFloat = max(12, min(26, marker.radius * min(size.width, size.height) * 1.5))
-                Circle()
-                    .fill(marker.type.color.opacity(0.75))
-                    .frame(width: markerSize, height: markerSize)
-                    .overlay(Circle().stroke(.white.opacity(0.75), lineWidth: 1))
+                let n = marker.overlayRect
+                let box = CGRect(x: n.minX * size.width,
+                                 y: n.minY * size.height,
+                                 width: max(10, n.width * size.width),
+                                 height: max(10, n.height * size.height))
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(marker.type.color.opacity(0.22))
+                    .overlay(RoundedRectangle(cornerRadius: 3).stroke(.white.opacity(0.85), lineWidth: 1))
                     .overlay(
-                        Circle()
-                            .stroke(marker.type.color.opacity(pulse ? 0.0 : 0.42), lineWidth: 2)
-                            .frame(width: markerSize * 2.0, height: markerSize * 2.0)
-                            .scaleEffect(pulse ? 1.2 : 0.75)
+                        RoundedRectangle(cornerRadius: 3)
+                            .stroke(marker.type.color.opacity(pulse ? 0.0 : 0.55), lineWidth: 1.6)
+                            .scaleEffect(pulse ? 1.08 : 0.96)
                     )
-                    .position(x: marker.x * size.width, y: marker.y * size.height)
+                    .frame(width: box.width, height: box.height)
+                    .position(x: box.midX, y: box.midY)
             }
         }
         .onAppear {
@@ -2135,6 +2134,61 @@ private struct ResultsView: View {
         }
     }
 
+    private var liveStructuralInputs: [StructuralInput] {
+        var items: [StructuralInput] = []
+        let slopes = Set(photos.map(\.slope)).count
+        if slopes > 0 {
+            items.append(.init(key: "slopes", label: "Slopes",
+                               value: "\(slopes) documented", icon: "triangle.fill"))
+        }
+        if let type = photos.compactMap(\.shingleType).first {
+            items.append(.init(key: "material", label: "Material",
+                               value: type, icon: "square.grid.3x3.fill"))
+        }
+        let pitches = photos.map(\.pitchDegrees).filter { $0 > 0 }
+        if let pitch = pitches.max() {
+            items.append(.init(key: "pitch", label: "Pitch",
+                               value: String(format: "%.0f°", pitch), icon: "arrow.up.right"))
+        }
+        let elevs = photos.map(\.elevationFeet).filter { $0 > 0 }
+        if let elev = elevs.max() {
+            items.append(.init(key: "elevation", label: "Elevation",
+                               value: "\(Int(elev.rounded())) ft", icon: "arrow.up.to.line"))
+        }
+        return items
+    }
+
+    private var recommendationCopy: String {
+        let hail = photos.flatMap(\.damageMarkers).filter { $0.type == .hailHits }.count
+        let wind = photos.flatMap(\.damageMarkers).filter {
+            $0.type == .windDamage || $0.type == .windCreasing
+                || $0.type == .missingShingles || $0.type == .lifted
+        }.count
+        if hail >= 8 {
+            return "\(hail) hail hits documented across \(photos.count) photo\(photos.count == 1 ? "" : "s"). HAAG typically treats 8+ functional hits per 100 sq ft test square as replacement territory — review the claim packet before filing."
+        }
+        if wind > 0 {
+            return "\(wind) wind-related marker\(wind == 1 ? "" : "s") documented. Review lifted tabs, creases, and missing shingles on each slope before recommending repair vs replacement."
+        }
+        if !realHits.isEmpty {
+            return "\(realHits.count) damage marker\(realHits.count == 1 ? "" : "s") documented. Review the photos and findings with the homeowner before recommending next steps."
+        }
+        return "No damage markers on these photos yet. Re-run RoofWise Vision or add inspector marks before recommending a claim."
+    }
+
+    private var heroHeadline: String {
+        if realHits.isEmpty && !findings.contains(where: \.detected) {
+            return "No damage documented yet.\nCapture more photos or retry analysis."
+        }
+        if totalHits >= 8 {
+            return "\(totalHits) hail hits documented.\nReview the claim packet next."
+        }
+        if !realHits.isEmpty {
+            return "\(realHits.count) damage marker\(realHits.count == 1 ? "" : "s") found.\nReview photos before you recommend."
+        }
+        return "Analysis complete.\n\(detectedCount) finding\(detectedCount == 1 ? "" : "s") recorded."
+    }
+
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(spacing: 18) {
@@ -2146,8 +2200,8 @@ private struct ResultsView: View {
                 inspectorMarkedCard
                 photosBySlopeCard
                 findingsCard
-                structuralCard
-                recommendationCard
+                if !liveStructuralInputs.isEmpty { structuralCard }
+                if !realHits.isEmpty || findings.contains(where: \.detected) { recommendationCard }
                 actionButtons
                 Color.clear.frame(height: 24)
             }
@@ -2590,17 +2644,17 @@ private struct ResultsView: View {
 
             materialPill
 
-            Text("Functional damage confirmed.\nClaim is supportable.")
+            Text(heroHeadline)
                 .font(.system(size: 22, weight: .heavy))
                 .foregroundStyle(.white)
                 .lineSpacing(2)
 
             HStack(spacing: 14) {
-                heroStat(value: "\(totalHits)", label: "Hail Hits / 100 sq ft")
+                heroStat(value: "\(totalHits)", label: "Hail Hits")
                 Rectangle().fill(.white.opacity(0.2)).frame(width: 0.5, height: 36)
                 heroStat(value: "\(photoCount)", label: "Photos Analyzed")
                 Rectangle().fill(.white.opacity(0.2)).frame(width: 0.5, height: 36)
-                heroStat(value: "$24.6k", label: "Est. Replace")
+                heroStat(value: "\(realHits.count)", label: "Damage Markers")
             }
         }
         .padding(20)
@@ -2885,15 +2939,17 @@ private struct ResultsView: View {
                         .frame(width: geo.size.width, height: geo.size.height)
                     } else {
                         ForEach(realHits) { hit in
-                            let severityColor = hit.severity.color
-                            Circle()
-                                .fill(severityColor.opacity(0.85))
-                                .overlay(Circle().stroke(.white.opacity(0.6), lineWidth: 1))
-                                .shadow(color: severityColor, radius: 6)
-                                .frame(width: 16 + CGFloat(hit.radius) * 200,
-                                       height: 16 + CGFloat(hit.radius) * 200)
-                                .position(x: CGFloat(hit.x) * geo.size.width,
-                                          y: CGFloat(hit.y) * geo.size.height)
+                            let n = hit.overlayRect
+                            let box = CGRect(x: n.minX * geo.size.width,
+                                             y: n.minY * geo.size.height,
+                                             width: max(8, n.width * geo.size.width),
+                                             height: max(8, n.height * geo.size.height))
+                            RoundedRectangle(cornerRadius: 2)
+                                .fill(hit.type.color.opacity(0.55))
+                                .overlay(RoundedRectangle(cornerRadius: 2)
+                                    .stroke(.white.opacity(0.75), lineWidth: 1))
+                                .frame(width: box.width, height: box.height)
+                                .position(x: box.midX, y: box.midY)
                         }
                     }
                 }
@@ -2995,7 +3051,7 @@ private struct ResultsView: View {
                 .foregroundStyle(Theme.ink)
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 10),
                                 GridItem(.flexible(), spacing: 10)], spacing: 10) {
-                ForEach(InspectionMock.inputs) { input in
+                ForEach(liveStructuralInputs, id: \.key) { input in
                     HStack(spacing: 10) {
                         ZStack {
                             RoundedRectangle(cornerRadius: 8).fill(Theme.skySoft)
@@ -3038,7 +3094,7 @@ private struct ResultsView: View {
                     .font(.system(size: 11, weight: .heavy))
                     .foregroundStyle(Theme.mint)
                     .tracking(0.6)
-                Text("File supplement with carrier and request adjuster meet within 48h. Photos & mesh exported to claim packet.")
+                Text(recommendationCopy)
                     .font(.system(size: 12))
                     .foregroundStyle(Theme.ink)
                     .lineSpacing(2)

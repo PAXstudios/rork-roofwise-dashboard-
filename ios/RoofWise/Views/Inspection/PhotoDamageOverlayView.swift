@@ -296,14 +296,15 @@ struct PhotoDamageOverlayView: View {
     private func markersLayer(in rect: CGRect) -> some View {
         ZStack {
             ForEach(activeMarkers) { marker in
+                let box = marker.pixelRect(in: rect)
                 MarkerPin(marker: marker,
                           pulsing: pulse,
                           isSelected: selectedMarker?.id == marker.id) {
                     let g = UIImpactFeedbackGenerator(style: .light); g.impactOccurred()
                     selectedMarker = marker
                 }
-                .position(x: rect.minX + marker.x * rect.width,
-                          y: rect.minY + marker.y * rect.height)
+                .frame(width: max(22, box.width), height: max(22, box.height))
+                .position(x: box.midX, y: box.midY)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -781,6 +782,7 @@ extension CapturedPhoto {
         struct Draft {
             var x: Double; var y: Double; var radius: Double
             var category: String?; var severity: String?; var note: String?
+            var box: CGRect?
         }
         var existing = damageMarkers
         var drafts: [UUID: Draft] = [:]
@@ -788,14 +790,24 @@ extension CapturedPhoto {
         for op in delta.ops {
             switch op.kind {
             case .added:
-                drafts[op.markerId] = Draft(x: op.x ?? 0.5, y: op.y ?? 0.5,
-                                            radius: op.radius ?? 0.04,
+                let nx = op.x ?? 0.5
+                let ny = op.y ?? 0.5
+                let nr = op.radius ?? 0.04
+                drafts[op.markerId] = Draft(x: nx, y: ny, radius: nr,
                                             category: op.category, severity: op.severity,
-                                            note: op.note)
+                                            note: op.note,
+                                            box: CGRect(x: nx - nr, y: ny - nr,
+                                                        width: nr * 2, height: nr * 2))
                 order.append(op.markerId)
             case .moved:
                 if var d = drafts[op.markerId] {
-                    d.x = op.x ?? d.x; d.y = op.y ?? d.y; drafts[op.markerId] = d
+                    let dx = (op.x ?? d.x) - d.x
+                    let dy = (op.y ?? d.y) - d.y
+                    d.x = op.x ?? d.x; d.y = op.y ?? d.y
+                    if let box = d.box {
+                        d.box = box.offsetBy(dx: dx, dy: dy)
+                    }
+                    drafts[op.markerId] = d
                 }
             case .resized:
                 if var d = drafts[op.markerId] {
@@ -819,11 +831,13 @@ extension CapturedPhoto {
         let added: [DamageMarker] = order.compactMap { id in
             guard let d = drafts[id] else { return nil }
             let type = d.category.flatMap { DamageMarkerType(rawValue: $0) } ?? .other
-            return DamageMarker(x: CGFloat(d.x), y: CGFloat(d.y), radius: CGFloat(d.radius),
+            return DamageMarker(id: id,
+                                x: CGFloat(d.x), y: CGFloat(d.y), radius: CGFloat(d.radius),
                                 type: type,
                                 severity: Self.findingSeverity(from: d.severity),
                                 note: (d.note?.isEmpty == false ? d.note! : "Inspector-added"),
-                                confidence: 100)
+                                confidence: 100,
+                                box: d.box)
         }
         return existing + added
     }
@@ -896,26 +910,24 @@ private struct MarkerPin: View {
     var onTap: () -> Void
 
     var body: some View {
-        let baseSize: CGFloat = max(22, min(72, marker.radius * 320))
         Button(action: onTap) {
             ZStack {
-                Circle()
-                    .stroke(marker.type.color.opacity(pulsing ? 0.0 : 0.55),
-                            lineWidth: 1.2)
-                    .frame(width: baseSize * 1.6, height: baseSize * 1.6)
-                    .scaleEffect(pulsing ? 1.15 : 0.85)
-
-                Circle()
+                RoundedRectangle(cornerRadius: 4)
+                    .stroke(marker.type.color.opacity(pulsing ? 0.0 : 0.5), lineWidth: 1.2)
+                    .scaleEffect(pulsing ? 1.08 : 0.96)
+                RoundedRectangle(cornerRadius: 4)
                     .stroke(marker.type.color, lineWidth: isSelected ? 3 : 2)
-                    .background(Circle().fill(marker.type.color.opacity(0.12)))
-                    .frame(width: baseSize, height: baseSize)
-
+                    .background(
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(marker.type.color.opacity(0.16))
+                    )
                 Image(systemName: marker.type.icon)
-                    .font(.system(size: max(9, baseSize * 0.35), weight: .heavy))
+                    .font(.system(size: 10, weight: .heavy))
                     .foregroundStyle(marker.type.color)
                     .shadow(color: .black.opacity(0.5), radius: 2)
             }
         }
         .buttonStyle(.plain)
+        .contentShape(RoundedRectangle(cornerRadius: 4))
     }
 }

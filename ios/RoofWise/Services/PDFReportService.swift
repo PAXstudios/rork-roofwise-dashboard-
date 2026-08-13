@@ -245,7 +245,16 @@ enum PDFReportService {
         let drawH = imgSize.height * scale
         let drawX = imageRect.midX - drawW / 2
         let drawY = imageRect.midY - drawH / 2
-        photo.image.draw(in: CGRect(x: drawX, y: drawY, width: drawW, height: drawH))
+        let drawn = CGRect(x: drawX, y: drawY, width: drawW, height: drawH)
+        photo.image.draw(in: drawn)
+        for marker in photo.damageMarkers {
+            let box = marker.pixelRect(in: drawn)
+            cg.setStrokeColor(ember.cgColor)
+            cg.setLineWidth(1.4)
+            cg.stroke(box)
+            cg.setFillColor(ember.withAlphaComponent(0.16).cgColor)
+            cg.fill(box)
+        }
         cg.restoreGState()
 
         // Index badge (top-left)

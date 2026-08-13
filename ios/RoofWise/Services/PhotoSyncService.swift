@@ -182,16 +182,25 @@ nonisolated struct RemoteMarker: Codable, Sendable {
     let severity: String
     let note: String
     let confidence: Int
+    let xmin: Double?
+    let ymin: Double?
+    let xmax: Double?
+    let ymax: Double?
 
     static func from(_ m: DamageMarker) -> RemoteMarker {
-        RemoteMarker(
+        let box = m.box
+        return RemoteMarker(
             x: Double(m.x),
             y: Double(m.y),
             radius: Double(m.radius),
             type: m.type.rawValue,
             severity: m.severity.rawValue,
             note: m.note,
-            confidence: m.confidence
+            confidence: m.confidence,
+            xmin: box.map { Double($0.minX) },
+            ymin: box.map { Double($0.minY) },
+            xmax: box.map { Double($0.maxX) },
+            ymax: box.map { Double($0.maxY) }
         )
     }
 }

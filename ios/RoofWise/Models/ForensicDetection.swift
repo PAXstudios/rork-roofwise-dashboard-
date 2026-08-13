@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 
 // MARK: - Forensic Detection Taxonomy
 //
@@ -216,12 +217,21 @@ nonisolated struct ForensicDetection: Codable, Sendable, Identifiable {
 
     /// Center point (x, y) in 0-1 normalized image space, derived from box2d.
     var normalizedCenter: (x: Double, y: Double)? {
+        guard let rect = normalizedRect else { return nil }
+        return (Double(rect.midX), Double(rect.midY))
+    }
+
+    /// Normalized 0–1 image-space box (origin top-left) from Gemini `box_2d`.
+    var normalizedRect: CGRect? {
         guard let b = box2d, b.count == 4 else { return nil }
         let yMin = Double(min(b[0], b[2])) / 1000.0
         let xMin = Double(min(b[1], b[3])) / 1000.0
         let yMax = Double(max(b[0], b[2])) / 1000.0
         let xMax = Double(max(b[1], b[3])) / 1000.0
-        return ((xMin + xMax) / 2.0, (yMin + yMax) / 2.0)
+        let w = xMax - xMin
+        let h = yMax - yMin
+        guard w > 0.002, h > 0.002 else { return nil }
+        return CGRect(x: xMin, y: yMin, width: w, height: h)
     }
 }
 

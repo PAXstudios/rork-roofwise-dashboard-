@@ -490,6 +490,7 @@ struct GeminiAnalysisService {
             for dict in rawMarkers {
                 if let m = markerFromDict(dict) { markers.append(m) }
             }
+            markers = rejectFabricatedLayout(markers)
         }
         if noRoofFlag {
             print("[Gemini] \u{26A0}\u{FE0F} no_roof_detected — image does not show a roof; suppressing markers.")
@@ -565,12 +566,16 @@ struct GeminiAnalysisService {
             let xMax = max(box[1], box[3]) / scale
             let cx = (xMin + xMax) / 2
             let cy = (yMin + yMax) / 2
+            let w = max(0.004, xMax - xMin)
+            let h = max(0.004, yMax - yMin)
             // Radius = half the larger box edge; floored so tiny hail boxes stay
             // visible/tappable, capped so a huge box doesn't swallow the photo.
-            let r = max(0.012, min(0.5, max(xMax - xMin, yMax - yMin) / 2))
+            let r = max(0.012, min(0.5, max(w, h) / 2))
+            let rect = CGRect(x: clamp(xMin), y: clamp(yMin),
+                              width: clamp(w), height: clamp(h))
             return DamageMarker(x: clamp(cx), y: clamp(cy), radius: CGFloat(r),
                                 type: type, severity: severity,
-                                note: note, confidence: confidence)
+                                note: note, confidence: confidence, box: rect)
         }
 
         // Gemini-native point [y, x] (0-1000) for point-like features.
@@ -597,6 +602,56 @@ struct GeminiAnalysisService {
         return DamageMarker(x: clamp(xVal), y: clamp(yVal), radius: clamp(radius),
                             type: type, severity: severity,
                             note: note, confidence: confidence)
+    }
+
+    /// Drops a fabricated straight row / column / regular grid. Gemini sometimes
+    /// still emits evenly-spaced boxes when it cannot localize real damage;
+    /// those must never be drawn as detections.
+    private static func rejectFabricatedLayout(_ markers: [DamageMarker]) -> [DamageMarker] {
+        guard markers.count >= 4 else { return markers }
+        let xs = markers.map { Double($0.x) }.sorted()
+        let ys = markers.map { Double($0.y) }.sorted()
+        let xSpan = (xs.last ?? 0) - (xs.first ?? 0)
+        let ySpan = (ys.last ?? 0) - (ys.first ?? 0)
+        let radii = markers.map { Double($0.radius) }
+        let meanR = radii.reduce(0, +) / Double(radii.count)
+        let rVar = radii.map { ($0 - meanR) * ($0 - meanR) }.reduce(0, +) / Double(radii.count)
+        let similarSize = meanR > 0 && sqrt(rVar) < meanR * 0.18
+
+        func isRegular(_ values: [Double]) -> Bool {
+            guard values.count >= 4 else { return false }
+            let gaps = zip(values, values.dropFirst()).map { $1 - $0 }
+            let mean = gaps.reduce(0, +) / Double(gaps.count)
+            guard mean > 0.02 else { return false }
+            let variance = gaps.map { ($0 - mean) * ($0 - mean) }.reduce(0, +) / Double(gaps.count)
+            return sqrt(variance) < mean * 0.18
+        }
+
+        if similarSize, ySpan < 0.05, isRegular(xs) {
+            print("[Gemini] dropped fabricated horizontal row of \(markers.count) markers")
+            return []
+        }
+        if similarSize, xSpan < 0.05, isRegular(ys) {
+            print("[Gemini] dropped fabricated vertical column of \(markers.count) markers")
+            return []
+        }
+        if similarSize, markers.count >= 6 {
+            var remaining = markers.sorted { $0.y < $1.y }
+            var rows: [[Double]] = []
+            while !remaining.isEmpty {
+                let y0 = remaining[0].y
+                let row = remaining.filter { abs($0.y - y0) < 0.04 }
+                remaining.removeAll { abs($0.y - y0) < 0.04 }
+                if row.count >= 3 {
+                    rows.append(row.map { Double($0.x) }.sorted())
+                }
+            }
+            if rows.count >= 2, rows.allSatisfy(isRegular) {
+                print("[Gemini] dropped fabricated grid of \(markers.count) markers")
+                return []
+            }
+        }
+        return markers
     }
 
     /// Parses a JSON array of numbers (Gemini returns NSNumber elements) into

@@ -439,9 +439,23 @@ private extension CameraCaptureService {
             let pt = layer.layerPointConverted(fromCaptureDevicePoint: device)
             let nx = max(0, min(1, pt.x / bounds.width))
             let ny = max(0, min(1, pt.y / bounds.height))
-            return DamageMarker(x: nx, y: ny, radius: m.radius,
+
+            var mappedBox: CGRect? = nil
+            if let box = m.box {
+                let p0 = layer.layerPointConverted(fromCaptureDevicePoint: CGPoint(x: box.minX, y: box.minY))
+                let p1 = layer.layerPointConverted(fromCaptureDevicePoint: CGPoint(x: box.maxX, y: box.maxY))
+                let x0 = max(0, min(1, min(p0.x, p1.x) / bounds.width))
+                let y0 = max(0, min(1, min(p0.y, p1.y) / bounds.height))
+                let x1 = max(0, min(1, max(p0.x, p1.x) / bounds.width))
+                let y1 = max(0, min(1, max(p0.y, p1.y) / bounds.height))
+                mappedBox = CGRect(x: x0, y: y0,
+                                   width: max(0.004, x1 - x0),
+                                   height: max(0.004, y1 - y0))
+            }
+            return DamageMarker(id: m.id, x: nx, y: ny, radius: m.radius,
                                 type: m.type, severity: m.severity,
-                                note: m.note, confidence: m.confidence)
+                                note: m.note, confidence: m.confidence,
+                                box: mappedBox)
         }
     }
 }

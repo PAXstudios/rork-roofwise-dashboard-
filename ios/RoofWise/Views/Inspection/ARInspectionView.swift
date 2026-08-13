@@ -1263,11 +1263,8 @@ final class ARInspectionCoordinator: NSObject {
                                                              slope: slope,
                                                              mode: .square,
                                                              squaresCovered: squarePlaced ? 1 : 0)
-        if result.failed {
-            return .failure(message: "RoofWise Vision analysis failed. Try again.")
-        }
-        if result.usedMock {
-            return .failure(message: "Set EXPO_PUBLIC_GEMINI_API_KEY to use real AR scanning.")
+        if result.failed || result.usedMock {
+            return .failure(message: "RoofWise Vision isn't available. Check your connection and try again.")
         }
         // For each marker, unproject normalized image (x,y) → ARView pixel → raycast into world.
         let bounds = arView.bounds

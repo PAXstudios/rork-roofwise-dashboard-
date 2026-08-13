@@ -311,7 +311,6 @@ final class LiveMarkerLayer: CAShapeLayer {
     /// eliminate per-frame flicker.
     func render(_ markers: [DamageMarker], in bounds: CGRect) {
         guard bounds.width > 0, bounds.height > 0 else { return }
-        let minEdge = min(bounds.width, bounds.height)
 
         CATransaction.begin()
         CATransaction.setDisableActions(true)
@@ -321,12 +320,15 @@ final class LiveMarkerLayer: CAShapeLayer {
             let id = marker.id.uuidString
             seen.insert(id)
 
-            let radius = max(8, minEdge * marker.radius)
-            let diameter = radius * 2
-            let center = CGPoint(x: bounds.width * marker.x, y: bounds.height * marker.y)
-            let frame = CGRect(x: center.x - radius, y: center.y - radius,
-                               width: diameter, height: diameter)
-            let path = UIBezierPath(ovalIn: CGRect(x: 0, y: 0, width: diameter, height: diameter)).cgPath
+            let n = marker.overlayRect
+            let frame = CGRect(
+                x: bounds.width * n.minX,
+                y: bounds.height * n.minY,
+                width: max(10, bounds.width * n.width),
+                height: max(10, bounds.height * n.height)
+            )
+            let path = UIBezierPath(roundedRect: CGRect(origin: .zero, size: frame.size),
+                                    cornerRadius: 3).cgPath
             let color = UIColor(marker.type.color)
 
             if let existing = layersByID[id] {
@@ -342,6 +344,7 @@ final class LiveMarkerLayer: CAShapeLayer {
                 circle.strokeColor = color.cgColor
                 circle.fillColor = color.withAlphaComponent(0.18).cgColor
                 circle.lineWidth = 2
+                circle.lineJoin = .round
                 addSublayer(circle)
                 layersByID[id] = circle
                 // Pulse only on first appearance (explicit anim still runs).

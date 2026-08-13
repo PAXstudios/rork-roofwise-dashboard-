@@ -539,17 +539,17 @@ extension PhotoDetectionResult {
     /// (overlay markers + grouped findings) used by the photo pipeline.
     func asAnalysisResult() -> GeminiAnalysisService.AnalysisResult {
         let markers: [DamageMarker] = detections.map { d in
+            let rect = d.normalizedRect
             let center = d.normalizedCenter ?? (x: 0.5, y: 0.5)
             var radius: CGFloat = 0.03
-            if let b = d.box2d, b.count == 4 {
-                let w = abs(Double(b[3] - b[1])) / 1000.0
-                let h = abs(Double(b[2] - b[0])) / 1000.0
-                radius = CGFloat(max(0.012, min(0.5, max(w, h) / 2)))
+            if let rect {
+                radius = CGFloat(max(0.012, min(0.5, max(rect.width, rect.height) / 2)))
             }
             return DamageMarker(x: CGFloat(center.x), y: CGFloat(center.y), radius: radius,
                                 type: d.damageType.legacyMarkerType,
                                 severity: d.severity.findingSeverity,
-                                note: d.evidence, confidence: d.confidence)
+                                note: d.evidence, confidence: d.confidence,
+                                box: rect)
         }
 
         var byType: [DamageMarkerType: [ForensicDetection]] = [:]

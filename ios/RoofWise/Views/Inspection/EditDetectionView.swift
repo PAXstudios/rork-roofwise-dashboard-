@@ -20,6 +20,10 @@ private struct OriginalSnap: Equatable {
     let radius: Double
     let confidence: Int     // 0–100
     let note: String
+    let boxMinX: Double?
+    let boxMinY: Double?
+    let boxMaxX: Double?
+    let boxMaxY: Double?
 }
 
 /// A live, editable marker on the canvas. `original == nil` means the inspector
@@ -33,16 +37,30 @@ private struct DraftMarker: Identifiable, Equatable {
     var type: DamageMarkerType
     var severity: Int      // 1–10
     var note: String
+    var boxMinX: Double?
+    var boxMinY: Double?
+    var boxMaxX: Double?
+    var boxMaxY: Double?
+
+    var overlayRect: CGRect {
+        if let x0 = boxMinX, let y0 = boxMinY, let x1 = boxMaxX, let y1 = boxMaxY, x1 > x0, y1 > y0 {
+            return CGRect(x: x0, y: y0, width: x1 - x0, height: y1 - y0)
+        }
+        return CGRect(x: x - radius, y: y - radius, width: radius * 2, height: radius * 2)
+    }
 
     func isChanged(from o: OriginalSnap) -> Bool {
         if type != o.type || severity != o.severity || note != o.note { return true }
-        return abs(x - o.x) > 0.003 || abs(y - o.y) > 0.003 || abs(radius - o.radius) > 0.003
+        if abs(x - o.x) > 0.003 || abs(y - o.y) > 0.003 || abs(radius - o.radius) > 0.003 { return true }
+        return abs((boxMinX ?? x) - (o.boxMinX ?? o.x)) > 0.003
+            || abs((boxMinY ?? y) - (o.boxMinY ?? o.y)) > 0.003
     }
 
     func toMarker() -> DamageMarker {
-        DamageMarker(x: CGFloat(x), y: CGFloat(y), radius: CGFloat(radius),
+        DamageMarker(id: id, x: CGFloat(x), y: CGFloat(y), radius: CGFloat(radius),
                      type: type, severity: findingSeverity10(severity),
-                     note: note, confidence: original?.confidence ?? 100)
+                     note: note, confidence: original?.confidence ?? 100,
+                     box: overlayRect)
     }
 }
 
@@ -132,14 +150,19 @@ struct EditDetectionView: View {
         self.onClose = onClose
         self.originalMarkers = photo.damageMarkers
         _drafts = State(initialValue: photo.damageMarkers.map { m in
-            DraftMarker(
+            let r = m.overlayRect
+            return DraftMarker(
                 id: m.id,
                 original: OriginalSnap(type: m.type, severity: sev10(m.severity),
                                        x: Double(m.x), y: Double(m.y),
                                        radius: Double(m.radius), confidence: m.confidence,
-                                       note: m.note),
+                                       note: m.note,
+                                       boxMinX: Double(r.minX), boxMinY: Double(r.minY),
+                                       boxMaxX: Double(r.maxX), boxMaxY: Double(r.maxY)),
                 x: Double(m.x), y: Double(m.y), radius: Double(m.radius),
-                type: m.type, severity: sev10(m.severity), note: m.note)
+                type: m.type, severity: sev10(m.severity), note: m.note,
+                boxMinX: Double(r.minX), boxMinY: Double(r.minY),
+                boxMaxX: Double(r.maxX), boxMaxY: Double(r.maxY))
         })
     }
 
@@ -195,9 +218,12 @@ struct EditDetectionView: View {
                     .onTapGesture { location in handleCanvasTap(location, rect: rect) }
 
                 ForEach(drafts) { d in
+                    let n = d.overlayRect
                     DraftPin(draft: d, selected: selectedID == d.id, pulsing: pulseID == d.id)
-                        .position(x: rect.minX + d.x * rect.width,
-                                  y: rect.minY + d.y * rect.height)
+                        .frame(width: max(22, n.width * rect.width),
+                               height: max(22, n.height * rect.height))
+                        .position(x: rect.minX + n.midX * rect.width,
+                                  y: rect.minY + n.midY * rect.height)
                         .gesture(markerDrag(d, rect: rect))
                         .onTapGesture { selectMarker(d.id) }
                         .onLongPressGesture(minimumDuration: 0.4) { openDetail(d.id) }
@@ -558,7 +584,9 @@ struct EditDetectionView: View {
         let ny = Double((location.y - rect.minY) / rect.height)
         guard nx >= 0, nx <= 1, ny >= 0, ny <= 1 else { return }
         let new = DraftMarker(id: UUID(), original: nil, x: nx, y: ny, radius: 0.04,
-                              type: currentCategory, severity: currentSeverity, note: "")
+                              type: currentCategory, severity: currentSeverity, note: "",
+                              boxMinX: nx - 0.03, boxMinY: ny - 0.03,
+                              boxMaxX: nx + 0.03, boxMaxY: ny + 0.03)
         drafts.append(new)
         withAnimation(Theme.Motion.snappy) { selectedID = new.id }
         pulseID = new.id
@@ -591,13 +619,24 @@ struct EditDetectionView: View {
 
     private func setPosition(_ id: UUID, x: Double, y: Double) {
         guard let idx = drafts.firstIndex(where: { $0.id == id }) else { return }
+        let dx = x - drafts[idx].x
+        let dy = y - drafts[idx].y
         drafts[idx].x = x
         drafts[idx].y = y
+        if let x0 = drafts[idx].boxMinX { drafts[idx].boxMinX = x0 + dx }
+        if let y0 = drafts[idx].boxMinY { drafts[idx].boxMinY = y0 + dy }
+        if let x1 = drafts[idx].boxMaxX { drafts[idx].boxMaxX = x1 + dx }
+        if let y1 = drafts[idx].boxMaxY { drafts[idx].boxMaxY = y1 + dy }
     }
 
     private func setRadius(_ id: UUID, value: Double) {
         guard let idx = drafts.firstIndex(where: { $0.id == id }) else { return }
-        drafts[idx].radius = value
+        let next = min(max(value, 0.015), 0.18)
+        drafts[idx].radius = next
+        drafts[idx].boxMinX = drafts[idx].x - next
+        drafts[idx].boxMinY = drafts[idx].y - next
+        drafts[idx].boxMaxX = drafts[idx].x + next
+        drafts[idx].boxMaxY = drafts[idx].y + next
     }
 
     private func radius(of id: UUID) -> Double {
@@ -699,7 +738,7 @@ struct EditDetectionView: View {
         showToast(queued
                   ? EditToast(text: "Couldn’t reach the cloud — corrections saved, will retry",
                               systemImage: "arrow.triangle.2.circlepath", style: .info)
-                  : EditToast(text: "Thanks — your corrections will train the model for everyone",
+                  : EditToast(text: "Saved — your corrections stay on this device and sync when you're online",
                               systemImage: "arrow.up.circle.fill", style: .success))
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) { onClose() }
     }
@@ -720,11 +759,15 @@ struct EditDetectionView: View {
                     action: changed ? .modify : .confirm,
                     aiPredictionId: d.id.uuidString,
                     aiDamageType: orig.type.rawValue,
-                    aiBoundingBox: FeedbackBox.from(x: orig.x, y: orig.y, radius: orig.radius),
+                    aiBoundingBox: FeedbackBox.from(rect: CGRect(
+                        x: orig.boxMinX ?? (orig.x - orig.radius),
+                        y: orig.boxMinY ?? (orig.y - orig.radius),
+                        width: (orig.boxMaxX ?? (orig.x + orig.radius)) - (orig.boxMinX ?? (orig.x - orig.radius)),
+                        height: (orig.boxMaxY ?? (orig.y + orig.radius)) - (orig.boxMinY ?? (orig.y - orig.radius)))),
                     aiConfidence: min(Double(orig.confidence) / 100.0, 9.99),
                     aiModelVersion: model,
                     userDamageType: d.type.rawValue,
-                    userBoundingBox: FeedbackBox.from(x: d.x, y: d.y, radius: d.radius),
+                    userBoundingBox: FeedbackBox.from(rect: d.overlayRect),
                     userSeverity: d.severity,
                     userNotes: d.note.isEmpty ? nil : d.note,
                     userTrustScore: trust))
@@ -734,7 +777,7 @@ struct EditDetectionView: View {
                     action: .addNew,
                     aiModelVersion: model,
                     userDamageType: d.type.rawValue,
-                    userBoundingBox: FeedbackBox.from(x: d.x, y: d.y, radius: d.radius),
+                    userBoundingBox: FeedbackBox.from(rect: d.overlayRect),
                     userSeverity: d.severity,
                     userNotes: d.note.isEmpty ? nil : d.note,
                     userTrustScore: trust))
@@ -747,7 +790,7 @@ struct EditDetectionView: View {
                 action: .reject,
                 aiPredictionId: m.id.uuidString,
                 aiDamageType: m.type.rawValue,
-                aiBoundingBox: FeedbackBox.from(x: Double(m.x), y: Double(m.y), radius: Double(m.radius)),
+                aiBoundingBox: FeedbackBox.from(marker: m),
                 aiConfidence: min(Double(m.confidence) / 100.0, 9.99),
                 aiModelVersion: model,
                 userTrustScore: trust))
@@ -830,26 +873,25 @@ private struct DraftPin: View {
     let pulsing: Bool
 
     var body: some View {
-        let size = max(28, min(110, draft.radius * 320))
         ZStack {
             if selected {
-                Circle()
+                RoundedRectangle(cornerRadius: 5)
                     .stroke(.white, lineWidth: 2)
-                    .frame(width: size + 12, height: size + 12)
+                    .padding(-6)
             }
-            Circle()
+            RoundedRectangle(cornerRadius: 4)
                 .fill(draft.type.color.opacity(0.18))
-                .overlay(Circle().stroke(draft.type.color, lineWidth: selected ? 3.5 : 2.2))
-                .frame(width: size, height: size)
+                .overlay(RoundedRectangle(cornerRadius: 4)
+                    .stroke(draft.type.color, lineWidth: selected ? 3.5 : 2.2))
             Image(systemName: draft.type.icon)
-                .font(.system(size: max(11, size * 0.34), weight: .heavy))
+                .font(.system(size: 12, weight: .heavy))
                 .foregroundStyle(draft.type.color)
                 .shadow(color: .black.opacity(0.5), radius: 2)
         }
-        .scaleEffect(pulsing ? 1.18 : 1)
+        .scaleEffect(pulsing ? 1.08 : 1)
         .animation(.spring(response: 0.3, dampingFraction: 0.5), value: pulsing)
         .animation(Theme.Motion.snappy, value: selected)
-        .contentShape(Circle())
+        .contentShape(RoundedRectangle(cornerRadius: 4))
     }
 }
 

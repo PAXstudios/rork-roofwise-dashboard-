@@ -18,25 +18,20 @@ struct DamageExplanation {
     let homeownerQuestion: String  // suggested closing line
 }
 
-/// Gemini text-only integration for the Training tab:
+/// Gemini text-only coaching via the same Rork Toolkit proxy as roof detection.
 ///  - Role-Play Coach: scores a rep's pitch and rewrites it
 ///  - Damage Explainer: turns inspector findings into homeowner-friendly language
 enum TrainingCoachService {
-    static var apiKey: String { Config.allValues["EXPO_PUBLIC_GEMINI_API_KEY"] ?? "" }
-    static let endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+    private static let model = GeminiAnalysisService.modelVersion
 
     // MARK: - Role-Play Coach
 
     static func coachPitch(_ pitch: String,
                            scenario: String,
                            customerBrief: String? = nil) async -> CoachFeedback {
-        let key = apiKey
         let trimmed = pitch.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !key.isEmpty, key != "GEMINI_API_KEY",
-              let url = URL(string: "\(endpoint)?key=\(key)"),
-              !trimmed.isEmpty else {
-            try? await Task.sleep(for: .milliseconds(700))
-            return mockCoachFeedback(for: trimmed)
+        guard !trimmed.isEmpty else {
+            return unavailableCoach(reason: "Type a pitch first.")
         }
 
         let contextBlock = (customerBrief?.isEmpty == false)
@@ -70,46 +65,29 @@ enum TrainingCoachService {
         }
         """
 
-        let body: [String: Any] = [
-            "contents": [["parts": [["text": prompt]]]],
-            "generationConfig": [
-                "responseMimeType": "application/json",
-                "temperature": 0.4
-            ]
-        ]
-
-        var req = URLRequest(url: url)
-        req.httpMethod = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
-
-        do {
-            let (data, _) = try await URLSession.shared.data(for: req)
-            if let parsed = parseCoachResponse(data) {
-                return parsed
-            }
-        } catch {
-            // fall through to mock
+        guard let data = await postJSON(systemPrompt: prompt, userText: "Score this pitch.") else {
+            return unavailableCoach(reason: "RoofWise Vision isn't available. Try again when you're online.")
         }
-        try? await Task.sleep(for: .milliseconds(400))
-        return mockCoachFeedback(for: trimmed)
+        if let parsed = parseCoachResponse(data) { return parsed }
+        return unavailableCoach(reason: "Couldn't score this pitch. Try again.")
     }
 
     // MARK: - Damage Explainer
 
     static func explainDamage(findings: [InspectionFinding],
                               homeownerName: String?) async -> DamageExplanation {
-        let key = apiKey
         let findingLines = findings
             .filter { $0.detected }
             .map { "- \($0.display) (\($0.severity.rawValue)): \($0.value)" }
             .joined(separator: "\n")
 
-        guard !key.isEmpty, key != "GEMINI_API_KEY",
-              let url = URL(string: "\(endpoint)?key=\(key)"),
-              !findingLines.isEmpty else {
-            try? await Task.sleep(for: .milliseconds(700))
-            return mockExplanation(for: findings, name: homeownerName)
+        guard !findingLines.isEmpty else {
+            return DamageExplanation(
+                headline: "No inspection findings yet",
+                plainSummary: "Inspect a roof first. This script is built from real AI findings, not sample damage.",
+                bullets: [],
+                homeownerQuestion: ""
+            )
         }
 
         let nameLine = (homeownerName?.isEmpty == false) ? "The homeowner's name is \(homeownerName!)." : ""
@@ -118,6 +96,7 @@ enum TrainingCoachService {
         You are a friendly, trusted roofing rep explaining inspection findings to a homeowner standing at their front door. \(nameLine)
         Use simple, non-technical language. No insurance jargon. Use everyday analogies.
         Be warm, confident, and brief. Connect each finding to a real consequence (leaks, premature failure).
+        Do not invent storms, streets, dates, or coverage. Only explain the findings listed below.
 
         FINDINGS FROM THE INSPECTION:
         \(findingLines)
@@ -127,33 +106,59 @@ enum TrainingCoachService {
           "headline": "<one short sentence — the big-picture takeaway>",
           "plain_summary": "<2-3 sentence paragraph the rep can read out loud>",
           "bullets": ["<finding explained in plain English with analogy>", "<another>", "<another>", "<another>"],
-          "homeowner_question": "<a single soft-close question to ask after explaining, e.g. 'Want me to help you file with your carrier this week?'>"
+          "homeowner_question": "<a single soft-close question to ask after explaining>"
         }
         """
 
+        guard let data = await postJSON(systemPrompt: prompt, userText: "Translate these findings.") else {
+            return DamageExplanation(
+                headline: "Couldn't generate an explanation",
+                plainSummary: "RoofWise Vision is unavailable. Try again when you're online.",
+                bullets: [],
+                homeownerQuestion: ""
+            )
+        }
+        if let parsed = parseExplainerResponse(data) { return parsed }
+        return DamageExplanation(
+            headline: "Couldn't generate an explanation",
+            plainSummary: "RoofWise Vision returned an unreadable response. Try again.",
+            bullets: [],
+            homeownerQuestion: ""
+        )
+    }
+
+    // MARK: - Toolkit request
+
+    private static func postJSON(systemPrompt: String, userText: String) async -> Data? {
+        let secret = Config.EXPO_PUBLIC_RORK_TOOLKIT_SECRET_KEY
+        let toolkitURL = Config.EXPO_PUBLIC_TOOLKIT_URL
+        guard !secret.isEmpty, !toolkitURL.isEmpty,
+              let url = URL(string: "\(toolkitURL)/v2/vercel/v1/chat/completions") else {
+            return nil
+        }
         let body: [String: Any] = [
-            "contents": [["parts": [["text": prompt]]]],
-            "generationConfig": [
-                "responseMimeType": "application/json",
-                "temperature": 0.5
+            "model": model,
+            "temperature": 0.4,
+            "messages": [
+                ["role": "system", "content": systemPrompt],
+                ["role": "user", "content": userText]
             ]
         ]
-
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("Bearer \(secret)", forHTTPHeaderField: "Authorization")
+        req.timeoutInterval = 30
         req.httpBody = try? JSONSerialization.data(withJSONObject: body)
-
         do {
-            let (data, _) = try await URLSession.shared.data(for: req)
-            if let parsed = parseExplainerResponse(data) {
-                return parsed
+            let (data, response) = try await URLSession.shared.data(for: req)
+            if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+                return nil
             }
+            return data
         } catch {
-            // fall through
+            return nil
         }
-        try? await Task.sleep(for: .milliseconds(400))
-        return mockExplanation(for: findings, name: homeownerName)
     }
 
     // MARK: - Parsing
@@ -189,64 +194,43 @@ enum TrainingCoachService {
     }
 
     private static func extractJSONObject(from data: Data) -> [String: Any]? {
-        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let candidates = root["candidates"] as? [[String: Any]],
-              let content = candidates.first?["content"] as? [String: Any],
-              let parts = content["parts"] as? [[String: Any]],
-              let text = parts.first?["text"] as? String,
-              let jsonData = text.data(using: .utf8),
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        let text: String? = {
+            if let choices = root["choices"] as? [[String: Any]],
+               let message = choices.first?["message"] as? [String: Any] {
+                if let s = message["content"] as? String { return s }
+                if let parts = message["content"] as? [[String: Any]] {
+                    return parts.compactMap { $0["text"] as? String }.joined()
+                }
+            }
+            if let candidates = root["candidates"] as? [[String: Any]],
+               let content = candidates.first?["content"] as? [String: Any],
+               let parts = content["parts"] as? [[String: Any]],
+               let s = parts.first?["text"] as? String {
+                return s
+            }
+            return nil
+        }()
+        guard var s = text?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty else { return nil }
+        if s.hasPrefix("```") {
+            if let nl = s.firstIndex(of: "\n") { s = String(s[s.index(after: nl)...]) }
+            if s.hasSuffix("```") { s = String(s.dropLast(3)) }
+            s = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        guard let jsonData = s.data(using: .utf8),
               let payload = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] else {
             return nil
         }
         return payload
     }
 
-    // MARK: - Mocks (offline / no API key)
-
-    private static func mockCoachFeedback(for pitch: String) -> CoachFeedback {
-        let words = pitch.split(separator: " ").count
-        let baseScore = words < 8 ? 52 : (words < 25 ? 74 : 81)
-        return CoachFeedback(
-            overallScore: baseScore,
-            tone: words < 12 ? "Hesitant" : "Confident",
-            strengths: [
-                "You introduced yourself early — homeowners need to know who you are",
-                "You mentioned the recent storm, which builds urgency",
-                "You kept it short enough to deliver before they close the door"
-            ],
-            improvements: [
-                "Open with a pattern interrupt — comment on something specific to their home",
-                "Replace 'free inspection' with 'second set of eyes' — more credible",
-                "End with a clear ask: 'Can I take 12 minutes to check the back slope?'"
-            ],
-            rewrittenPitch: "Hey, I'm Jordan with RoofWise — we've been on three roofs on \(["Cedar", "Maple", "Oak"].randomElement() ?? "Maple") this morning that took serious hail damage from the April 14th storm. Most of it isn't visible from the ground. I'd love to take 12 minutes, do a quick test square on your back slope, and show you exactly what I find. Sound fair?"
-        )
-    }
-
-    private static func mockExplanation(for findings: [InspectionFinding], name: String?) -> DamageExplanation {
-        let detected = findings.filter { $0.detected }
-        let bullets = detected.prefix(4).map { f -> String in
-            switch f.label {
-            case "hail_damage", "bruising":
-                return "Hail bruising — like a bruise on an apple, the shingle is soft underneath. Water gets in next storm."
-            case "granule_loss":
-                return "Granule loss — your shingles are like sandpaper losing their grit. The asphalt under them dries out and cracks."
-            case "missing_shingles":
-                return "Missing shingles — these are the obvious ones. Open exposure means the wood underneath is getting wet."
-            case "wind_creasing":
-                return "Wind creasing — your shingles got bent like a folded business card. The seal is broken even if they look flat."
-            case "flashing_damage":
-                return "Flashing damage — these are the metal pieces around your chimney and vents. They're the #1 spot leaks start."
-            default:
-                return "\(f.display) — \(f.value)"
-            }
-        }
-        let opener = (name?.isEmpty == false) ? "\(name!), here's the short version:" : "Here's the short version:"
-        return DamageExplanation(
-            headline: "Your roof took real damage from that storm — but it's all covered if we move now.",
-            plainSummary: "\(opener) the storm hit your roof harder than it looks from the ground. There are \(detected.count) different issues we documented, and most of them get worse the longer we wait. The good news is your insurance is built for exactly this — we just need to file before the carrier deadline.",
-            bullets: Array(bullets),
-            homeownerQuestion: "Want me to walk you through what filing a claim actually looks like — no obligation?"
+    private static func unavailableCoach(reason: String) -> CoachFeedback {
+        CoachFeedback(
+            overallScore: 0,
+            tone: "Unavailable",
+            strengths: [],
+            improvements: [reason],
+            rewrittenPitch: ""
         )
     }
 }

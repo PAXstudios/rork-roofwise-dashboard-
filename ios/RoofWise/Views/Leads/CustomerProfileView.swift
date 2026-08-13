@@ -1028,12 +1028,14 @@ struct CustomerProfileView: View {
             .overlay {
                 GeometryReader { geo in
                     ForEach(photo.damageMarkers) { marker in
-                        Circle()
-                            .fill(marker.type.color.opacity(0.95))
-                            .overlay(Circle().stroke(.white, lineWidth: 1))
-                            .frame(width: 7, height: 7)
-                            .position(x: marker.x * geo.size.width,
-                                      y: marker.y * geo.size.height)
+                        let n = marker.overlayRect
+                        RoundedRectangle(cornerRadius: 1)
+                            .fill(marker.type.color.opacity(0.9))
+                            .overlay(RoundedRectangle(cornerRadius: 1).stroke(.white, lineWidth: 0.5))
+                            .frame(width: max(3, n.width * geo.size.width),
+                                   height: max(3, n.height * geo.size.height))
+                            .position(x: n.midX * geo.size.width,
+                                      y: n.midY * geo.size.height)
                     }
                 }
                 .allowsHitTesting(false)

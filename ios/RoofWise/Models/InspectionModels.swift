@@ -235,21 +235,61 @@ extension DamageMarkerType {
 }
 
 struct DamageMarker: Identifiable {
-    let id = UUID()
-    let x: CGFloat       // 0-1 normalized
-    let y: CGFloat       // 0-1 normalized
-    let radius: CGFloat  // 0-1 normalized (relative to min image dimension)
+    let id: UUID
+    let x: CGFloat       // 0-1 normalized center
+    let y: CGFloat       // 0-1 normalized center
+    let radius: CGFloat  // 0-1 fallback (half the larger box edge)
     let type: DamageMarkerType
     let severity: FindingSeverity
     let note: String
     let confidence: Int  // 0-100 from Gemini
+    /// Normalized 0–1 image-space box (origin top-left). Present when Gemini
+    /// returned a real `box_2d`. Overlays MUST draw this rect, not a generic pin.
+    let box: CGRect?
 
-    init(x: CGFloat, y: CGFloat, radius: CGFloat,
+    init(id: UUID = UUID(),
+         x: CGFloat, y: CGFloat, radius: CGFloat,
          type: DamageMarkerType, severity: FindingSeverity,
-         note: String, confidence: Int = 0) {
+         note: String, confidence: Int = 0,
+         box: CGRect? = nil) {
+        self.id = id
         self.x = x; self.y = y; self.radius = radius
         self.type = type; self.severity = severity
         self.note = note; self.confidence = confidence
+        self.box = Self.sanitized(box)
+    }
+
+    /// The rect to draw. Prefers Gemini's tight box; falls back to a square
+    /// around the inspector-placed center only when no box exists.
+    var overlayRect: CGRect {
+        if let box, box.width > 0.004, box.height > 0.004 { return box }
+        let r = max(0.012, radius)
+        return CGRect(x: x - r, y: y - r, width: r * 2, height: r * 2)
+    }
+
+    var hasGeminiBox: Bool { box != nil }
+
+    /// Maps `overlayRect` into a pixel rect inside the displayed image frame.
+    func pixelRect(in imageRect: CGRect) -> CGRect {
+        let n = overlayRect
+        return CGRect(
+            x: imageRect.minX + n.minX * imageRect.width,
+            y: imageRect.minY + n.minY * imageRect.height,
+            width: max(8, n.width * imageRect.width),
+            height: max(8, n.height * imageRect.height)
+        )
+    }
+
+    private static func sanitized(_ box: CGRect?) -> CGRect? {
+        guard let box else { return nil }
+        let x = max(0, min(1, box.minX))
+        let y = max(0, min(1, box.minY))
+        let maxX = max(0, min(1, box.maxX))
+        let maxY = max(0, min(1, box.maxY))
+        let w = maxX - x
+        let h = maxY - y
+        guard w > 0.002, h > 0.002 else { return nil }
+        return CGRect(x: x, y: y, width: w, height: h)
     }
 }
 

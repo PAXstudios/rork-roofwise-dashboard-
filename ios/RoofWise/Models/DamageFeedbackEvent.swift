@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 
 // MARK: - Damage feedback (human-in-the-loop learning signal)
 //
@@ -27,6 +28,17 @@ nonisolated struct FeedbackBox: Codable, Hashable, Sendable {
         func n(_ v: Double) -> Double { (min(max(v, 0), 1) * 1000).rounded() }
         return FeedbackBox(ymin: n(y - radius), xmin: n(x - radius),
                            ymax: n(y + radius), xmax: n(x + radius))
+    }
+
+    /// Build from a normalized 0–1 image-space rect (origin top-left).
+    static func from(rect: CGRect) -> FeedbackBox {
+        func n(_ v: Double) -> Double { (min(max(v, 0), 1) * 1000).rounded() }
+        return FeedbackBox(ymin: n(Double(rect.minY)), xmin: n(Double(rect.minX)),
+                           ymax: n(Double(rect.maxY)), xmax: n(Double(rect.maxX)))
+    }
+
+    static func from(marker: DamageMarker) -> FeedbackBox {
+        from(rect: marker.overlayRect)
     }
 }
 

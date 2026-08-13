@@ -269,12 +269,14 @@ struct SlopePhotosSheet: View {
                         // Inline marker dots so user sees damage even before opening
                         GeometryReader { geo in
                             ForEach(photo.damageMarkers) { marker in
-                                Circle()
-                                    .fill(marker.type.color.opacity(0.9))
-                                    .overlay(Circle().stroke(.white, lineWidth: 1))
-                                    .frame(width: 10, height: 10)
-                                    .position(x: marker.x * geo.size.width,
-                                              y: marker.y * geo.size.height)
+                                let n = marker.overlayRect
+                                RoundedRectangle(cornerRadius: 1.5)
+                                    .fill(marker.type.color.opacity(0.85))
+                                    .overlay(RoundedRectangle(cornerRadius: 1.5).stroke(.white, lineWidth: 0.6))
+                                    .frame(width: max(4, n.width * geo.size.width),
+                                           height: max(4, n.height * geo.size.height))
+                                    .position(x: n.midX * geo.size.width,
+                                              y: n.midY * geo.size.height)
                             }
                         }
                         .allowsHitTesting(false)

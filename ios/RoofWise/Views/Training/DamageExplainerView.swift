@@ -8,7 +8,6 @@ struct DamageExplainerView: View {
     @State private var selectedCustomerID: UUID? = nil
     @State private var explanation: DamageExplanation? = nil
     @State private var isGenerating = false
-    @State private var useMockFindings = false
 
     var body: some View {
         NavigationStack {
@@ -59,9 +58,7 @@ struct DamageExplainerView: View {
     }
 
     private var effectiveFindings: [InspectionFinding] {
-        let real = selectedCustomer?.damageFindings.filter { $0.detected } ?? []
-        if !real.isEmpty && !useMockFindings { return real }
-        return InspectionMock.findings.filter { $0.detected }
+        selectedCustomer?.damageFindings.filter { $0.detected } ?? []
     }
 
     // MARK: - Sections
@@ -135,15 +132,23 @@ struct DamageExplainerView: View {
                     .foregroundStyle(Theme.inkSoft)
                     .textCase(.uppercase)
                 Spacer()
-                if let c = selectedCustomer, c.damageFindings.filter({ $0.detected }).isEmpty {
-                    Text("Using sample data")
+                if selectedCustomer != nil && effectiveFindings.isEmpty {
+                    Text("No findings yet")
                         .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Theme.amber)
+                        .foregroundStyle(Theme.inkFaint)
                         .padding(.horizontal, 8).padding(.vertical, 3)
-                        .background(Theme.amberSoft, in: .capsule)
+                        .background(Theme.canvas, in: .capsule)
                 }
             }
             VStack(spacing: 6) {
+                if effectiveFindings.isEmpty {
+                    Text(selectedCustomer == nil
+                         ? "Pick a customer with a completed inspection."
+                         : "This customer has no AI findings yet. Inspect a roof first.")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Theme.inkSoft)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
                 ForEach(effectiveFindings.prefix(5)) { f in
                     HStack(spacing: 10) {
                         Image(systemName: f.icon)

@@ -490,18 +490,15 @@ nonisolated enum HaagReportGenerator {
         let drawn = aspectFitRect(imageSize: photo.image.size, in: imgFrame)
         photo.image.draw(in: drawn)
 
-        // Damage markers (normalized to the image; radius vs min image dim).
+        // Damage boxes from Gemini (normalized 0–1 image space).
         for marker in photo.damageMarkers {
-            let cx = drawn.minX + marker.x * drawn.width
-            let cy = drawn.minY + marker.y * drawn.height
-            let r = max(4, marker.radius * min(drawn.width, drawn.height))
+            let box = marker.pixelRect(in: drawn)
             let color = markerColor(marker.type)
-            let dot = CGRect(x: cx - r, y: cy - r, width: r * 2, height: r * 2)
             cg.setStrokeColor(color.cgColor)
-            cg.setLineWidth(2)
-            cg.strokeEllipse(in: dot)
-            cg.setFillColor(color.withAlphaComponent(0.22).cgColor)
-            cg.fillEllipse(in: dot)
+            cg.setLineWidth(1.8)
+            cg.stroke(box.insetBy(dx: 0.5, dy: 0.5))
+            cg.setFillColor(color.withAlphaComponent(0.18).cgColor)
+            cg.fill(box)
         }
         cg.restoreGState()
 
