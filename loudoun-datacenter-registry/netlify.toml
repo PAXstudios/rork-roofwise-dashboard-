@@ -1,0 +1,51 @@
+# Netlify configuration for Loudoun Data Center Watch.
+#
+# This file is deliberately inside the project folder rather than at the
+# repository root. The repository also holds RoofWise — an iOS app and its
+# backend — and nothing about deploying this site should sit in a shared
+# location where it could affect them.
+#
+# For that to work, ONE setting has to be made in the Netlify UI when the site
+# is first created:
+#
+#     Site settings → Build & deploy → Base directory:
+#         loudoun-datacenter-registry
+#
+# Netlify then reads this file from that directory, and every path below is
+# relative to it. Without the base directory set, Netlify looks for a config at
+# the repository root, finds none, and publishes the wrong folder.
+#
+# Cloudflare Pages is an equally good host and ignores this file. Its
+# equivalent settings, all in the UI:
+#
+#     Build command:               (leave empty)
+#     Build output directory:      loudoun-datacenter-registry
+#
+# Cloudflare reads _headers from the output directory, same as Netlify does.
+
+[build]
+  # Relative to the base directory, so this is the project folder itself.
+  publish = "."
+
+  # There is no build step, and that is a deliberate property of this project
+  # rather than an omission: it is plain HTML, CSS and JavaScript with its
+  # dependencies vendored, so it can be maintained by someone who does not
+  # have a JavaScript toolchain and cannot break because of one.
+  command = ""
+
+[build.environment]
+  # Nothing to install. Stops Netlify inferring a Node build from any
+  # package.json it finds elsewhere in the repository.
+  NETLIFY_USE_YARN = "false"
+
+# 404.html at the publish root is served automatically for unmatched paths by
+# both Netlify and Cloudflare Pages, so no redirect rule is needed for it.
+
+[[headers]]
+  # Netlify merges this with _headers. The security headers and the cache
+  # rules live in _headers, because Cloudflare Pages reads that file too and
+  # this one it would ignore — keeping them in one place means the two hosts
+  # cannot drift apart.
+  for = "/*"
+  [headers.values]
+    X-Robots-Tag = "index, follow"

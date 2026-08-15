@@ -82,29 +82,70 @@ are unreachable to it.
 Any static host. Every path in the site is relative, so it works at a domain root or under a
 subpath without changes.
 
-**Fastest, no account** — zip the *contents* of this directory (so `index.html` is at the top
-level of the archive, not inside a folder) and drop it on
-[app.netlify.com/drop](https://app.netlify.com/drop). Live URL in about thirty seconds.
+### This project shares a repository, and the deployment must not
 
-**Netlify / Cloudflare Pages / Vercel** — point the project at this repository, set the publish
-directory to `loudoun-datacenter-registry`, and leave the build command empty.
+This directory lives inside the **RoofWise** repository — an iOS app (`ios/`) and its backend
+(`backend/`). The two projects share no code, and the deployment is arranged so they share no
+infrastructure either:
 
-**GitHub Pages** — note that Pages only publishes from a repository root or from `/docs`; it
-**cannot** serve an arbitrary subdirectory, so pointing it at `loudoun-datacenter-registry`
-will not work. Two routes that do:
+- **Nothing to do with this site sits at the repository root.** No workflow in `.github/`, no
+  config file, nothing. The two files that configure hosting — `_headers` and `netlify.toml` —
+  are both in this directory, and both are ignored by anything building RoofWise.
+- **GitHub Pages is deliberately not used.** A repository gets exactly one Pages site, and
+  turning it on here would spend RoofWise's on this project. Pages also cannot serve a
+  subdirectory without either a workflow at the repository root or a branch whose root is this
+  folder — both of which put this project's deployment into shared space.
+- The only RoofWise-owned file this project has ever touched is `rork.json`, where it is
+  registered as a third app alongside `RoofWise` and `Backend`. That entry is additive; remove
+  it and nothing here breaks.
 
-- *Actions* (keeps the source where it is). Set Settings → Pages → Source to "GitHub Actions"
-  and add a workflow that runs `actions/upload-pages-artifact` with
-  `path: loudoun-datacenter-registry`, then `actions/deploy-pages`.
-- *A dedicated branch*. Push a branch whose root is this directory's contents, then
-  Settings → Pages → Deploy from a branch → that branch → `/ (root)`.
+### Netlify
 
-Add an empty `.nojekyll` file if you use Pages, so it doesn't try to run the site through
-Jekyll.
+Point a new site at this repository, then set **one** thing in Site settings → Build & deploy:
+
+    Base directory:    loudoun-datacenter-registry
+
+Netlify then reads `netlify.toml` from this folder and everything else follows from it. Leave
+the build command empty — there is no build step. Without the base directory set, Netlify looks
+for a config at the repository root, finds none, and publishes the wrong thing.
+
+### Cloudflare Pages
+
+Equally good, and it ignores `netlify.toml`. In the project's build settings:
+
+    Build command:              (leave empty)
+    Build output directory:     loudoun-datacenter-registry
+
+Cloudflare reads `_headers` from the output directory, exactly as Netlify does, so the security
+headers and cache rules apply identically on both.
+
+### Fastest, no account
+
+Zip the *contents* of this directory — so `index.html` is at the top level of the archive, not
+inside a folder — and drop it on [app.netlify.com/drop](https://app.netlify.com/drop). Live URL
+in about thirty seconds. Good for showing someone; use a connected repository for anything real.
+
+### The Content-Security-Policy needs one edit when you connect Supabase
+
+`_headers` restricts the site to the hosts it actually uses. Scripts are limited to this origin
+with no `unsafe-inline` at all, which is possible because the site has no inline `<script>`
+blocks anywhere.
+
+That policy does **not** yet include a Supabase project, because none is configured. When you
+fill in `SUPABASE_URL`, add the same origin to both `connect-src` and `img-src` in `_headers` —
+`connect-src` for the REST and auth calls, `img-src` for report photos out of storage. Miss it
+and the browser blocks every request to your database, and the site fails in a way no visitor
+could diagnose. The file says so at the top, where you will be when you need it.
+
+Verified: all fourteen pages render with zero CSP violations, including the map's four tile
+hosts, the vendored fonts, the address search, and the canvas-generated photo previews.
+
+### Either host, once it is up
 
 If you have connected Supabase, set its **Site URL** and redirect allow-list to the deployed
 origin, or moderator sign-in will fail. Without Supabase the deployed site runs in demo mode:
-it is fully browsable, but submitted reports stay in the visitor's own browser.
+it is fully browsable, but submitted reports stay in the visitor's own browser and a banner
+says so.
 
 ---
 
