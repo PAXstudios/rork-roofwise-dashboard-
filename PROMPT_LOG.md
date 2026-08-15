@@ -404,3 +404,51 @@ A field-ready CRM and AI inspection tool that helps roofing pros:
 **Open questions / Follow-ups:**
 - `CONTACT_EMAIL` is still unset; the privacy, terms and about pages say so plainly.
 - Two real bugs fixed along the way that were latent before this change: `.chart th, .chart td` at specificity (0,1,1) was overriding the chart cells' horizontal padding, and a zero-count chart row still drew a 3px stub because `.chart__bar` carries `min-width`.
+
+---
+
+## [2026-08-15] #10 — Loudoun Data Center Watch moved to its own repository
+
+**Prompt (summarized):**
+> Make RoofWise and the Loudoun data center website completely two different
+> projects. I think that means they are not on the same repo.
+
+**Intent / Goal:**
+- The two projects share no code and should share no repository, no deployment
+  and no configuration. Entry #08 called it "a sibling project, not a RoofWise
+  change"; this finishes that thought properly.
+
+**Decisions made:**
+- Moved to **PAXstudios/loudoun-data-center-watch**, extracted with
+  `git subtree split` so its 20 commits went across intact rather than as a
+  snapshot. Verified before the move: 91 files identical to the working tree,
+  and no `ios/`, `backend/` or `rork.json` file anywhere in the extracted
+  history.
+- **GitHub Pages was never enabled here, deliberately.** A repository gets one
+  Pages site; using it for the sibling project would have spent RoofWise's. The
+  new repo deploys from Netlify or Cloudflare Pages instead.
+- `PROMPT_LOG.md` entries #08 and #09 are **left in place**. They are an
+  accurate record of what happened in this repository and when; deleting them
+  would make the log wrong about its own past.
+- The folder is removed from the working tree, not from history. Scrubbing it
+  from past commits would mean force-rewriting every commit in the RoofWise
+  repository — a real risk to the app for a cosmetic gain.
+
+**Files touched:**
+- `loudoun-datacenter-registry/` — deleted, now at
+  `github.com/PAXstudios/loudoun-data-center-watch`.
+- `rork.json` — removed the third app entry. `RoofWise` and `Backend` are
+  byte-for-byte unchanged.
+- `PROMPT_LOG.md` — this entry.
+
+**Verification:**
+- The new repository was cloned back out, served, and exercised: the
+  full-screen map, the facility picker and the home page all run from it with
+  no console errors and nothing fetched from this repository.
+- After this commit, `git grep -i loudoun` over the working tree returns
+  nothing.
+
+**Open questions / Follow-ups:**
+- `CONTRIBUTING.md`'s stack line still says "Expo + React Native + TypeScript".
+  It was inaccurate before either of these projects existed — RoofWise is
+  native SwiftUI — and is still worth correcting in a change of its own.

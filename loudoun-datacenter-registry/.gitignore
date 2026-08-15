@@ -1,8 +1,0 @@
-# Local artefacts — nothing here belongs in the repository.
-__pycache__/
-*.pyc
-.DS_Store
-
-# If you ever keep credentials outside config.js, keep them out of git.
-.env
-.env.local
