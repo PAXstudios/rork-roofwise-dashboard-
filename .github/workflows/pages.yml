@@ -50,8 +50,11 @@ jobs:
       - name: Check nothing obvious is missing
         run: |
           cd _site
-          for f in index.html reports.html watchlist.html news.html \
-                   data/facilities.geojson data/news.json js/map.js css/tokens.css; do
+          for f in index.html explore.html report.html reports.html watchlist.html \
+                   news.html stats.html about.html privacy.html terms.html 404.html \
+                   data/facilities.geojson data/districts.geojson data/news.json \
+                   js/map.js js/explore.js js/campuses.js js/facility-picker.js \
+                   css/tokens.css css/explore.css; do
             test -f "$f" || { echo "missing $f"; exit 1; }
           done
           echo "$(find . -type f | wc -l) files, $(du -sh . | cut -f1)"
