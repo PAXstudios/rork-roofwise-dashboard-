@@ -1027,7 +1027,7 @@ struct CustomerProfileView: View {
             .clipShape(.rect(cornerRadius: 12))
             .overlay {
                 GeometryReader { geo in
-                    ForEach(photo.damageMarkers) { marker in
+                    ForEach(Array(photo.damageMarkers.enumerated()), id: \.element.id) { index, marker in
                         let n = marker.overlayRect
                         RoundedRectangle(cornerRadius: 1)
                             .fill(marker.type.color.opacity(0.9))
@@ -1036,6 +1036,7 @@ struct CustomerProfileView: View {
                                    height: max(3, n.height * geo.size.height))
                             .position(x: n.midX * geo.size.width,
                                       y: n.midY * geo.size.height)
+                            .detectionBoxAppear(index: index)
                     }
                 }
                 .allowsHitTesting(false)

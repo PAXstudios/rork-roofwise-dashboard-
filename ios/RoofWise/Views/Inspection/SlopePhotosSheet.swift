@@ -268,7 +268,7 @@ struct SlopePhotosSheet: View {
                     .overlay(alignment: .bottomLeading) {
                         // Inline marker dots so user sees damage even before opening
                         GeometryReader { geo in
-                            ForEach(photo.damageMarkers) { marker in
+                            ForEach(Array(photo.damageMarkers.enumerated()), id: \.element.id) { index, marker in
                                 let n = marker.overlayRect
                                 RoundedRectangle(cornerRadius: 1.5)
                                     .fill(marker.type.color.opacity(0.85))
@@ -277,6 +277,7 @@ struct SlopePhotosSheet: View {
                                            height: max(4, n.height * geo.size.height))
                                     .position(x: n.midX * geo.size.width,
                                               y: n.midY * geo.size.height)
+                                    .detectionBoxAppear(index: index)
                             }
                         }
                         .allowsHitTesting(false)

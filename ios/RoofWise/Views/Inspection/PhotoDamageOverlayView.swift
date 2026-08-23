@@ -295,7 +295,7 @@ struct PhotoDamageOverlayView: View {
 
     private func markersLayer(in rect: CGRect) -> some View {
         ZStack {
-            ForEach(activeMarkers) { marker in
+            ForEach(Array(activeMarkers.enumerated()), id: \.element.id) { index, marker in
                 let box = marker.pixelRect(in: rect)
                 MarkerPin(marker: marker,
                           pulsing: pulse,
@@ -305,6 +305,7 @@ struct PhotoDamageOverlayView: View {
                 }
                 .frame(width: max(22, box.width), height: max(22, box.height))
                 .position(x: box.midX, y: box.midY)
+                .detectionBoxAppear(index: index)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

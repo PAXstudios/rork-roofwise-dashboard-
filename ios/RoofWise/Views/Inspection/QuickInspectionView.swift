@@ -1904,7 +1904,7 @@ private struct LiveDamageMarkerLayer: View {
 
     var body: some View {
         ZStack {
-            ForEach(markers) { marker in
+            ForEach(Array(markers.enumerated()), id: \.element.id) { index, marker in
                 let n = marker.overlayRect
                 let box = CGRect(x: n.minX * size.width,
                                  y: n.minY * size.height,
@@ -1920,6 +1920,7 @@ private struct LiveDamageMarkerLayer: View {
                     )
                     .frame(width: box.width, height: box.height)
                     .position(x: box.midX, y: box.midY)
+                    .detectionBoxAppear(index: index)
             }
         }
         .onAppear {
@@ -2938,7 +2939,7 @@ private struct ResultsView: View {
                         }
                         .frame(width: geo.size.width, height: geo.size.height)
                     } else {
-                        ForEach(realHits) { hit in
+                        ForEach(Array(realHits.enumerated()), id: \.element.id) { index, hit in
                             let n = hit.overlayRect
                             let box = CGRect(x: n.minX * geo.size.width,
                                              y: n.minY * geo.size.height,
@@ -2950,6 +2951,7 @@ private struct ResultsView: View {
                                     .stroke(.white.opacity(0.75), lineWidth: 1))
                                 .frame(width: box.width, height: box.height)
                                 .position(x: box.midX, y: box.midY)
+                                .detectionBoxAppear(index: index)
                         }
                     }
                 }

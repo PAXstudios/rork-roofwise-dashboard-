@@ -345,13 +345,20 @@ final class LiveMarkerLayer: CAShapeLayer {
                 circle.fillColor = color.withAlphaComponent(0.18).cgColor
                 circle.lineWidth = 2
                 circle.lineJoin = .round
+                circle.opacity = 0
                 addSublayer(circle)
                 layersByID[id] = circle
-                // Pulse only on first appearance (explicit anim still runs).
+                circle.opacity = 1
+                let fade = CABasicAnimation(keyPath: "opacity")
+                fade.fromValue = 0
+                fade.toValue = 1
+                fade.duration = 0.4
+                fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                circle.add(fade, forKey: "fadeIn")
                 let anim = CABasicAnimation(keyPath: "transform.scale")
-                anim.fromValue = 0.5
+                anim.fromValue = 0.92
                 anim.toValue = 1.0
-                anim.duration = 0.3
+                anim.duration = 0.4
                 anim.timingFunction = CAMediaTimingFunction(name: .easeOut)
                 circle.add(anim, forKey: "appear")
             }

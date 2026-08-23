@@ -217,7 +217,7 @@ struct EditDetectionView: View {
                     .contentShape(Rectangle())
                     .onTapGesture { location in handleCanvasTap(location, rect: rect) }
 
-                ForEach(drafts) { d in
+                ForEach(Array(drafts.enumerated()), id: \.element.id) { index, d in
                     let n = d.overlayRect
                     DraftPin(draft: d, selected: selectedID == d.id, pulsing: pulseID == d.id)
                         .frame(width: max(22, n.width * rect.width),
@@ -227,6 +227,7 @@ struct EditDetectionView: View {
                         .gesture(markerDrag(d, rect: rect))
                         .onTapGesture { selectMarker(d.id) }
                         .onLongPressGesture(minimumDuration: 0.4) { openDetail(d.id) }
+                        .detectionBoxAppear(index: index)
                 }
             }
             .frame(width: geo.size.width, height: geo.size.height)
