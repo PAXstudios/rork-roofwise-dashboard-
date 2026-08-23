@@ -25,7 +25,7 @@ nonisolated enum PipelineError: Error {
 struct DetectionPipelineService {
     private let toolkitURL: String
     private let secret: String
-    private static let model = "google/gemini-2.5-flash"
+    private static let model = GeminiAnalysisService.modelVersion
 
     init() {
         self.toolkitURL = Config.EXPO_PUBLIC_TOOLKIT_URL

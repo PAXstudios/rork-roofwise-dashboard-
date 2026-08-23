@@ -9,16 +9,16 @@ nonisolated enum LiveAnalyzeError: Error {
     case unparseable
 }
 
-/// Gemini 2.5 Flash Vision integration via the Rork toolkit proxy.
+/// Gemini 3.7 Flash Vision integration via the Rork toolkit proxy.
 /// Requests are sent to the OpenAI-compatible chat completions endpoint and
 /// authenticated with `EXPO_PUBLIC_RORK_TOOLKIT_SECRET_KEY`.
 struct GeminiAnalysisService {
     private let toolkitURL: String
     private let secret: String
-    private static let model = "google/gemini-2.5-flash"
+    private static let model = "google/gemini-3.7-flash"
     /// Public mirror of the active model id, stamped into `damage_feedback.ai_model_version`
     /// so each correction records which model produced the prediction.
-    static let modelVersion = "google/gemini-2.5-flash"
+    static let modelVersion = "google/gemini-3.7-flash"
 
     // MARK: - Locked damage taxonomy (13 pitch-deck categories)
 
@@ -58,7 +58,7 @@ struct GeminiAnalysisService {
     Severity scale per category (apply consistently): hail_hits = count of impacts in a 10ft x 10ft square (minor: 1-8, moderate: 9-14, severe: 15+); bruising = % of shingles in view showing soft deformation (minor: <10%, moderate: 10-30%, severe: >30%); granule_loss = % area of exposed dark mat (minor: <10%, moderate: 10-25%, severe: >25%); wind_damage = count of torn/blown-off corners (minor: 1-2, moderate: 3-5, severe: 6+); wind_creasing = count of creased shingles (minor: 1-3, moderate: 4-8, severe: 9+); blistering = count of raised blisters per 10ft x 10ft (minor: <10, moderate: 10-30, severe: >30); cracking = count of surface cracks per 10ft x 10ft (minor: 1-5, moderate: 6-15, severe: 16+); flashing = condition of metal flashing (minor: surface rust/light separation, moderate: visible gap or partial detachment, severe: missing/torn/major separation); algae_moss = % area covered (minor: <15%, moderate: 15-40%, severe: >40%); missing_shingles = count of absent tabs/shingles (minor: 1, moderate: 2-4, severe: 5+); splitting = count of full-thickness vertical splits (minor: 1-2, moderate: 3-5, severe: 6+); lifted = count of raised tabs (minor: 1-3, moderate: 4-8, severe: 9+); structural_sagging = visible deck deformation (minor: slight wave, moderate: clear dip 1-3in, severe: dip >3in or collapse). When evidence is ambiguous or partially visible, downgrade one severity level. When the photo doesn't clearly show enough roof area to apply the count rule (e.g. close-up of a single shingle), use proportional judgment: scale the count down by the visible area.
     """
 
-    /// Gemini-native spatial localization rules. Gemini 2.5 is trained to emit
+    /// Gemini-native spatial localization rules. Gemini 3.7 is trained to emit
     /// detections as `box_2d` = [ymin, xmin, ymax, xmax] normalized to 0-1000;
     /// asking for free-form x/y/radius floats is off-distribution and makes the
     /// model fall back to a degenerate evenly-spaced row of markers. Requesting
