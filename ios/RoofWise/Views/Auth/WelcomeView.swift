@@ -29,14 +29,7 @@ struct WelcomeView: View {
                     }
                     .frame(minHeight: proxy.size.height)
                 }
-                .scrollDismissesKeyboard(.immediately)
-            }
-        }
-        .onAppear {
-            DispatchQueue.main.async {
-                if focused == nil {
-                    focused = .email
-                }
+                .scrollDismissesKeyboard(.interactively)
             }
         }
         .sheet(isPresented: $showForgot) {

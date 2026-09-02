@@ -367,7 +367,11 @@ final class AuthStore {
         if raw.contains("user already registered") || raw.contains("already registered") {
             return "An account with that email already exists. Try signing in."
         }
-        if raw.contains("network") || raw.contains("offline") {
+        if raw.contains("hostname could not be found") || raw.contains("cannot find host")
+            || raw.contains("server with the specified hostname") {
+            return "Can't reach the RoofWise sign-in server right now. Please try again in a few minutes."
+        }
+        if raw.contains("network") || raw.contains("offline") || raw.contains("timed out") {
             return "No internet connection — try again when you're back online."
         }
         return error.localizedDescription
