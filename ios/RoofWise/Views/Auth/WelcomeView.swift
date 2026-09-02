@@ -15,6 +15,7 @@ struct WelcomeView: View {
     var body: some View {
         ZStack {
             backdrop
+                .allowsHitTesting(false)
             GeometryReader { proxy in
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 0) {
@@ -28,10 +29,16 @@ struct WelcomeView: View {
                     }
                     .frame(minHeight: proxy.size.height)
                 }
-                .scrollDismissesKeyboard(.interactively)
+                .scrollDismissesKeyboard(.immediately)
             }
         }
-        .ignoresSafeArea(.keyboard, edges: .bottom)
+        .onAppear {
+            DispatchQueue.main.async {
+                if focused == nil {
+                    focused = .email
+                }
+            }
+        }
         .sheet(isPresented: $showForgot) {
             ForgotPasswordView(prefillEmail: email)
                 .presentationDetents([.medium])
@@ -78,8 +85,8 @@ struct WelcomeView: View {
                 endPoint: .bottom
             )
             .ignoresSafeArea()
-            .allowsHitTesting(false)
         }
+        .allowsHitTesting(false)
     }
 
     // MARK: - Hero
@@ -186,6 +193,7 @@ struct WelcomeView: View {
                     ),
                     lineWidth: 0.8
                 )
+                .allowsHitTesting(false)
         )
         .shadow(color: .black.opacity(0.35), radius: 30, x: 0, y: 18)
         .colorScheme(.dark)
@@ -309,15 +317,15 @@ struct WelcomeView: View {
     }
 
     private var emailField: some View {
-        fieldShell(icon: "envelope.fill", focused: focused == .email) {
-            TextField("", text: $email, prompt: Text("Email").foregroundStyle(.white.opacity(0.45)))
+        fieldShell(icon: "envelope.fill", field: .email) {
+            TextField("Email", text: $email)
+                .textFieldStyle(.plain)
                 .font(.system(size: 16, weight: .medium))
                 .foregroundStyle(.white)
                 .textInputAutocapitalization(.never)
                 .keyboardType(.emailAddress)
-                .textContentType(.emailAddress)
+                .textContentType(.username)
                 .autocorrectionDisabled()
-                .focused($focused, equals: .email)
                 .submitLabel(.next)
                 .onSubmit { focused = .password }
                 .tint(Theme.ember)
@@ -325,12 +333,12 @@ struct WelcomeView: View {
     }
 
     private var passwordField: some View {
-        fieldShell(icon: "lock.fill", focused: focused == .password) {
-            SecureField("", text: $password, prompt: Text("Password").foregroundStyle(.white.opacity(0.45)))
+        fieldShell(icon: "lock.fill", field: .password) {
+            SecureField("Password", text: $password)
+                .textFieldStyle(.plain)
                 .font(.system(size: 16, weight: .medium))
                 .foregroundStyle(.white)
                 .textContentType(mode == .signIn ? .password : .newPassword)
-                .focused($focused, equals: .password)
                 .submitLabel(.go)
                 .onSubmit { Task { await submit() } }
                 .tint(Theme.ember)
@@ -339,27 +347,32 @@ struct WelcomeView: View {
 
     private func fieldShell<Content: View>(
         icon: String,
-        focused: Bool,
+        field: Field,
         @ViewBuilder _ content: () -> Content
     ) -> some View {
-        HStack(spacing: 10) {
+        let isFocused = focused == field
+        return HStack(spacing: 10) {
             Image(systemName: icon)
                 .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(focused ? Theme.ember : .white.opacity(0.6))
+                .foregroundStyle(isFocused ? Theme.ember : .white.opacity(0.6))
                 .frame(width: 18)
+                .allowsHitTesting(false)
             content()
+                .focused($focused, equals: field)
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
         }
         .padding(.horizontal, 14)
-        .frame(height: 54)
-        .background(.white.opacity(focused ? 0.14 : 0.08), in: .rect(cornerRadius: 14))
+        .frame(minHeight: 54)
+        .background(.white.opacity(isFocused ? 0.14 : 0.08), in: .rect(cornerRadius: 14))
         .overlay(
             RoundedRectangle(cornerRadius: 14)
                 .stroke(
-                    focused ? Theme.ember.opacity(0.7) : .white.opacity(0.14),
-                    lineWidth: focused ? 1.2 : 0.6
+                    isFocused ? Theme.ember.opacity(0.7) : .white.opacity(0.14),
+                    lineWidth: isFocused ? 1.2 : 0.6
                 )
+                .allowsHitTesting(false)
         )
-        .animation(.easeOut(duration: 0.18), value: focused)
+        .contentShape(Rectangle())
     }
 
     private var primaryButton: some View {
