@@ -269,6 +269,22 @@ struct DamageMarker: Identifiable {
 
     var hasGeminiBox: Bool { box != nil }
 
+    /// Estimated real-world size of this detection, using the photo's capture
+    /// scale (10×10 test square or a single shingle tab).
+    func estimatedSizeInches(in photo: CapturedPhoto) -> CGSize {
+        let frame = photo.frameSizeInches
+        let n = overlayRect
+        return CGSize(width: n.width * frame.width, height: n.height * frame.height)
+    }
+
+    /// Inspector-facing size string, e.g. `~1¼" dia` for hail or `~2¼" × 1¾"`.
+    func estimatedSizeLabel(in photo: CapturedPhoto) -> String {
+        let s = estimatedSizeInches(in: photo)
+        return InspectionMeasure.sizeLabel(widthInches: Double(s.width),
+                                           heightInches: Double(s.height),
+                                           type: type)
+    }
+
     /// Maps `overlayRect` into a pixel rect inside the displayed image frame.
     func pixelRect(in imageRect: CGRect) -> CGRect {
         let n = overlayRect
@@ -299,6 +315,42 @@ struct DetectedHit: Identifiable {
     let y: CGFloat
     let size: CGFloat // 0-1
     let severity: DamageSeverity
+}
+
+/// Formats estimated detection sizes the way inspectors read them — eighths of
+/// an inch for hail, width × height for area damage, feet when a box is large.
+enum InspectionMeasure {
+    static func inchesLabel(_ inches: Double) -> String {
+        if inches >= 18 {
+            return String(format: "~%.1f ft", inches / 12)
+        }
+        let eighths = Int((max(0, inches) * 8).rounded())
+        if eighths <= 0 { return "<⅛\"" }
+        let whole = eighths / 8
+        let frac: String
+        switch eighths % 8 {
+        case 1: frac = "⅛"
+        case 2: frac = "¼"
+        case 3: frac = "⅜"
+        case 4: frac = "½"
+        case 5: frac = "⅝"
+        case 6: frac = "¾"
+        case 7: frac = "⅞"
+        default: frac = ""
+        }
+        if whole == 0 { return "~\(frac)\"" }
+        if frac.isEmpty { return "~\(whole)\"" }
+        return "~\(whole)\(frac)\""
+    }
+
+    static func sizeLabel(widthInches: Double, heightInches: Double, type: DamageMarkerType) -> String {
+        switch type {
+        case .hailHits, .bruising, .blistering:
+            return "\(inchesLabel(max(widthInches, heightInches))) dia"
+        default:
+            return "\(inchesLabel(widthInches)) × \(inchesLabel(heightInches))"
+        }
+    }
 }
 
 // MARK: - Mock Analysis Result

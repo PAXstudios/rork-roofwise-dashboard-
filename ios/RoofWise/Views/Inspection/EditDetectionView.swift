@@ -219,15 +219,22 @@ struct EditDetectionView: View {
 
                 ForEach(Array(drafts.enumerated()), id: \.element.id) { index, d in
                     let n = d.overlayRect
-                    DraftPin(draft: d, selected: selectedID == d.id, pulsing: pulseID == d.id)
+                    let isSelected = selectedID == d.id
+                    DraftPin(draft: d, selected: isSelected, pulsing: pulseID == d.id)
                         .frame(width: max(22, n.width * rect.width),
                                height: max(22, n.height * rect.height))
                         .position(x: rect.minX + n.midX * rect.width,
                                   y: rect.minY + n.midY * rect.height)
+                        .opacity(selectedID == nil || isSelected ? 1 : 0.4)
+                        .zIndex(isSelected ? 1 : 0)
                         .gesture(markerDrag(d, rect: rect))
                         .onTapGesture { selectMarker(d.id) }
                         .onLongPressGesture(minimumDuration: 0.4) { openDetail(d.id) }
                         .detectionBoxAppear(index: index)
+                }
+
+                if let id = selectedID, let draft = drafts.first(where: { $0.id == id }) {
+                    editorCallout(for: draft, in: rect)
                 }
             }
             .frame(width: geo.size.width, height: geo.size.height)
@@ -254,6 +261,34 @@ struct EditDetectionView: View {
         return CGRect(x: (container.width - w) / 2,
                       y: (container.height - h) / 2,
                       width: w, height: h)
+    }
+
+    private func editorCallout(for draft: DraftMarker, in rect: CGRect) -> some View {
+        let n = draft.overlayRect
+        let box = CGRect(x: rect.minX + n.minX * rect.width,
+                         y: rect.minY + n.minY * rect.height,
+                         width: max(22, n.width * rect.width),
+                         height: max(22, n.height * rect.height))
+        let marker = draft.toMarker()
+        let placeAbove = box.minY > 130
+        let calloutW: CGFloat = 220
+        let minX = rect.minX + calloutW / 2 + 10
+        let maxX = rect.maxX - calloutW / 2 - 10
+        let clampedMidX = minX < maxX ? min(max(box.midX, minX), maxX) : box.midX
+        return Color.clear
+            .frame(width: box.width, height: box.height)
+            .position(x: box.midX, y: box.midY)
+            .overlay(alignment: placeAbove ? .top : .bottom) {
+                DetectionBoxCallout(
+                    marker: marker,
+                    sizeLabel: marker.estimatedSizeLabel(in: photo),
+                    pointerOnTop: !placeAbove
+                )
+                .offset(x: clampedMidX - box.midX, y: placeAbove ? -10 : 10)
+            }
+            .zIndex(20)
+            .allowsHitTesting(false)
+            .transition(.scale(scale: 0.92, anchor: placeAbove ? .bottom : .top).combined(with: .opacity))
     }
 
     // MARK: - Gestures

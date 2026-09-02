@@ -22,7 +22,7 @@ struct PhotoDamageOverlayView: View {
     /// Persists the corrected marker set back to the caller's store.
     var onApplyMarkers: (([DamageMarker]) -> Void)? = nil
 
-    @State private var selectedMarker: DamageMarker? = nil
+    @State private var selectedMarkerID: UUID? = nil
     /// In-view mirror of the marker set after an edit so the overlay reflects
     /// corrections immediately without waiting for the parent's store update.
     @State private var liveMarkers: [DamageMarker]? = nil
@@ -40,6 +40,11 @@ struct PhotoDamageOverlayView: View {
     /// Markers currently shown — the live edited set if the inspector just
     /// corrected them, otherwise the photo's stored AI markers.
     private var activeMarkers: [DamageMarker] { liveMarkers ?? photo.damageMarkers }
+
+    private var selectedMarker: DamageMarker? {
+        guard let id = selectedMarkerID else { return nil }
+        return activeMarkers.first { $0.id == id }
+    }
 
     private func photoWithActiveMarkers() -> CapturedPhoto {
         var p = photo
@@ -90,6 +95,11 @@ struct PhotoDamageOverlayView: View {
                         .resizable()
                         .scaledToFit()
                         .frame(width: geo.size.width, height: geo.size.height)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            guard selectedMarkerID != nil else { return }
+                            withAnimation(Theme.Motion.snappy) { selectedMarkerID = nil }
+                        }
 
                     if showAllMarkers {
                         markersLayer(in: imageRect(for: photo.image, container: geo.size))
@@ -142,11 +152,6 @@ struct PhotoDamageOverlayView: View {
             withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) {
                 pulse = true
             }
-        }
-        .sheet(item: $selectedMarker) { marker in
-            markerDetail(marker)
-                .presentationDetents([.fraction(0.32), .medium])
-                .presentationDragIndicator(.visible)
         }
         .fullScreenCover(isPresented: $showEditor) {
             EditDetectionView(
@@ -297,19 +302,52 @@ struct PhotoDamageOverlayView: View {
         ZStack {
             ForEach(Array(activeMarkers.enumerated()), id: \.element.id) { index, marker in
                 let box = marker.pixelRect(in: rect)
+                let isSelected = selectedMarkerID == marker.id
                 MarkerPin(marker: marker,
-                          pulsing: pulse,
-                          isSelected: selectedMarker?.id == marker.id) {
+                          pulsing: pulse && !isSelected,
+                          isSelected: isSelected) {
                     let g = UIImpactFeedbackGenerator(style: .light); g.impactOccurred()
-                    selectedMarker = marker
+                    withAnimation(Theme.Motion.snappy) {
+                        selectedMarkerID = isSelected ? nil : marker.id
+                    }
                 }
                 .frame(width: max(22, box.width), height: max(22, box.height))
                 .position(x: box.midX, y: box.midY)
+                .opacity(selectedMarkerID == nil || isSelected ? 1 : 0.38)
+                .zIndex(isSelected ? 1 : 0)
                 .detectionBoxAppear(index: index)
+            }
+
+            if let marker = selectedMarker {
+                callout(for: marker, in: rect)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .animation(Theme.Motion.snappy, value: selectedMarkerID)
         .allowsHitTesting(true)
+    }
+
+    private func callout(for marker: DamageMarker, in rect: CGRect) -> some View {
+        let box = marker.pixelRect(in: rect)
+        let placeAbove = box.minY > 130
+        let calloutW: CGFloat = 220
+        let minX = rect.minX + calloutW / 2 + 10
+        let maxX = rect.maxX - calloutW / 2 - 10
+        let clampedMidX = minX < maxX ? min(max(box.midX, minX), maxX) : box.midX
+        return Color.clear
+            .frame(width: max(22, box.width), height: max(22, box.height))
+            .position(x: box.midX, y: box.midY)
+            .overlay(alignment: placeAbove ? .top : .bottom) {
+                DetectionBoxCallout(
+                    marker: marker,
+                    sizeLabel: marker.estimatedSizeLabel(in: photo),
+                    pointerOnTop: !placeAbove
+                )
+                .offset(x: clampedMidX - box.midX, y: placeAbove ? -10 : 10)
+            }
+            .zIndex(20)
+            .allowsHitTesting(false)
+            .transition(.scale(scale: 0.92, anchor: placeAbove ? .bottom : .top).combined(with: .opacity))
     }
 
     private func imageRect(for image: UIImage, container: CGSize) -> CGRect {
@@ -711,64 +749,6 @@ struct PhotoDamageOverlayView: View {
         return parts.isEmpty ? "Detected" : parts.joined(separator: " · ")
     }
 
-    // MARK: - Marker Detail Sheet
-
-    private func markerDetail(_ marker: DamageMarker) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 12) {
-                ZStack {
-                    Circle().fill(marker.type.color.opacity(0.18))
-                    Image(systemName: marker.type.icon)
-                        .font(.system(size: 18, weight: .heavy))
-                        .foregroundStyle(marker.type.color)
-                }
-                .frame(width: 48, height: 48)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(marker.type.display)
-                        .font(.system(size: 17, weight: .heavy))
-                        .foregroundStyle(Theme.ink)
-                    Text(marker.severity.rawValue.uppercased())
-                        .font(.system(size: 10, weight: .heavy))
-                        .tracking(1.2)
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 8).padding(.vertical, 3)
-                        .background(marker.severity.color, in: .capsule)
-                }
-                Spacer()
-            }
-            if !marker.note.isEmpty {
-                Text(marker.note)
-                    .font(.system(size: 13))
-                    .foregroundStyle(Theme.inkSoft)
-                    .lineSpacing(3)
-            }
-            HStack(spacing: 10) {
-                detailStat(label: "Type", value: marker.type.display)
-                detailStat(label: "Severity", value: marker.severity.rawValue)
-                detailStat(label: "Confidence",
-                           value: marker.confidence > 0 ? "\(marker.confidence)%" : "—")
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(20)
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func detailStat(label: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(label.uppercased())
-                .font(.system(size: 9, weight: .heavy))
-                .tracking(1)
-                .foregroundStyle(Theme.inkFaint)
-            Text(value)
-                .font(.system(size: 13, weight: .heavy))
-                .foregroundStyle(Theme.ink)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(10)
-        .background(Theme.card, in: .rect(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.hairline, lineWidth: 0.6))
-    }
 }
 
 // MARK: - In-the-moment correction helpers
@@ -913,22 +893,31 @@ private struct MarkerPin: View {
     var body: some View {
         Button(action: onTap) {
             ZStack {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: 5)
+                        .stroke(.white, lineWidth: 2)
+                        .padding(-5)
+                        .shadow(color: marker.type.color.opacity(0.85), radius: 10)
+                }
                 RoundedRectangle(cornerRadius: 4)
                     .stroke(marker.type.color.opacity(pulsing ? 0.0 : 0.5), lineWidth: 1.2)
                     .scaleEffect(pulsing ? 1.08 : 0.96)
                 RoundedRectangle(cornerRadius: 4)
-                    .stroke(marker.type.color, lineWidth: isSelected ? 3 : 2)
+                    .stroke(marker.type.color, lineWidth: isSelected ? 3.5 : 2)
                     .background(
                         RoundedRectangle(cornerRadius: 4)
-                            .fill(marker.type.color.opacity(0.16))
+                            .fill(marker.type.color.opacity(isSelected ? 0.34 : 0.16))
                     )
                 Image(systemName: marker.type.icon)
                     .font(.system(size: 10, weight: .heavy))
                     .foregroundStyle(marker.type.color)
                     .shadow(color: .black.opacity(0.5), radius: 2)
             }
+            .scaleEffect(isSelected ? 1.06 : 1)
         }
         .buttonStyle(.plain)
         .contentShape(RoundedRectangle(cornerRadius: 4))
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityHint("Shows estimated size and damage details")
     }
 }

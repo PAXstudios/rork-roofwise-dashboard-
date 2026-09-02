@@ -64,6 +64,20 @@ struct CapturedPhoto: Identifiable {
         }
     }
 
+    /// Estimated real-world size of the photo frame in inches. A 10×10 test
+    /// square is 120" on a side; a single-shingle close-up is one architectural
+    /// tab (~36" × 12" exposure).
+    var frameSizeInches: CGSize {
+        switch captureMode {
+        case .singleShingle:
+            return CGSize(width: 36, height: 12)
+        case .square:
+            let sideFeet = 10.0 * sqrt(Double(max(1, squaresCovered)))
+            let side = sideFeet * 12
+            return CGSize(width: side, height: side)
+        }
+    }
+
     /// Damage markers grouped by type, in display order.
     var markersByType: [(type: DamageMarkerType, items: [DamageMarker])] {
         let dict = Dictionary(grouping: damageMarkers, by: \.type)
