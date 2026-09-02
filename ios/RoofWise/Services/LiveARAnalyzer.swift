@@ -55,19 +55,31 @@ final class LiveARAnalyzer: NSObject, ARSessionDelegate {
         session?.pause()
     }
 
+    /// Live overlay from a camera still — used when ARKit is unavailable (simulator / no tracking).
+    func ingest(image: UIImage) {
+        let now = Date()
+        guard gate.tryBegin(now: now, interval: 0.5) else { return }
+        guard let data = ImageResize.encodedJPEGData(from: image, longestEdge: 640, quality: 0.7) else {
+            gate.end()
+            return
+        }
+        runAnalysis(data: data)
+    }
+
     // MARK: - ARSessionDelegate (background queue)
 
     nonisolated func session(_ session: ARSession, didUpdate frame: ARFrame) {
         let now = Date()
         guard gate.tryBegin(now: now, interval: 0.5) else { return }
 
-        // Downsample the frame to a small JPEG (longest edge 640, q 0.7) so the
-        // upload stays fast. Data is Sendable so it crosses into the detached task.
         guard let data = jpegData(from: frame.capturedImage) else {
             gate.end()
             return
         }
+        runAnalysis(data: data)
+    }
 
+    private nonisolated func runAnalysis(data: Data) {
         Task.detached(priority: .userInitiated) { [weak self] in
             guard let self else { return }
             await MainActor.run { self.isAnalyzing = true }

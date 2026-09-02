@@ -1,96 +1,110 @@
 import SwiftUI
 import AVFoundation
+import UIKit
 
-/// Wraps a real AVFoundation camera preview (sharing the session owned by
-/// `CameraCaptureService`) when a rear camera exists, otherwise shows a
-/// Rork-friendly placeholder for the cloud simulator.
+/// Finds a usable video camera, including the cloud simulator's injected `.external` webcam.
+enum CameraHardware {
+    static var hasCamera: Bool { videoDevice() != nil }
+
+    static func videoDevice() -> AVCaptureDevice? {
+        var types: [AVCaptureDevice.DeviceType] = [
+            .builtInLiDARDepthCamera,
+            .builtInTripleCamera,
+            .builtInDualWideCamera,
+            .builtInDualCamera,
+            .builtInWideAngleCamera,
+            .builtInUltraWideCamera,
+        ]
+        if #available(iOS 17.0, *) {
+            types.append(.external)
+        }
+        let discovery = AVCaptureDevice.DiscoverySession(
+            deviceTypes: types,
+            mediaType: .video,
+            position: .unspecified
+        )
+        if let back = discovery.devices.first(where: { $0.position == .back }) {
+            return back
+        }
+        if #available(iOS 17.0, *) {
+            if let external = discovery.devices.first(where: { $0.deviceType == .external }) {
+                return external
+            }
+        }
+        return discovery.devices.first
+    }
+}
+
+/// Real AVFoundation preview for a running capture session.
 struct CameraProxyView: View {
-    var session: AVCaptureSession? = nil
-    /// Optional capture service to receive the preview layer for coordinate mapping.
+    var session: AVCaptureSession
     var onPreviewLayer: ((AVCaptureVideoPreviewLayer) -> Void)? = nil
 
     var body: some View {
-        if Self.hasRearCamera {
-            ActualCameraView(session: session ?? AVCaptureSession(),
-                             onPreviewLayer: onPreviewLayer)
-        } else {
-            CameraPlaceholderView()
-        }
+        ActualCameraView(session: session, onPreviewLayer: onPreviewLayer)
     }
 
-    static var hasRearCamera: Bool {
-        AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) != nil
-    }
+    static var hasRearCamera: Bool { CameraHardware.hasCamera }
 }
 
-// MARK: - Placeholder (cloud simulator)
+// MARK: - Permission denied (distinct from no-device)
 
-struct CameraPlaceholderView: View {
-    @State private var sweep: CGFloat = 0
-
+struct CameraPermissionDeniedView: View {
     var body: some View {
-        ZStack {
-            LinearGradient(colors: [
-                Color(red: 0.04, green: 0.07, blue: 0.16),
-                Color(red: 0.10, green: 0.14, blue: 0.26)
-            ], startPoint: .top, endPoint: .bottom)
-
-            Canvas { ctx, size in
-                let cols = 14
-                let rows = 22
-                let dx = size.width / CGFloat(cols)
-                let dy = size.height / CGFloat(rows)
-                for r in 0...rows {
-                    let y = CGFloat(r) * dy + (r.isMultiple(of: 2) ? dx / 2 : 0)
-                    var path = Path()
-                    path.move(to: CGPoint(x: 0, y: y))
-                    path.addLine(to: CGPoint(x: size.width, y: y))
-                    ctx.stroke(path, with: .color(.white.opacity(0.06)), lineWidth: 0.6)
+        VStack(spacing: 16) {
+            Image(systemName: "camera.fill")
+                .font(.system(size: 34, weight: .light))
+                .foregroundStyle(.white.opacity(0.85))
+            Text("Camera access is off")
+                .font(.system(size: 17, weight: .heavy))
+                .foregroundStyle(.white)
+            Text("Turn on camera access in Settings to inspect roofs live.")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.white.opacity(0.7))
+                .multilineTextAlignment(.center)
+            Button {
+                if let url = URL(string: UIApplication.openSettingsURLString) {
+                    UIApplication.shared.open(url)
                 }
-                for c in 0...cols {
-                    let x = CGFloat(c) * dx
-                    var path = Path()
-                    path.move(to: CGPoint(x: x, y: 0))
-                    path.addLine(to: CGPoint(x: x, y: size.height))
-                    ctx.stroke(path, with: .color(.white.opacity(0.05)), lineWidth: 0.6)
-                }
+            } label: {
+                Text("Open Settings")
+                    .font(.system(size: 15, weight: .heavy))
+                    .foregroundStyle(.white)
+                    .frame(minHeight: 44)
+                    .padding(.horizontal, 22)
+                    .background(Theme.ember, in: .capsule)
             }
-
-            GeometryReader { geo in
-                LinearGradient(colors: [
-                    Theme.ember.opacity(0),
-                    Theme.ember.opacity(0.55),
-                    Theme.ember.opacity(0)
-                ], startPoint: .top, endPoint: .bottom)
-                .frame(height: 120)
-                .blur(radius: 8)
-                .offset(y: sweep * (geo.size.height + 120) - 120)
-            }
-            .allowsHitTesting(false)
-
-            VStack(spacing: 12) {
-                Image(systemName: "camera.metering.center.weighted")
-                    .font(.system(size: 34, weight: .light))
-                    .foregroundStyle(.white.opacity(0.85))
-                Text("Live camera unavailable in preview")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.9))
-                Text("Install RoofWise on your device via the Rork App\nto run live shingle detection.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.white.opacity(0.6))
-                    .multilineTextAlignment(.center)
-            }
-            .padding(24)
+            .buttonStyle(.plain)
         }
-        .onAppear {
-            withAnimation(.linear(duration: 2.6).repeatForever(autoreverses: false)) {
-                sweep = 1
-            }
-        }
+        .padding(28)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.black)
     }
 }
 
-// MARK: - Real camera (used on physical device)
+// MARK: - No camera device
+
+struct CameraUnavailableView: View {
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "camera.metering.center.weighted")
+                .font(.system(size: 34, weight: .light))
+                .foregroundStyle(.white.opacity(0.85))
+            Text("No camera found")
+                .font(.system(size: 17, weight: .heavy))
+                .foregroundStyle(.white)
+            Text("Connect a camera or try again on a device.")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.white.opacity(0.7))
+                .multilineTextAlignment(.center)
+        }
+        .padding(28)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.black)
+    }
+}
+
+// MARK: - Real camera preview
 
 struct ActualCameraView: UIViewRepresentable {
     let session: AVCaptureSession

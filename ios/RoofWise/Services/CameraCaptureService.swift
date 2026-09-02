@@ -8,8 +8,7 @@ import UIKit
 ///
 /// Detection state (`detectionRects`, `totalUniqueShingles`, `squaresCovered`)
 /// is published on the main actor and consumed by the camera viewfinder
-/// overlay. In the cloud simulator (no rear camera) the service runs a mock
-/// detection loop so the UI still feels alive.
+/// overlay.
 @Observable
 final class CameraCaptureService: NSObject {
     let session = AVCaptureSession()
@@ -18,6 +17,14 @@ final class CameraCaptureService: NSObject {
     private let videoQueue = DispatchQueue(label: "roofwise.camera.video", qos: .userInitiated)
     private var configured: Bool = false
     private var photoContinuation: CheckedContinuation<UIImage, Never>?
+
+    /// Latest camera authorization, refreshed on `start()`.
+    var authorizationStatus: AVAuthorizationStatus = AVCaptureDevice.authorizationStatus(for: .video)
+    var isDenied: Bool {
+        authorizationStatus == .denied || authorizationStatus == .restricted
+    }
+    /// Bumped whenever a new preview frame is stored, so SwiftUI can observe frames.
+    var frameTick: Int = 0
 
     // MARK: - Live detection state
 
@@ -66,7 +73,7 @@ final class CameraCaptureService: NSObject {
     private var mockTimer: Timer?
     private var activeDevice: AVCaptureDevice?
 
-    var hasCamera: Bool { CameraProxyView.hasRearCamera }
+    var hasCamera: Bool { CameraHardware.hasCamera }
 
     /// Current zoom factor (1, 2, 3...). Mock value used when running in the cloud simulator.
     var zoomFactor: CGFloat = 1.0
@@ -91,25 +98,44 @@ final class CameraCaptureService: NSObject {
     // MARK: - Lifecycle
 
     func start() {
-        if hasCamera {
-            ensureConfigured()
-        } else {
-            startMockDetection()
+        Task { await prepareAndStart() }
+    }
+
+    func prepareAndStart() async {
+        var status = AVCaptureDevice.authorizationStatus(for: .video)
+        authorizationStatus = status
+        if status == .notDetermined {
+            let granted = await AVCaptureDevice.requestAccess(for: .video)
+            status = AVCaptureDevice.authorizationStatus(for: .video)
+            authorizationStatus = status
+            guard granted else { return }
         }
+        guard status == .authorized else { return }
+        beginSession()
     }
 
     func stop() {
         mockTimer?.invalidate()
         mockTimer = nil
+        DispatchQueue.global(qos: .userInitiated).async { [session] in
+            if session.isRunning { session.stopRunning() }
+        }
+    }
+
+    private func beginSession() {
+        guard CameraHardware.hasCamera else { return }
+        ensureConfigured()
+        DispatchQueue.global(qos: .userInitiated).async { [session] in
+            if !session.isRunning { session.startRunning() }
+        }
     }
 
     func ensureConfigured() {
-        guard hasCamera, !configured else { return }
+        guard CameraHardware.hasCamera, !configured else { return }
         session.beginConfiguration()
         session.sessionPreset = .high
 
-        if let device = AVCaptureDevice.default(.builtInLiDARDepthCamera, for: .video, position: .back)
-            ?? AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back),
+        if let device = CameraHardware.videoDevice(),
            let input = try? AVCaptureDeviceInput(device: device),
            session.canAddInput(input) {
             session.addInput(input)
@@ -350,6 +376,7 @@ extension CameraCaptureService: AVCaptureVideoDataOutputSampleBufferDelegate {
         Task { @MainActor in
             self.roofDetected = isRoof
             self.latestFrame = frameImage
+            self.frameTick &+= 1
             if isRoof {
                 self.applyDetections(rects, confidences: confs)
                 self.runLiveDamageAnalysisIfNeeded(now: now)

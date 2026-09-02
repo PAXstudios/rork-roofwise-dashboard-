@@ -23,7 +23,7 @@ struct LiveARInspectionView: View {
         #if targetEnvironment(simulator)
         LiveARFallbackStage(arUnavailable: true, onClose: onClose)
         #else
-        if ARWorldTrackingConfiguration.supportsSceneReconstruction(.mesh) {
+        if ARWorldTrackingConfiguration.isSupported {
             LiveARDeviceStage(onClose: onClose)
         } else {
             LiveARFallbackStage(arUnavailable: true, onClose: onClose)
@@ -413,6 +413,7 @@ struct LiveARFallbackStage: View {
 
     @Environment(CustomerStore.self) private var customerStore
     @State private var analyzer = LiveARAnalyzer()
+    @State private var camera = CameraCaptureService()
     @State private var motion = MotionElevationService()
     @State private var slope: SlopeType = .frontSlope
     @State private var isCapturing = false
@@ -420,12 +421,13 @@ struct LiveARFallbackStage: View {
 
     var body: some View {
         ZStack {
-            CameraProxyView()
-                .ignoresSafeArea()
+            cameraBackground
 
-            LiveMarkerOverlay(markers: analyzer.lastMarkers)
-                .ignoresSafeArea()
-                .allowsHitTesting(false)
+            if !camera.isDenied, camera.hasCamera {
+                LiveMarkerOverlay(markers: analyzer.lastMarkers)
+                    .ignoresSafeArea()
+                    .allowsHitTesting(false)
+            }
 
             if flash {
                 Color.white.ignoresSafeArea().transition(.opacity)
@@ -440,18 +442,45 @@ struct LiveARFallbackStage: View {
                 arUnavailable: arUnavailable,
                 slope: $slope,
                 isCapturing: isCapturing,
-                captureEligible: !isCapturing,
+                captureEligible: !isCapturing && camera.hasCamera && !camera.isDenied,
                 isAnalyzing: analyzer.isAnalyzing,
                 onClose: onClose,
                 onShutter: capture
             )
         }
-        .onAppear { motion.start() }
-        .onDisappear { motion.stop() }
+        .onAppear {
+            motion.start()
+            camera.start()
+        }
+        .onDisappear {
+            motion.stop()
+            camera.stop()
+        }
+        .onChange(of: camera.frameTick) { _, _ in
+            guard let image = camera.latestFrame else { return }
+            analyzer.ingest(image: image)
+        }
+    }
+
+    @ViewBuilder
+    private var cameraBackground: some View {
+        if camera.isDenied {
+            CameraPermissionDeniedView()
+                .ignoresSafeArea()
+        } else if camera.hasCamera {
+            CameraProxyView(
+                session: camera.session,
+                onPreviewLayer: { layer in camera.attachPreviewLayer(layer) }
+            )
+            .ignoresSafeArea()
+        } else {
+            CameraUnavailableView()
+                .ignoresSafeArea()
+        }
     }
 
     private func capture() {
-        guard !isCapturing else { return }
+        guard !isCapturing, camera.hasCamera, !camera.isDenied else { return }
         let g = UIImpactFeedbackGenerator(style: .heavy); g.impactOccurred()
         isCapturing = true
         withAnimation(.easeIn(duration: 0.08)) { flash = true }
@@ -459,11 +488,13 @@ struct LiveARFallbackStage: View {
         let pitch = motion.pitchDegrees
         let elev = motion.elevationFeet
         Task { @MainActor in
+            let image = await camera.capture(
+                slope: slopeValue,
+                pitchDegrees: pitch,
+                elevationFeet: elev
+            )
             try? await Task.sleep(for: .milliseconds(120))
             withAnimation(.easeOut(duration: 0.25)) { flash = false }
-            let image = CameraCaptureService.synthesizePlaceholder(slope: slopeValue,
-                                                                   pitchDegrees: pitch,
-                                                                   elevationFeet: elev)
             await LiveARCapture.analyzeAndStore(image: image, slope: slopeValue,
                                                 pitch: pitch, elevation: elev,
                                                 customerStore: customerStore)
