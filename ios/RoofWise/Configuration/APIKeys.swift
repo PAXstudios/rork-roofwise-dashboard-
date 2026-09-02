@@ -52,7 +52,8 @@ enum APIKeys {
     /// until you flip this.
     static let useStructuredConfidence: Bool = true
 
-    static let requireAuth: Bool = true // enforce sign-in so Supabase sync has an authenticated session
+    /// Temporarily off so the app boots into the dashboard while login is paused.
+    static let requireAuth: Bool = false
 
     static let useLiveARAnalysis: Bool = true // toggle for the live AR overlay feature
 

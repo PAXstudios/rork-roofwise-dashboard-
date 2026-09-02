@@ -5,7 +5,7 @@
 A required sign-in screen on launch (Apple or email/password), a synced cloud copy of every lead, and a clean account section in Settings — all backed by Supabase.
 
 ### Features
-- **Locked login screen on launch** — the app shows a welcome screen until the user signs in.
+- **Locked login screen on launch** — paused for now. The app opens on the dashboard without signing in. Sign-in stays in the project and can be turned back on later.
 - **Sign in with Apple** — one-tap login using the Apple ID, no password needed.
 - **Email + password** — classic sign-up and sign-in for users who prefer it, with "Forgot password" sending a reset email.
 - **Persistent session** — once signed in, the app remembers the user across launches; no re-login needed.
