@@ -1065,10 +1065,12 @@ private struct MarkerDetailSheet: View {
                 Spacer()
                 voiceButton
             }
-            TextField("Add an evidence note…", text: $draft.note, axis: .vertical)
-                .font(.system(size: Theme.TypeRamp.body, weight: .medium))
-                .foregroundStyle(Theme.ink)
-                .lineLimit(2...5)
+            KeyboardTextEditor(
+                text: $draft.note,
+                placeholder: "Add an evidence note…",
+                font: .systemFont(ofSize: Theme.TypeRamp.body, weight: .medium),
+                minHeight: 72
+            )
                 .padding(12)
                 .background(Theme.canvas, in: .rect(cornerRadius: 12))
                 .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.hairline, lineWidth: 0.6))

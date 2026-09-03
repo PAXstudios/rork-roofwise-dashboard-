@@ -209,11 +209,12 @@ struct LeadsView: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: Theme.TypeRamp.subhead, weight: .semibold))
                 .foregroundStyle(Theme.inkFaint)
-            TextField("Search owner, address, policy #", text: $search)
-                .font(.system(size: Theme.TypeRamp.meta))
-                .foregroundStyle(Theme.ink)
-                .autocorrectionDisabled()
-                .textInputAutocapitalization(.words)
+            KeyboardTextField(
+                placeholder: "Search owner, address, policy #",
+                text: $search,
+                autocapitalization: .words,
+                font: .systemFont(ofSize: Theme.TypeRamp.meta, weight: .regular)
+            )
             if !search.isEmpty {
                 Button {
                     search = ""

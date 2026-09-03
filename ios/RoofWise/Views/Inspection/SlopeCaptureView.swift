@@ -790,7 +790,8 @@ private struct SegmentedRow: View {
 private struct CurrencyFieldRow: View {
     let label: String
     @Binding var value: Double
-    @FocusState private var focused: Bool
+    @State private var focused: Bool = false
+    @State private var amountText: String = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -799,13 +800,15 @@ private struct CurrencyFieldRow: View {
                 Text("$")
                     .font(.system(size: 22, weight: .heavy))
                     .foregroundStyle(Theme.inkSoft)
-                TextField("0.00", value: $value,
-                          format: .number.precision(.fractionLength(2)))
-                    .keyboardType(.decimalPad)
-                    .font(.system(size: 22, weight: .heavy))
-                    .foregroundStyle(Theme.ink)
-                    .focused($focused)
-                    .submitLabel(.done)
+                KeyboardTextField(
+                    placeholder: "0.00",
+                    text: $amountText,
+                    keyboardType: .decimalPad,
+                    returnKeyType: .done,
+                    autocapitalization: .none,
+                    font: .systemFont(ofSize: 22, weight: .heavy),
+                    onFocusChange: { focused = $0 }
+                )
             }
             .padding(.horizontal, 16)
             .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)

@@ -3239,11 +3239,12 @@ private struct LinkCustomerSheet: View {
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 12, weight: .bold))
                         .foregroundStyle(Theme.inkFaint)
-                    TextField("Search by name or address", text: $query)
-                        .font(.system(size: 13))
-                        .foregroundStyle(Theme.ink)
-                        .autocorrectionDisabled(true)
-                        .textInputAutocapitalization(.words)
+                    KeyboardTextField(
+                        placeholder: "Search by name or address",
+                        text: $query,
+                        autocapitalization: .words,
+                        font: .systemFont(ofSize: 13, weight: .regular)
+                    )
                 }
                 .padding(.horizontal, 12).padding(.vertical, 10)
                 .background(Theme.canvas, in: .rect(cornerRadius: 12))

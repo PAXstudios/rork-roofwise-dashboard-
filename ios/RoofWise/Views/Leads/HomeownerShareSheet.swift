@@ -164,11 +164,13 @@ struct HomeownerShareSheet: View {
                     .foregroundStyle(Theme.inkSoft)
                 Spacer()
             }
-            TextEditor(text: $nextStep)
-                .font(.system(size: 13))
-                .scrollContentBackground(.hidden)
+            KeyboardTextEditor(
+                text: $nextStep,
+                placeholder: "Next step…",
+                font: .systemFont(ofSize: 13, weight: .regular),
+                minHeight: 90
+            )
                 .padding(10)
-                .frame(minHeight: 90)
                 .background(Theme.card, in: .rect(cornerRadius: 14))
                 .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.hairline, lineWidth: 0.6))
                 .onChange(of: nextStep) { _, _ in

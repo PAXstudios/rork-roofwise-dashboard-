@@ -295,12 +295,13 @@ private struct InspectionNewCustomerSheet: View {
                 .font(.system(size: 11, weight: .heavy))
                 .tracking(0.5)
                 .foregroundStyle(Theme.inkFaint)
-            TextField(label, text: text)
-                .keyboardType(keyboard)
-                .textInputAutocapitalization(keyboard == .emailAddress ? .never : .words)
-                .autocorrectionDisabled(keyboard == .emailAddress || keyboard == .phonePad)
-                .font(.system(size: 14))
-                .foregroundStyle(Theme.ink)
+            KeyboardTextField(
+                placeholder: label,
+                text: text,
+                keyboardType: keyboard,
+                autocapitalization: keyboard == .emailAddress ? .none : .words,
+                font: .systemFont(ofSize: 14, weight: .regular)
+            )
                 .padding(12)
                 .background(Theme.card, in: .rect(cornerRadius: 12))
                 .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.hairline, lineWidth: 0.6))
@@ -346,11 +347,12 @@ private struct InspectionCustomerPickerSheet: View {
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 12, weight: .bold))
                         .foregroundStyle(Theme.inkFaint)
-                    TextField("Search by name or address", text: $query)
-                        .font(.system(size: 13))
-                        .foregroundStyle(Theme.ink)
-                        .autocorrectionDisabled(true)
-                        .textInputAutocapitalization(.words)
+                    KeyboardTextField(
+                        placeholder: "Search by name or address",
+                        text: $query,
+                        autocapitalization: .words,
+                        font: .systemFont(ofSize: 13, weight: .regular)
+                    )
                 }
                 .padding(.horizontal, 12).padding(.vertical, 10)
                 .background(Theme.canvas, in: .rect(cornerRadius: 12))

@@ -218,10 +218,12 @@ struct KnockOutcomeSheet: View {
                 .font(.system(size: 10, weight: .heavy))
                 .tracking(1.2)
                 .foregroundStyle(Theme.inkFaint)
-            TextEditor(text: $draftNotes)
-                .font(.system(size: 13))
-                .scrollContentBackground(.hidden)
-                .frame(minHeight: 92)
+            KeyboardTextEditor(
+                text: $draftNotes,
+                placeholder: "Notes from the door…",
+                font: .systemFont(ofSize: 13, weight: .regular),
+                minHeight: 92
+            )
                 .padding(10)
                 .background(Theme.card, in: .rect(cornerRadius: 12))
                 .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.hairline, lineWidth: 0.6))

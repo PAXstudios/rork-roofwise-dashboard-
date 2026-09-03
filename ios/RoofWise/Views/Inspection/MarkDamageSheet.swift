@@ -191,12 +191,16 @@ struct MarkDamageSheet: View {
             Image(systemName: "text.bubble.fill")
                 .font(.system(size: 12, weight: .heavy))
                 .foregroundStyle(.white.opacity(0.55))
-            TextField("", text: $note,
-                      prompt: Text("Add note (optional)").foregroundStyle(.white.opacity(0.4)))
-                .focused($noteFocused)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.white)
-                .submitLabel(.done)
+            KeyboardTextField(
+                placeholder: "Add note (optional)",
+                text: $note,
+                returnKeyType: .done,
+                font: .systemFont(ofSize: 13, weight: .semibold),
+                textColor: .white,
+                placeholderColor: .white.opacity(0.4),
+                keyboardAppearance: .dark,
+                onFocusChange: { noteFocused = $0 }
+            )
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 11)

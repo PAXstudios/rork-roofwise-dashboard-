@@ -182,11 +182,12 @@ struct CustomerMessageSheet: View {
                 .font(.system(size: 10, weight: .heavy))
                 .tracking(0.8)
                 .foregroundStyle(Theme.inkSoft)
-            TextEditor(text: $messageText)
-                .font(.system(size: 14))
-                .foregroundStyle(Theme.ink)
-                .scrollContentBackground(.hidden)
-                .frame(minHeight: 120)
+            KeyboardTextEditor(
+                text: $messageText,
+                placeholder: "Write a message…",
+                font: .systemFont(ofSize: 14, weight: .regular),
+                minHeight: 120
+            )
                 .padding(10)
                 .background(Theme.canvas, in: .rect(cornerRadius: 14))
                 .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.hairline, lineWidth: 0.6))

@@ -124,11 +124,12 @@ private struct CarrierPickerSheet: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Theme.inkFaint)
-            TextField("Search carriers", text: $query)
-                .font(.system(size: 16))
-                .foregroundStyle(Theme.ink)
-                .autocorrectionDisabled()
-                .textInputAutocapitalization(.words)
+            KeyboardTextField(
+                placeholder: "Search carriers",
+                text: $query,
+                autocapitalization: .words,
+                font: .systemFont(ofSize: 16, weight: .regular)
+            )
             if !query.isEmpty {
                 Button { query = "" } label: {
                     Image(systemName: "xmark.circle.fill")
@@ -185,14 +186,15 @@ private struct CarrierPickerSheet: View {
                 Spacer()
             }
             HStack(spacing: 10) {
-                TextField("Type carrier name", text: $otherText)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Theme.ink)
-                    .autocorrectionDisabled()
-                    .textInputAutocapitalization(.words)
-                    .focused($otherFocused)
-                    .submitLabel(.done)
-                    .onSubmit { commitOther() }
+                KeyboardTextField(
+                    placeholder: "Type carrier name",
+                    text: $otherText,
+                    returnKeyType: .done,
+                    autocapitalization: .words,
+                    font: .systemFont(ofSize: 16, weight: .semibold),
+                    onSubmit: { commitOther() },
+                    onFocusChange: { otherFocused = $0 }
+                )
                 Button {
                     commitOther()
                 } label: {

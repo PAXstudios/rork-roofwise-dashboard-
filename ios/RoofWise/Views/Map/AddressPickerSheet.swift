@@ -45,13 +45,14 @@ struct AddressPickerSheet: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: Theme.TypeRamp.subhead, weight: .bold))
                 .foregroundStyle(Theme.inkFaint)
-            TextField("Street, city, ZIP…", text: $query)
-                .font(.system(size: Theme.TypeRamp.body))
-                .foregroundStyle(Theme.ink)
-                .focused($focused)
-                .submitLabel(.search)
-                .autocorrectionDisabled()
-                .textInputAutocapitalization(.words)
+            KeyboardTextField(
+                placeholder: "Street, city, ZIP…",
+                text: $query,
+                returnKeyType: .search,
+                autocapitalization: .words,
+                font: .systemFont(ofSize: Theme.TypeRamp.body, weight: .regular),
+                onFocusChange: { focused = $0 }
+            )
             if !query.isEmpty {
                 Button {
                     query = ""

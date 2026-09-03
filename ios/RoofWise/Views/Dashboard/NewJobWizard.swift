@@ -367,11 +367,13 @@ private struct MicField: View {
                 }
                 .buttonStyle(.plain)
 
-                TextField(placeholder, text: $text)
-                    .keyboardType(keyboard)
-                    .autocorrectionDisabled()
-                    .font(.system(size: Theme.TypeRamp.bodyTight, weight: .semibold))
-                    .foregroundStyle(Theme.ink)
+                KeyboardTextField(
+                    placeholder: placeholder,
+                    text: $text,
+                    keyboardType: keyboard,
+                    autocapitalization: keyboard == .emailAddress ? .none : .words,
+                    font: .systemFont(ofSize: Theme.TypeRamp.bodyTight, weight: .semibold)
+                )
                     .padding(.horizontal, 14)
                     .frame(maxWidth: .infinity, minHeight: 50)
                     .background(Theme.card, in: .rect(cornerRadius: 12))
@@ -970,10 +972,13 @@ private struct DeductibleField: View {
                     .font(.system(size: 18, weight: .heavy))
                     .foregroundStyle(Theme.inkSoft)
                     .padding(.leading, 16)
-                TextField("2,500", text: $text)
-                    .keyboardType(.decimalPad)
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(Theme.ink)
+                KeyboardTextField(
+                    placeholder: "2,500",
+                    text: $text,
+                    keyboardType: .decimalPad,
+                    autocapitalization: .none,
+                    font: .systemFont(ofSize: 18, weight: .semibold)
+                )
                     .padding(.trailing, 16)
                     .frame(maxWidth: .infinity, minHeight: 56)
                     .onChange(of: text) { _, newValue in

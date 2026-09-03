@@ -1236,12 +1236,13 @@ struct CustomerProfileView: View {
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Theme.inkSoft)
                 .frame(width: 92, alignment: .leading)
-            TextField(label, text: text)
-                .keyboardType(keyboard)
-                .autocorrectionDisabled(keyboard == .emailAddress || keyboard == .phonePad)
-                .textInputAutocapitalization(keyboard == .emailAddress ? .never : .words)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Theme.ink)
+            KeyboardTextField(
+                placeholder: label,
+                text: text,
+                keyboardType: keyboard,
+                autocapitalization: keyboard == .emailAddress ? .none : .words,
+                font: .systemFont(ofSize: 13, weight: .semibold)
+            )
                 .padding(.horizontal, 10).padding(.vertical, 8)
                 .background(Theme.canvas, in: .rect(cornerRadius: 10))
                 .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.hairline, lineWidth: 0.6))
@@ -1356,11 +1357,13 @@ private struct AddNoteSheet: View {
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Theme.inkSoft)
             }
-            TextEditor(text: $text)
-                .font(.system(size: 14))
-                .scrollContentBackground(.hidden)
+            KeyboardTextEditor(
+                text: $text,
+                placeholder: "Type a note…",
+                font: .systemFont(ofSize: 14, weight: .regular),
+                minHeight: 140
+            )
                 .padding(12)
-                .frame(minHeight: 140)
                 .background(Theme.canvas, in: .rect(cornerRadius: 14))
                 .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.hairline, lineWidth: 0.6))
 

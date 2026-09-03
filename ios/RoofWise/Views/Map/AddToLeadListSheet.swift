@@ -71,14 +71,15 @@ struct AddToLeadListSheet: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: Theme.TypeRamp.subhead, weight: .bold))
                 .foregroundStyle(Theme.inkFaint)
-            TextField("Street, city, ZIP…", text: $query)
-                .font(.system(size: Theme.TypeRamp.body))
-                .foregroundStyle(Theme.ink)
-                .focused($focused)
-                .submitLabel(.done)
-                .autocorrectionDisabled()
-                .textInputAutocapitalization(.words)
-                .onSubmit { addTyped() }
+            KeyboardTextField(
+                placeholder: "Street, city, ZIP…",
+                text: $query,
+                returnKeyType: .done,
+                autocapitalization: .words,
+                font: .systemFont(ofSize: Theme.TypeRamp.body, weight: .regular),
+                onSubmit: { addTyped() },
+                onFocusChange: { focused = $0 }
+            )
             if !query.isEmpty {
                 Button { query = "" } label: {
                     Image(systemName: "xmark.circle.fill")

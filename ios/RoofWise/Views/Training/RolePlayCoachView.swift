@@ -128,20 +128,13 @@ struct RolePlayCoachView: View {
                 .font(.system(size: 12, weight: .bold))
                 .foregroundStyle(Theme.inkSoft)
                 .textCase(.uppercase)
-            ZStack(alignment: .topLeading) {
-                if pitch.isEmpty {
-                    Text("Hi, I'm Jordan with RoofWise — we've been on three roofs this morning that took serious hail damage from last week's storm…")
-                        .font(.system(size: 14))
-                        .foregroundStyle(Theme.inkFaint)
-                        .padding(14)
-                }
-                TextEditor(text: $pitch)
-                    .font(.system(size: 14))
-                    .foregroundStyle(Theme.ink)
-                    .scrollContentBackground(.hidden)
-                    .padding(8)
-                    .frame(minHeight: 160)
-            }
+            KeyboardTextEditor(
+                text: $pitch,
+                placeholder: "Hi, I'm Jordan with RoofWise — we've been on three roofs this morning that took serious hail damage from last week's storm…",
+                font: .systemFont(ofSize: 14, weight: .regular),
+                minHeight: 160
+            )
+            .padding(8)
             .background(Theme.card, in: .rect(cornerRadius: 16))
             .overlay(RoundedRectangle(cornerRadius: 16).stroke(Theme.hairline, lineWidth: 0.6))
 

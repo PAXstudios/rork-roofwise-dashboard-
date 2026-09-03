@@ -185,10 +185,12 @@ struct LogKnockSheet: View {
                 Spacer()
                 VoiceInputButton(text: $notes, style: .capsule, append: true)
             }
-            TextEditor(text: $notes)
-                .font(.system(size: Theme.TypeRamp.body))
-                .scrollContentBackground(.hidden)
-                .frame(minHeight: 96)
+            KeyboardTextEditor(
+                text: $notes,
+                placeholder: "What happened at the door…",
+                font: .systemFont(ofSize: Theme.TypeRamp.body, weight: .regular),
+                minHeight: 96
+            )
                 .padding(12)
                 .background(Theme.card, in: .rect(cornerRadius: 14))
                 .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.hairline, lineWidth: 0.6))

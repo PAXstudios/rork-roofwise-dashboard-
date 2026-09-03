@@ -487,10 +487,12 @@ struct VoiceTextField: View {
     var body: some View {
         HStack(spacing: 10) {
             VoiceInputButton(text: $text, style: .compact)
-            TextField(placeholder, text: $text)
-                .font(.system(size: Theme.TypeRamp.body, weight: .semibold))
-                .foregroundStyle(Theme.ink)
-                .onChange(of: text) { _, _ in onChange() }
+            KeyboardTextField(
+                placeholder: placeholder,
+                text: $text,
+                font: .systemFont(ofSize: Theme.TypeRamp.body, weight: .semibold)
+            )
+            .onChange(of: text) { _, _ in onChange() }
         }
         .padding(.horizontal, 14)
         .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
@@ -508,21 +510,15 @@ struct VoiceTextEditor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             ZStack(alignment: .topLeading) {
-                if text.isEmpty {
-                    Text(placeholder)
-                        .font(.system(size: Theme.TypeRamp.body, weight: .semibold))
-                        .foregroundStyle(Theme.inkFaint)
-                        .padding(.top, 14)
-                        .padding(.leading, 16)
-                }
-                TextEditor(text: $text)
-                    .font(.system(size: Theme.TypeRamp.body, weight: .regular))
-                    .foregroundStyle(Theme.ink)
-                    .scrollContentBackground(.hidden)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
-                    .frame(minHeight: minHeight)
-                    .onChange(of: text) { _, _ in onChange() }
+                KeyboardTextEditor(
+                    text: $text,
+                    placeholder: placeholder,
+                    font: .systemFont(ofSize: Theme.TypeRamp.body, weight: .regular),
+                    minHeight: minHeight
+                )
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .onChange(of: text) { _, _ in onChange() }
             }
             .background(Theme.card, in: .rect(cornerRadius: 14))
             .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.hairline, lineWidth: 1))
@@ -543,11 +539,13 @@ struct NumpadField: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            TextField("0", text: $text)
-                .keyboardType(.decimalPad)
-                .font(.system(size: Theme.TypeRamp.titleSm, weight: .heavy))
-                .foregroundStyle(Theme.ink)
-                .monospacedDigit()
+            KeyboardTextField(
+                placeholder: "0",
+                text: $text,
+                keyboardType: .decimalPad,
+                autocapitalization: .none,
+                font: .monospacedDigitSystemFont(ofSize: Theme.TypeRamp.titleSm, weight: .heavy)
+            )
                 .onAppear { text = formatted(value) }
                 .onChange(of: text) { _, new in
                     if let v = Double(new.replacingOccurrences(of: ",", with: ".")) {

@@ -92,14 +92,15 @@ struct ServiceAreaView: View {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: Theme.TypeRamp.subhead, weight: .bold))
                     .foregroundStyle(Theme.inkFaint)
-                TextField("ZIP (75024) or City ST", text: $query)
-                    .font(.system(size: Theme.TypeRamp.body))
-                    .foregroundStyle(Theme.ink)
-                    .focused($focused)
-                    .submitLabel(.done)
-                    .autocorrectionDisabled()
-                    .textInputAutocapitalization(.words)
-                    .onSubmit { addCurrent() }
+                KeyboardTextField(
+                    placeholder: "ZIP (75024) or City ST",
+                    text: $query,
+                    returnKeyType: .done,
+                    autocapitalization: .words,
+                    font: .systemFont(ofSize: Theme.TypeRamp.body, weight: .regular),
+                    onSubmit: { addCurrent() },
+                    onFocusChange: { focused = $0 }
+                )
                 if !query.isEmpty {
                     Button {
                         query = ""
