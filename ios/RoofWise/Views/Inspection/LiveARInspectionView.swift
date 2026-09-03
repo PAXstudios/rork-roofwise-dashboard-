@@ -42,11 +42,14 @@ struct LiveAROverlayChrome: View {
     let rollDegrees: Double
     let confidence: Double
     let markerCount: Int
+    let shingleCount: Int
+    let squareLocked: Bool
     let arUnavailable: Bool
     @Binding var slope: SlopeType
     let isCapturing: Bool
     let captureEligible: Bool
     let isAnalyzing: Bool
+    var onPlaceSquare: (() -> Void)? = nil
     let onClose: () -> Void
     let onShutter: () -> Void
 
@@ -148,12 +151,25 @@ struct LiveAROverlayChrome: View {
                 .overlay(Capsule().stroke(.white.opacity(0.18), lineWidth: 0.6))
             }
 
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(squareLocked ? Theme.mint : Theme.amber)
+                    .frame(width: 7, height: 7)
+                Text(squareLocked ? "10×10 LOCKED" : "FRAME 10×10")
+                    .font(.system(size: Theme.TypeRamp.micro, weight: .heavy))
+                    .tracking(0.8)
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .background(.ultraThinMaterial, in: .capsule)
+            .overlay(Capsule().stroke((squareLocked ? Theme.mint : Theme.amber).opacity(0.55), lineWidth: 0.8))
+
             if arUnavailable {
-                Text("AR mode unavailable on this device — using standard camera")
+                Text("AR tracking off — camera still measures the square on screen")
                     .font(.system(size: Theme.TypeRamp.microSm, weight: .semibold))
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.white.opacity(0.7))
-                    .frame(maxWidth: 220)
+                    .frame(maxWidth: 240)
             }
         }
     }
@@ -208,13 +224,63 @@ struct LiveAROverlayChrome: View {
     // MARK: Bottom
 
     private var bottomRow: some View {
-        HStack(alignment: .bottom) {
-            confidenceMeter
-            Spacer()
-            shutterButton
-            Spacer()
-            qualityIndicator
+        VStack(spacing: 12) {
+            liveStats
+            if let onPlaceSquare {
+                Button {
+                    let g = UIImpactFeedbackGenerator(style: .medium); g.impactOccurred()
+                    onPlaceSquare()
+                } label: {
+                    Label("Place 10×10 Square", systemImage: "square.dashed.inset.filled")
+                        .font(.system(size: Theme.TypeRamp.caption, weight: .heavy))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 14).padding(.vertical, 10)
+                        .frame(minHeight: 44)
+                        .background(.ultraThinMaterial, in: .capsule)
+                        .overlay(Capsule().stroke(Theme.ember.opacity(0.5), lineWidth: 0.8))
+                }
+                .buttonStyle(.plain)
+            }
+            HStack(alignment: .bottom) {
+                confidenceMeter
+                Spacer()
+                shutterButton
+                Spacer()
+                qualityIndicator
+            }
         }
+    }
+
+    private var liveStats: some View {
+        HStack(spacing: 8) {
+            liveStat(icon: "square.grid.3x3.topleft.filled", tint: Theme.mint,
+                     label: "SHINGLES", value: shingleCount > 0 ? "\(shingleCount)" : "—")
+            liveStat(icon: "scope", tint: Theme.ember,
+                     label: "DAMAGE", value: "\(markerCount)")
+            liveStat(icon: squareLocked ? "checkmark.seal.fill" : "viewfinder",
+                     tint: squareLocked ? Theme.mint : Theme.amber,
+                     label: "SQUARE", value: squareLocked ? "LOCK" : "AIM")
+        }
+    }
+
+    private func liveStat(icon: String, tint: Color, label: String, value: String) -> some View {
+        VStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.system(size: Theme.TypeRamp.micro, weight: .heavy))
+                .foregroundStyle(tint)
+            Text(value)
+                .font(.system(size: Theme.TypeRamp.caption, weight: .heavy))
+                .foregroundStyle(.white)
+                .monospacedDigit()
+            Text(label)
+                .font(.system(size: Theme.TypeRamp.microSm, weight: .heavy))
+                .tracking(0.6)
+                .foregroundStyle(.white.opacity(0.65))
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+        .background(.ultraThinMaterial, in: .rect(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(.white.opacity(0.12), lineWidth: 0.6))
     }
 
     private var confidenceColor: Color {
@@ -288,9 +354,14 @@ struct LiveAROverlayChrome: View {
                 if isCapturing {
                     ProgressView().tint(.white)
                 } else {
-                    Image(systemName: "wand.and.stars")
-                        .font(.system(size: 26, weight: .heavy))
-                        .foregroundStyle(.white)
+                    VStack(spacing: 2) {
+                        Image(systemName: "camera.viewfinder")
+                            .font(.system(size: 22, weight: .heavy))
+                        Text("SQUARE")
+                            .font(.system(size: 8, weight: .heavy))
+                            .tracking(0.6)
+                    }
+                    .foregroundStyle(.white)
                 }
             }
         }
@@ -418,15 +489,20 @@ struct LiveARFallbackStage: View {
     @State private var slope: SlopeType = .frontSlope
     @State private var isCapturing = false
     @State private var flash = false
+    @State private var resultPhoto: CapturedPhoto?
 
     var body: some View {
         ZStack {
             cameraBackground
 
             if !camera.isDenied, camera.hasCamera {
-                LiveMarkerOverlay(markers: analyzer.lastMarkers)
-                    .ignoresSafeArea()
-                    .allowsHitTesting(false)
+                LiveARSceneOverlay(
+                    square: analyzer.lastSquare,
+                    squareLocked: analyzer.isSquareLocked,
+                    shingles: analyzer.lastShingles,
+                    markers: analyzer.lastMarkers
+                )
+                .ignoresSafeArea()
             }
 
             if flash {
@@ -439,6 +515,8 @@ struct LiveARFallbackStage: View {
                 rollDegrees: motion.rollDegrees,
                 confidence: analyzer.liveConfidence,
                 markerCount: analyzer.lastMarkers.count,
+                shingleCount: analyzer.lastShingleCount,
+                squareLocked: analyzer.isSquareLocked,
                 arUnavailable: arUnavailable,
                 slope: $slope,
                 isCapturing: isCapturing,
@@ -459,6 +537,9 @@ struct LiveARFallbackStage: View {
         .onChange(of: camera.frameTick) { _, _ in
             guard let image = camera.latestFrame else { return }
             analyzer.ingest(image: image)
+        }
+        .sheet(item: $resultPhoto) { photo in
+            LiveARSquareResultSheet(photo: photo) { resultPhoto = nil }
         }
     }
 
@@ -495,10 +576,11 @@ struct LiveARFallbackStage: View {
             )
             try? await Task.sleep(for: .milliseconds(120))
             withAnimation(.easeOut(duration: 0.25)) { flash = false }
-            await LiveARCapture.analyzeAndStore(image: image, slope: slopeValue,
-                                                pitch: pitch, elevation: elev,
-                                                customerStore: customerStore)
+            let photo = await LiveARCapture.analyzeAndStore(image: image, slope: slopeValue,
+                                                            pitch: pitch, elevation: elev,
+                                                            customerStore: customerStore)
             isCapturing = false
+            resultPhoto = photo
         }
     }
 }
@@ -506,28 +588,36 @@ struct LiveARFallbackStage: View {
 // MARK: - Capture helper (shared by both stages)
 
 enum LiveARCapture {
-    /// Runs FULL-quality analysis on a captured frame and stores it as a regular
+    /// Runs FULL-quality analysis on a captured 10×10 and stores it as a regular
     /// photo via the existing CustomerStore persistence (same API as Quick Inspection).
     @MainActor
+    @discardableResult
     static func analyzeAndStore(image: UIImage,
                                 slope: SlopeType,
                                 pitch: Double,
                                 elevation: Double,
-                                customerStore: CustomerStore) async {
+                                customerStore: CustomerStore) async -> CapturedPhoto {
         let result = await GeminiAnalysisService.analyzeFull(image: image,
                                                              slope: slope,
                                                              mode: .square,
-                                                             squaresCovered: 0)
+                                                             squaresCovered: 1)
+        let squares = result.squareBox == nil ? 0 : 1
         var photo = CapturedPhoto(image: image, slope: slope,
                                   pitchDegrees: pitch, elevationFeet: elevation,
-                                  captureMode: .square, squaresCovered: 0)
+                                  captureMode: .square,
+                                  squaresCovered: squares)
         photo.findings = result.findings
         photo.damageMarkers = result.markers
         photo.analyzed = !result.failed
+        photo.countedShingles = result.shingleCount > 0 ? result.shingleCount : nil
+        photo.shingleBoxes = result.shingleBoxes
+        photo.squareBox = result.squareBox
         if let cid = customerStore.activeCustomerID {
             customerStore.appendPhotos([photo], to: cid)
         }
-        let n = UINotificationFeedbackGenerator(); n.notificationOccurred(.success)
+        let n = UINotificationFeedbackGenerator()
+        n.notificationOccurred(result.failed ? .warning : .success)
+        return photo
     }
 }
 
@@ -545,6 +635,7 @@ struct LiveARDeviceStage: View {
     @State private var slope: SlopeType = .frontSlope
     @State private var isCapturing = false
     @State private var flash = false
+    @State private var resultPhoto: CapturedPhoto?
 
     init(onClose: @escaping () -> Void = {}) {
         self.onClose = onClose
@@ -558,9 +649,14 @@ struct LiveARDeviceStage: View {
             LiveARViewContainer(controller: controller)
                 .ignoresSafeArea()
 
-            LiveMarkerOverlay(markers: analyzer.lastMarkers)
-                .ignoresSafeArea()
-                .allowsHitTesting(false)
+            LiveARSceneOverlay(
+                square: analyzer.lastSquare,
+                squareLocked: analyzer.isSquareLocked || controller.hasPlacedSquare,
+                shingles: analyzer.lastShingles,
+                markers: analyzer.lastMarkers,
+                showFramingGuide: !controller.hasPlacedSquare
+            )
+            .ignoresSafeArea()
 
             if flash {
                 Color.white.ignoresSafeArea().transition(.opacity)
@@ -572,34 +668,25 @@ struct LiveARDeviceStage: View {
                 rollDegrees: motion.rollDegrees,
                 confidence: analyzer.liveConfidence,
                 markerCount: analyzer.lastMarkers.count,
+                shingleCount: analyzer.lastShingleCount,
+                squareLocked: analyzer.isSquareLocked || controller.hasPlacedSquare,
                 arUnavailable: false,
                 slope: $slope,
                 isCapturing: isCapturing,
                 captureEligible: !isCapturing,
                 isAnalyzing: analyzer.isAnalyzing,
+                onPlaceSquare: { controller.placeTestSquare() },
                 onClose: onClose,
                 onShutter: capture
             )
-            .overlay(alignment: .bottom) {
-                Button {
-                    let g = UIImpactFeedbackGenerator(style: .medium); g.impactOccurred()
-                    controller.placeTestSquare()
-                } label: {
-                    Label("Place 10×10 Square", systemImage: "square.dashed.inset.filled")
-                        .font(.system(size: Theme.TypeRamp.caption, weight: .heavy))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 14).padding(.vertical, 9)
-                        .background(.ultraThinMaterial, in: .capsule)
-                        .overlay(Capsule().stroke(Theme.ember.opacity(0.5), lineWidth: 0.8))
-                }
-                .buttonStyle(.plain)
-                .padding(.bottom, 150)
-            }
         }
         .onAppear { motion.start() }
         .onDisappear {
             motion.stop()
             controller.stop()
+        }
+        .sheet(item: $resultPhoto) { photo in
+            LiveARSquareResultSheet(photo: photo) { resultPhoto = nil }
         }
     }
 
@@ -617,10 +704,11 @@ struct LiveARDeviceStage: View {
             withAnimation(.easeOut(duration: 0.25)) { flash = false }
             let image = snapshot ?? CameraCaptureService.synthesizePlaceholder(
                 slope: slopeValue, pitchDegrees: pitch, elevationFeet: elev)
-            await LiveARCapture.analyzeAndStore(image: image, slope: slopeValue,
-                                                pitch: pitch, elevation: elev,
-                                                customerStore: customerStore)
+            let photo = await LiveARCapture.analyzeAndStore(image: image, slope: slopeValue,
+                                                            pitch: pitch, elevation: elev,
+                                                            customerStore: customerStore)
             isCapturing = false
+            resultPhoto = photo
         }
     }
 }
@@ -634,9 +722,11 @@ struct LiveARViewContainer: UIViewRepresentable {
 }
 
 /// Owns the ARView, the test-square anchor, and snapshot capture.
+@Observable
 @MainActor
 final class LiveARController {
     let analyzer: LiveARAnalyzer
+    private(set) var hasPlacedSquare: Bool = false
     private weak var arView: ARView?
     private var squareAnchor: AnchorEntity?
 
@@ -674,6 +764,7 @@ final class LiveARController {
         anchor.addChild(model)
         arView.scene.addAnchor(anchor)
         squareAnchor = anchor
+        hasPlacedSquare = true
         let g = UIImpactFeedbackGenerator(style: .rigid); g.impactOccurred()
     }
 

@@ -32,6 +32,12 @@ struct CapturedPhoto: Identifiable {
     var findings: [InspectionFinding] = []
     var damageMarkers: [DamageMarker] = []
     var analyzed: Bool = false
+    /// Gemini-counted visible shingle tabs. `nil` until a still-photo analysis returns a count.
+    var countedShingles: Int? = nil
+    /// Individual shingle-tab boxes from Gemini (normalized 0–1).
+    var shingleBoxes: [CGRect] = []
+    /// 10×10 test-square box from Gemini when it could see one.
+    var squareBox: CGRect? = nil
 
     // MARK: - Pertinent info derived from analysis
 
@@ -51,10 +57,10 @@ struct CapturedPhoto: Identifiable {
         return parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// Estimated number of shingles visible in the photo. Approximation based on
-    /// capture mode: a single-shingle photo shows ~1 tab; a 100 sq ft test square
-    /// in asphalt covers roughly 30 shingle tabs.
+    /// Number of shingles visible in the photo. Prefers Gemini's counted tabs;
+    /// falls back to a mode-based estimate when no count was returned.
     var estimatedShingleCount: Int {
+        if let countedShingles { return countedShingles }
         switch captureMode {
         case .singleShingle:
             return 1

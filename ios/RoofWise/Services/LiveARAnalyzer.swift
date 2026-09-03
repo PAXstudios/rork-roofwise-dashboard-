@@ -35,6 +35,20 @@ final class LiveARAnalyzer: NSObject, ARSessionDelegate {
     var liveConfidence: Double = 0
     /// True while a frame is being analyzed. Drives the "Analyzing…" HUD pill.
     var isAnalyzing: Bool = false
+    /// Gemini 10×10 test-square box when one is visible in the live frame.
+    var lastSquare: CGRect?
+    var lastSquareConfidence: Int = 0
+    /// Individual visible shingle-tab boxes from the latest live frame.
+    var lastShingles: [CGRect] = []
+    /// Count of visible shingle tabs (may exceed boxed count).
+    var lastShingleCount: Int = 0
+
+    /// True when Gemini has a confident 10×10 square occupying a usable portion of the frame.
+    var isSquareLocked: Bool {
+        guard let square = lastSquare, lastSquareConfidence >= 55 else { return false }
+        let area = square.width * square.height
+        return area >= 0.12 && area <= 0.88
+    }
 
     private weak var session: ARSession?
     private nonisolated let gate = AnalyzerGate()
@@ -93,6 +107,12 @@ final class LiveARAnalyzer: NSObject, ARSessionDelegate {
                 await MainActor.run {
                     self.lastMarkers = result.markers
                     self.liveConfidence = avg
+                    self.lastSquare = result.squareBox
+                    self.lastSquareConfidence = result.squareConfidence
+                    self.lastShingles = result.shingleBoxes
+                    self.lastShingleCount = result.shingleCount > 0
+                        ? result.shingleCount
+                        : result.shingleBoxes.count
                 }
             } catch {
                 print("[LiveARAnalyzer] analyze error: \(error)")

@@ -72,6 +72,15 @@ struct GeminiAnalysisService {
     - Return up to 60 boxes. Measure every box against THIS image exactly as you see it (do not rotate).
     """
 
+    /// Live + still-photo scene: 10×10 HAAG square, individual shingle tabs, then damage.
+    private static let liveSceneGuide = """
+    Scene geometry (only what is actually visible):
+    - test_square: box the 10ft × 10ft HAAG test square if you can see it — chalk, paint, tape, or a clearly framed ~100 sq ft roof patch. Use null when no square is visible. Do NOT invent a square in the middle of the frame.
+    - shingles: one tight box per VISIBLE shingle tab. Real tabs follow the roof's courses; do not output an even made-up grid. Cap at 40 boxes. Empty array if none are clear.
+    - shingle_count: integer count of visible shingle tabs in the frame. This may be higher than shingles.length when some tabs are too small to box. Use 0 when none are visible.
+    - damage_markers: one box per visible damage feature with its type. Empty array when no damage is clear.
+    """
+
     init() {
         self.toolkitURL = Config.EXPO_PUBLIC_TOOLKIT_URL
         self.secret = Config.EXPO_PUBLIC_RORK_TOOLKIT_SECRET_KEY
@@ -103,6 +112,14 @@ struct GeminiAnalysisService {
         var shingleTypeConfidence: Int = 0
         /// AI evidence note for the shingle type classification.
         var shingleTypeNote: String? = nil
+        /// Normalized 0–1 box of the 10×10 HAAG test square when Gemini can see one.
+        var squareBox: CGRect? = nil
+        /// Confidence (0-100) for `squareBox`.
+        var squareConfidence: Int = 0
+        /// Individual visible shingle-tab boxes (Gemini detections, not a fabricated grid).
+        var shingleBoxes: [CGRect] = []
+        /// Count of visible shingle tabs. May exceed `shingleBoxes.count` when some tabs are too small to box.
+        var shingleCount: Int = 0
     }
 
     /// Convenience for legacy callers that only need findings.
@@ -143,14 +160,19 @@ struct GeminiAnalysisService {
         // EXACT live-mode preamble, then the shared damage-detection rules
         // (coordinate normalization + roof gating) mirrored from analyze().
         let prompt = """
-        You are running in LIVE mode. Return ONLY the damage_markers array. Be conservative — only mark damage you can clearly see. Empty array is correct when uncertain.
+        You are running in LIVE mode on a roof-inspection camera. Be conservative — only mark what you can clearly see. Empty arrays are correct when uncertain.
 
         Return STRICT JSON only (no markdown), with this schema:
         {
+          "test_square": { "box_2d": [ymin, xmin, ymax, xmax], "confidence": 0-100 } | null,
+          "shingles": [ { "box_2d": [ymin, xmin, ymax, xmax] } ],
+          "shingle_count": <int>,
           "damage_markers": [
             { "type": "\(Self.categoryEnum)", "box_2d": [ymin, xmin, ymax, xmax], "severity": "minor|moderate|severe", "confidence": 0-100, "note": "<short pixel evidence>" }
           ]
         }
+
+        \(Self.liveSceneGuide)
 
         \(Self.categoryGuide)
 
@@ -158,7 +180,7 @@ struct GeminiAnalysisService {
 
         \(Self.spatialGuide)
 
-        If no damage is clearly visible, return "damage_markers": []. If the image is NOT a roof (grass, sky, indoors, person, vehicle), return an empty damage_markers array.
+        If the image is NOT a roof (grass, sky, indoors, person, vehicle), return test_square=null, shingles=[], shingle_count=0, damage_markers=[].
         """
 
         let body = Self.chatCompletionBody(systemPrompt: prompt,
@@ -301,6 +323,9 @@ struct GeminiAnalysisService {
         {
           "analyzed": true|false,
           "shingle_type": { "type": "3-tab asphalt|architectural asphalt|luxury asphalt|wood shake|wood shingle|metal standing seam|metal shingle|clay tile|concrete tile|slate|synthetic slate|composite|rolled roofing|TPO|EPDM|unknown", "confidence": 0-100, "note": "<short evidence>" },
+          "test_square": { "box_2d": [ymin, xmin, ymax, xmax], "confidence": 0-100 } | null,
+          "shingles": [ { "box_2d": [ymin, xmin, ymax, xmax] } ],
+          "shingle_count": <int>,
           "findings": [
             { "label": "\(Self.categoryEnum)", "detected": true|false, "severity": "none|minor|moderate|severe", "confidence": 0-100, "count": <int>, "note": "<short evidence>" }
           ],
@@ -308,6 +333,8 @@ struct GeminiAnalysisService {
             { "type": "\(Self.categoryEnum)", "box_2d": [ymin, xmin, ymax, xmax], "severity": "minor|moderate|severe", "confidence": 0-100, "note": "<short pixel evidence>" }
           ]
         }
+
+        \(Self.liveSceneGuide)
 
         \(Self.categoryGuide)
 
@@ -495,13 +522,41 @@ struct GeminiAnalysisService {
         if noRoofFlag {
             print("[Gemini] \u{26A0}\u{FE0F} no_roof_detected — image does not show a roof; suppressing markers.")
         }
+        var squareBox: CGRect? = nil
+        var squareConfidence: Int = 0
+        var shingleBoxes: [CGRect] = []
+        var shingleCount: Int = 0
+        if !noRoofFlag {
+            if let squareDict = payload["test_square"] as? [String: Any],
+               let rect = rectFromBox2D(squareDict["box_2d"]) {
+                squareBox = rect
+                squareConfidence = max(0, min(100, (squareDict["confidence"] as? Int)
+                    ?? (squareDict["confidence"] as? NSNumber)?.intValue ?? 0))
+            }
+            if let rawShingles = payload["shingles"] as? [[String: Any]] {
+                shingleBoxes = rawShingles.compactMap { rectFromBox2D($0["box_2d"]) }
+                if shingleBoxes.count > 40 {
+                    shingleBoxes = Array(shingleBoxes.prefix(40))
+                }
+            }
+            if let count = (payload["shingle_count"] as? Int)
+                ?? (payload["shingle_count"] as? NSNumber)?.intValue {
+                shingleCount = max(0, count)
+            } else {
+                shingleCount = shingleBoxes.count
+            }
+        }
         return AnalysisResult(findings: results,
                               markers: markers,
                               failed: false,
                               noRoofDetected: noRoofFlag,
                               shingleType: shingleTypeName,
                               shingleTypeConfidence: shingleTypeConfidence,
-                              shingleTypeNote: shingleTypeNote)
+                              shingleTypeNote: shingleTypeNote,
+                              squareBox: squareBox,
+                              squareConfidence: squareConfidence,
+                              shingleBoxes: shingleBoxes,
+                              shingleCount: shingleCount)
     }
 
     /// Strip ```json ... ``` or ``` ... ``` fences if Gemini wraps despite responseMimeType.
@@ -652,6 +707,23 @@ struct GeminiAnalysisService {
             }
         }
         return markers
+    }
+
+    /// Gemini `box_2d` [ymin, xmin, ymax, xmax] → normalized 0–1 UIKit rect.
+    private static func rectFromBox2D(_ any: Any?) -> CGRect? {
+        guard let box = doubleArray(any), box.count == 4 else { return nil }
+        let scale: Double = (box.max() ?? 0) > 1.5 ? 1000.0 : 1.0
+        let yMin = min(box[0], box[2]) / scale
+        let xMin = min(box[1], box[3]) / scale
+        let yMax = max(box[0], box[2]) / scale
+        let xMax = max(box[1], box[3]) / scale
+        let w = max(0.004, xMax - xMin)
+        let h = max(0.004, yMax - yMin)
+        let clamp: (Double) -> CGFloat = { CGFloat(max(0, min(1, $0))) }
+        let rect = CGRect(x: clamp(xMin), y: clamp(yMin), width: clamp(w), height: clamp(h))
+        guard rect.width > 0.012, rect.height > 0.012,
+              rect.width < 0.98, rect.height < 0.98 else { return nil }
+        return rect
     }
 
     /// Parses a JSON array of numbers (Gemini returns NSNumber elements) into
