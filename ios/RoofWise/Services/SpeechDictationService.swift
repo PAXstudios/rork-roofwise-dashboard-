@@ -8,6 +8,10 @@ import UIKit
 /// dirty). Wraps `SFSpeechRecognizer` + `AVAudioEngine`. It is honest about
 /// availability: if the microphone or permission is missing it surfaces a
 /// friendly message instead of faking input.
+///
+/// AVAudioEngine `installTap` aborts the process (not a Swift `Error`) if a tap
+/// is already on the bus. We track installation ourselves and always tear down
+/// before a new start so a failed first attempt cannot crash the next tap.
 @Observable
 @MainActor
 final class SpeechDictationService {
@@ -26,6 +30,8 @@ final class SpeechDictationService {
     private let audioEngine = AVAudioEngine()
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var task: SFSpeechRecognitionTask?
+    private var isTapInstalled = false
+    private var isStarting = false
 
     /// Prepared generators so start/stop taps feel instant on-device.
     private let startImpact = UIImpactFeedbackGenerator(style: .medium)
@@ -44,13 +50,17 @@ final class SpeechDictationService {
         warnNotify.prepare()
         if isListening {
             stop(haptic: true)
-        } else {
+        } else if !isStarting {
             Task { await start() }
         }
     }
 
     func start() async {
-        guard !isListening else { return }
+        guard !isListening, !isStarting else { return }
+        isStarting = true
+        defer { isStarting = false }
+
+        teardownEngine()
         transcript = ""
 
         let speechStatus = await Self.requestSpeechAuthorization()
@@ -75,6 +85,7 @@ final class SpeechDictationService {
             state = .listening
             startImpact.impactOccurred(intensity: 1.0)
         } catch {
+            teardownEngine()
             failUnavailable("Couldn’t start the microphone. Check Settings → Privacy → Microphone.")
         }
     }
@@ -88,14 +99,8 @@ final class SpeechDictationService {
     ///   view disappears, so background teardown doesn’t buzz the phone.
     private func stop(haptic: Bool) {
         let wasListening = isListening
-        audioEngine.stop()
-        audioEngine.inputNode.removeTap(onBus: 0)
-        request?.endAudio()
-        task?.cancel()
-        request = nil
-        task = nil
+        teardownEngine()
         if case .listening = state { state = .idle }
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         if haptic, wasListening {
             stopImpact.impactOccurred(intensity: 0.9)
         }
@@ -106,7 +111,24 @@ final class SpeechDictationService {
         warnNotify.notificationOccurred(.warning)
     }
 
+    private func teardownEngine() {
+        if audioEngine.isRunning {
+            audioEngine.stop()
+        }
+        if isTapInstalled {
+            audioEngine.inputNode.removeTap(onBus: 0)
+            isTapInstalled = false
+        }
+        request?.endAudio()
+        task?.cancel()
+        request = nil
+        task = nil
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    }
+
     private func startEngine(with recognizer: SFSpeechRecognizer) throws {
+        teardownEngine()
+
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(.record, mode: .measurement, options: .duckOthers)
         try session.setActive(true, options: .notifyOthersOnDeactivation)
@@ -117,9 +139,15 @@ final class SpeechDictationService {
 
         let input = audioEngine.inputNode
         let format = input.outputFormat(forBus: 0)
+        guard format.sampleRate > 0, format.channelCount > 0 else {
+            throw SpeechEngineError.invalidInputFormat
+        }
+
         input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
             request.append(buffer)
         }
+        isTapInstalled = true
+
         audioEngine.prepare()
         try audioEngine.start()
 
@@ -151,4 +179,8 @@ final class SpeechDictationService {
             }
         }
     }
+}
+
+private enum SpeechEngineError: Error {
+    case invalidInputFormat
 }
